@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>open62541 by acplt</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>open62541</h1>
+        <p>An open-source communication stack implementation of IEC 62541 aka OPC UA (OPC Unified Architecture) licensed under LGPL + static linking exception.</p>
+
+        <p class="view"><a href="https://github.com/acplt/open62541">View the Project on GitHub <small>acplt/open62541</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/acplt/open62541/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/acplt/open62541/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/acplt/open62541">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>
+<a name="installation" class="anchor" href="#installation"><span class="octicon octicon-link"></span></a>Installation</h1>
+
+<h2>
+<a name="getting-dependencies" class="anchor" href="#getting-dependencies"><span class="octicon octicon-link"></span></a>Getting dependencies</h2>
+
+<h3>
+<a name="ubuntu" class="anchor" href="#ubuntu"><span class="octicon octicon-link"></span></a>Ubuntu</h3>
+
+<h5>
+<a name="getting-gcc-toolchain" class="anchor" href="#getting-gcc-toolchain"><span class="octicon octicon-link"></span></a>Getting gcc toolchain:</h5>
+
+<div class="highlight highlight-bash"><pre>sudo apt-get install build-essential subversion git autoconf libtool texinfo python-lxml
+</pre></div>
+
+<h5>
+<a name="getting-and-installing-check-as-unit-test-framework-httpchecksourceforgenet" class="anchor" href="#getting-and-installing-check-as-unit-test-framework-httpchecksourceforgenet"><span class="octicon octicon-link"></span></a>Getting and installing <em>check</em> as unit test framework (<a href="http://check.sourceforge.net/">http://check.sourceforge.net/</a>):</h5>
+
+<div class="highlight highlight-bash"><pre><span class="nv">$ </span>svn checkout svn://svn.code.sf.net/p/check/code/trunk check-code
+<span class="nv">$ </span><span class="nb">cd </span>check-code
+<span class="nv">$ </span>autoreconf --install
+<span class="nv">$ </span>./configure
+<span class="nv">$ </span>make
+<span class="nv">$ </span>sudo make install
+<span class="nv">$ </span>sudo ldconfig
+</pre></div>
+
+<h3>
+<a name="windows" class="anchor" href="#windows"><span class="octicon octicon-link"></span></a>Windows</h3>
+
+<h5>
+<a name="getting-mingw-and-msys" class="anchor" href="#getting-mingw-and-msys"><span class="octicon octicon-link"></span></a>Getting MinGW and MSYS:</h5>
+
+<ul>
+<li>Get the latest MinGW installer: <a href="http://sourceforge.net/projects/mingw/files/latest/download?source=files">http://sourceforge.net/projects/mingw/files/latest/download?source=files</a>
+</li>
+<li>Select following packages: mingw-developer-toolkit, mingw32-base, msys-base</li>
+<li>After install, run MinGW\msys\1.0\postinstall\pi.bat</li>
+</ul><h5>
+<a name="get-gtk-bundle-just-for-m4-marcros-and-pkg-config" class="anchor" href="#get-gtk-bundle-just-for-m4-marcros-and-pkg-config"><span class="octicon octicon-link"></span></a>Get Gtk+ bundle (just for m4 marcros and pkg-config):</h5>
+
+<ul>
+<li>Download <a href="http://ftp.gnome.org/pub/gnome/binaries/win32/gtk+/2.24/gtk+-bundle_2.24.10-20120208_win32.zip">http://ftp.gnome.org/pub/gnome/binaries/win32/gtk+/2.24/gtk+-bundle_2.24.10-20120208_win32.zip</a> and extract it</li>
+<li>Copy gtk+/share/aclocal/*.m4 files to MinGW/share/aclocal</li>
+<li>Merge grk+ folder and MinGW\msys\1.0\ folder</li>
+</ul><h5>
+<a name="get-git-important-get-184-since-1852-has-a-bug" class="anchor" href="#get-git-important-get-184-since-1852-has-a-bug"><span class="octicon octicon-link"></span></a>Get git (IMPORTANT: get 1.8.4, since 1.8.5.2 has a bug):</h5>
+
+<ul>
+<li><a href="http://code.google.com/p/msysgit/downloads/detail?name=Git-1.8.4-preview20130916.exe&amp;can=2&amp;q=">http://code.google.com/p/msysgit/downloads/detail?name=Git-1.8.4-preview20130916.exe&amp;can=2&amp;q=</a></li>
+</ul><h5>
+<a name="getting-and-installing-check-as-unit-testing-framework-httpchecksourceforgenet" class="anchor" href="#getting-and-installing-check-as-unit-testing-framework-httpchecksourceforgenet"><span class="octicon octicon-link"></span></a>Getting and installing <em>check</em> as unit testing framework (<a href="http://check.sourceforge.net/">http://check.sourceforge.net/</a>):</h5>
+
+<ul>
+<li>Open MinGW\msys\1.0\msys.bat</li>
+</ul><div class="highlight highlight-bash"><pre><span class="nv">$ </span>svn checkout svn://svn.code.sf.net/p/check/code/trunk check-code
+<span class="nv">$ </span><span class="nb">cd </span>check-code
+<span class="nv">$ </span>autoreconf --install
+<span class="nv">$ </span>./configure --prefix<span class="o">=</span>
+<span class="nv">$ </span>make
+<span class="nv">$ </span>make install
+</pre></div>
+
+<h5>
+<a name="get-pyhton-with-lxml-module" class="anchor" href="#get-pyhton-with-lxml-module"><span class="octicon octicon-link"></span></a>Get Pyhton with lxml module</h5>
+
+<ul>
+<li>[TBD]</li>
+</ul><h2>
+<a name="clone-open62541" class="anchor" href="#clone-open62541"><span class="octicon octicon-link"></span></a>Clone open62541</h2>
+
+<div class="highlight highlight-bash"><pre><span class="nv">$ </span>git clone https://github.com/acplt/open62541.git
+</pre></div>
+
+<h2>
+<a name="building" class="anchor" href="#building"><span class="octicon octicon-link"></span></a>Building</h2>
+
+<ul>
+<li>use autogen.sh only first time and whenever aclocal.m4 or configure.ac were modified</li>
+</ul><div class="highlight highlight-bash"><pre><span class="nv">$ </span><span class="nb">cd </span>open62541
+<span class="nv">$ </span>./autogen.sh
+<span class="nv">$ </span>./configure --enable-debug<span class="o">=</span>yes
+<span class="nv">$ </span>make
+<span class="nv">$ </span>make check
+</pre></div>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/acplt">acplt</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+              <script type="text/javascript">
+            var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+            document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+          </script>
+          <script type="text/javascript">
+            try {
+              var pageTracker = _gat._getTracker("id here");
+            pageTracker._trackPageview();
+            } catch(err) {}
+          </script>
+
+  </body>
+</html>
