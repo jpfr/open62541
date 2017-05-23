@@ -444,39 +444,27 @@ ServerNetworkLayerTCP_start(UA_ServerNetworkLayer *nl, UA_Logger logger) {
     return UA_STATUSCODE_GOOD;
 }
 
-static size_t
-removeClosedConnections(ServerNetworkLayerTCP *layer, UA_Job *js) {
-    size_t c = 0;
+static void
+removeClosedConnections(ServerNetworkLayerTCP *layer, UA_Server *server) {
     for(size_t i = 0; i < layer->mappingsSize; ++i) {
         if(layer->mappings[i].connection &&
            layer->mappings[i].connection->state != UA_CONNECTION_CLOSED)
             continue;
-        /* the socket was closed from remote */
-        UA_Connection *conn = layer->mappings[i].connection;
-        js[c].type = UA_JOBTYPE_DETACHCONNECTION;
-        js[c].job.closeConnection = conn;
+        /* The socket was closed from remote */
+        UA_Server_Connection_removeConnection(server, layer->mappings[i].connection);
         layer->mappings[i] = layer->mappings[layer->mappingsSize-1];
         --layer->mappingsSize;
-        ++c;
-        js[c].type = UA_JOBTYPE_METHODCALL_DELAYED;
-        js[c].job.methodCall.method = FreeConnectionCallback;
-        js[c].job.methodCall.data = conn;
-        ++c;
     }
-    return c;
 }
 
-static size_t
-ServerNetworkLayerTCP_getJobs(UA_ServerNetworkLayer *nl, UA_Job **jobs,
-                              UA_UInt16 timeout) {
+static UA_StatusCode
+ServerNetworkLayerTCP_listen(UA_ServerNetworkLayer *nl, UA_Server *server,
+                             UA_UInt16 timeout) {
     /* Every open socket can generate two jobs */
     ServerNetworkLayerTCP *layer = (ServerNetworkLayerTCP *)nl->handle;
-    UA_Job *js = (UA_Job *)malloc(sizeof(UA_Job) * (size_t)((layer->mappingsSize * 2)));
-    if(!js)
-        return UA_STATUSCODE_BADOUTOFMEMORY;
 
     /* Remove closed sockets */
-    size_t totalJobs = removeClosedConnections(layer, js);
+    removeClosedConnections(layer, server);
 
     /* Listen on open sockets (including the server) */
     fd_set fdset, errset;
@@ -484,11 +472,6 @@ ServerNetworkLayerTCP_getJobs(UA_ServerNetworkLayer *nl, UA_Job **jobs,
     setFDSet(layer, &errset);
     struct timeval tmptv = {0, timeout * 1000};
     UA_Int32 resultsize = select(highestfd+1, &fdset, NULL, &errset, &tmptv);
-    if(totalJobs == 0 && resultsize <= 0) {
-        free(js);
-        *jobs = NULL;
-        return 0;
-    }
 
     /* Accept new connection via the server socket (can only be a single one) */
     if(UA_fd_isset(layer->serversockfd, &fdset)) {
@@ -518,60 +501,30 @@ ServerNetworkLayerTCP_getJobs(UA_ServerNetworkLayer *nl, UA_Job **jobs,
 
         UA_StatusCode retval = socket_recv(layer->mappings[i].connection, &buf, 0);
         if(retval == UA_STATUSCODE_GOOD) {
-            js[totalJobs + j].job.binaryMessage.connection = layer->mappings[i].connection;
-            js[totalJobs + j].job.binaryMessage.message = buf;
-            js[totalJobs + j].type = UA_JOBTYPE_BINARYMESSAGE_NETWORKLAYER;
-            ++j;
+            UA_Server_Connection_processBinaryMessage(server, layer->mappings[i].connection, &buf);
         } else if (retval == UA_STATUSCODE_BADCONNECTIONCLOSED) {
-            UA_Connection *c = layer->mappings[i].connection;
-            UA_LOG_INFO(layer->logger, UA_LOGCATEGORY_NETWORK,
-                        "Connection %i | Connection closed from remote", c->sockfd);
-            /* the socket was closed from remote */
-            js[totalJobs + j].type = UA_JOBTYPE_DETACHCONNECTION;
-            js[totalJobs + j].job.closeConnection = c;
+            UA_Server_Connection_removeConnection(server, layer->mappings[i].connection);
             layer->mappings[i] = layer->mappings[layer->mappingsSize-1];
             --layer->mappingsSize;
-            ++totalJobs; /* increase j only once */
-            js[totalJobs + j].type = UA_JOBTYPE_METHODCALL_DELAYED;
-            js[totalJobs + j].job.methodCall.method = FreeConnectionCallback;
-            js[totalJobs + j].job.methodCall.data = c;
-            ++j;
         }
     }
-    totalJobs += j;
-
-    if(totalJobs == 0) {
-        free(js);
-        js = NULL;
-    }
-    *jobs = js;
-    return totalJobs;
+    return UA_STATUSCODE_GOOD;
 }
 
-static size_t
-ServerNetworkLayerTCP_stop(UA_ServerNetworkLayer *nl, UA_Job **jobs) {
+static void
+ServerNetworkLayerTCP_stop(UA_ServerNetworkLayer *nl, UA_Server *server) {
     ServerNetworkLayerTCP *layer = (ServerNetworkLayerTCP *)nl->handle;
     UA_LOG_INFO(layer->logger, UA_LOGCATEGORY_NETWORK,
                 "Shutting down the TCP network layer with %d open connection(s)",
                 layer->mappingsSize);
     shutdown((SOCKET)layer->serversockfd,2);
     CLOSESOCKET(layer->serversockfd);
-    UA_Job *items = (UA_Job *)malloc(sizeof(UA_Job) * layer->mappingsSize * 2);
-    if(!items)
-        return 0;
-    for(size_t i = 0; i < layer->mappingsSize; ++i) {
-        socket_close(layer->mappings[i].connection);
-        items[i*2].type = UA_JOBTYPE_DETACHCONNECTION;
-        items[i*2].job.closeConnection = layer->mappings[i].connection;
-        items[(i*2)+1].type = UA_JOBTYPE_METHODCALL_DELAYED;
-        items[(i*2)+1].job.methodCall.method = FreeConnectionCallback;
-        items[(i*2)+1].job.methodCall.data = layer->mappings[i].connection;
-    }
+    for(size_t i = 0; i < layer->mappingsSize; ++i)
+        UA_Server_Connection_removeConnection(server, layer->mappings[i].connection);
+    layer->mappingsSize = 0;
 #ifdef _WIN32
     WSACleanup();
 #endif
-    *jobs = items;
-    return layer->mappingsSize*2;
 }
 
 /* run only when the server is stopped */
@@ -602,7 +555,7 @@ UA_ServerNetworkLayerTCP(UA_ConnectionConfig conf, UA_UInt16 port) {
 
     nl.handle = layer;
     nl.start = ServerNetworkLayerTCP_start;
-    nl.getJobs = ServerNetworkLayerTCP_getJobs;
+    nl.listen = ServerNetworkLayerTCP_listen;
     nl.stop = ServerNetworkLayerTCP_stop;
     nl.deleteMembers = ServerNetworkLayerTCP_deleteMembers;
     return nl;

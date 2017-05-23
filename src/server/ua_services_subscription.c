@@ -519,7 +519,8 @@ Service_DeleteSubscriptions(UA_Server *server, UA_Session *session,
     if(!sessionToken)
         return;
     UA_NodeId_copy(&session->authenticationToken, sessionToken);
-    UA_Server_delayedCallback(server, (UA_ServerCallback)UA_Subscription_answerPublishRequestsNoSubscription,
+    UA_Server_delayedCallback(server,
+                              (UA_ServerInternalCallback)UA_Subscription_answerPublishRequestsNoSubscription,
                               sessionToken);
 }
 

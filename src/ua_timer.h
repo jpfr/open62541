@@ -10,10 +10,19 @@ extern "C" {
 #endif
 
 #include "ua_util.h"
-#include "ua_job.h"
+
+/* Three pointers are passed into jobs:
+ * - application (server / client)
+ * - context (connection, session, ...)
+ * - data (userdefined) */
+typedef struct {
+    void (*callback)(void *application, void *context, void *data);
+    void *context;
+    void *data;
+} UA_Job;
 
 typedef void
-(*UA_RepeatedJobsListProcessCallback)(void *processContext, UA_Job *job);
+(*UA_RepeatedJobsListProcessCallback)(void *application, UA_Job *job);
 
 struct UA_RepeatedJob;
 typedef struct UA_RepeatedJob UA_RepeatedJob;
@@ -26,17 +35,11 @@ typedef struct {
     UA_RepeatedJob * volatile changes_head;
     UA_RepeatedJob *changes_tail;
     UA_RepeatedJob *changes_stub;
-
-    /* The callback to process jobs that have timed out */
-    UA_RepeatedJobsListProcessCallback processCallback;
-    void *processContext;
 } UA_RepeatedJobsList;
 
 /* Initialize the RepeatedJobsSList. Not thread-safe. */
 void
-UA_RepeatedJobsList_init(UA_RepeatedJobsList *rjl,
-                         UA_RepeatedJobsListProcessCallback processCallback,
-                         void *processContext);
+UA_RepeatedJobsList_init(UA_RepeatedJobsList *rjl);
 
 /* Add a repated job. Thread-safe, can be used in parallel and in parallel with
  * UA_RepeatedJobsList_process. */
@@ -50,10 +53,13 @@ UA_StatusCode
 UA_RepeatedJobsList_removeRepeatedJob(UA_RepeatedJobsList *rjl, const UA_Guid jobId);
 
 /* Process the repeated jobs that have timed out. Returns the timestamp of the
- * next scheduled repeated job. Not thread-safe. */
+ * next scheduled repeated job. Not thread-safe.
+
+ * application is a pointer to the client / server environment for the callback.
+ * dispatched is set to true when at least one job was run / dispatched. */
 UA_DateTime
 UA_RepeatedJobsList_process(UA_RepeatedJobsList *rjl, UA_DateTime nowMonotonic,
-                            UA_Boolean *dispatched);
+                            void *application, UA_Boolean *dispatched);
 
 /* Remove all repeated jobs. Not thread-safe. */
 void

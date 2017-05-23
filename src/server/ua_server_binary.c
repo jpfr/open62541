@@ -588,14 +588,24 @@ UA_Server_processSecureChannelMessage(UA_Server *server, UA_SecureChannel *chann
 
 /* Takes the raw message from the network layer */
 void
-UA_Server_processBinaryMessage(UA_Server *server, UA_Connection *connection,
-                               const UA_ByteString *message) {
+UA_Server_Connection_processBinaryMessage(UA_Server *server,
+                                          UA_Connection *connection,
+                                          UA_ByteString *message) {
+    UA_Boolean realloced = UA_FALSE;
+    UA_StatusCode retval = UA_Connection_completeMessages(connection, message, &realloced);
+    if(retval != UA_STATUSCODE_GOOD) {
+        if(!realloced)
+            connection->releaseRecvBuffer(connection, message);
+        else
+            UA_ByteString_deleteMembers(message);
+        return;
+    }
+    
     UA_SecureChannel *channel = connection->channel;
     if(channel) {
         /* Assemble chunks in the securechannel and process complete messages */
-        UA_StatusCode retval = 
-            UA_SecureChannel_processChunks(channel, message,
-                 (UA_ProcessMessageCallback*)UA_Server_processSecureChannelMessage, server);
+        retval = UA_SecureChannel_processChunks(channel, message,
+                      (UA_ProcessMessageCallback*)UA_Server_processSecureChannelMessage, server);
         if(retval != UA_STATUSCODE_GOOD)
             UA_LOG_TRACE_CHANNEL(server->config.logger, channel, "Procesing chunks "
                                  "resulted in error code %s", UA_StatusCode_name(retval));
@@ -603,7 +613,7 @@ UA_Server_processBinaryMessage(UA_Server *server, UA_Connection *connection,
         /* Process messages without a channel and no chunking */
         size_t offset = 0;
         UA_TcpMessageHeader tcpMessageHeader;
-        UA_StatusCode retval = UA_TcpMessageHeader_decodeBinary(message, &offset, &tcpMessageHeader);
+        retval = UA_TcpMessageHeader_decodeBinary(message, &offset, &tcpMessageHeader);
         if(retval != UA_STATUSCODE_GOOD) {
             connection->close(connection);
             return;
@@ -651,4 +661,16 @@ UA_Server_processBinaryMessage(UA_Server *server, UA_Connection *connection,
             connection->close(connection);
         }
     }
+
+    if(!realloced)
+        connection->releaseRecvBuffer(connection, message);
+    else
+        UA_ByteString_deleteMembers(message);
+}
+
+void UA_Server_Connection_removeConnection(UA_Server *server,
+                                           UA_Connection *connection) {
+    UA_Connection_detachSecureChannel(connection);
+    connection->close(connection);
+    UA_Server_delayedFree(server, connection);
 }

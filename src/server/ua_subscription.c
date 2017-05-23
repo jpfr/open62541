@@ -243,12 +243,9 @@ void UA_MoniteredItem_SampleCallback(UA_Server *server, UA_MonitoredItem *monito
 
 UA_StatusCode
 MonitoredItem_registerSampleJob(UA_Server *server, UA_MonitoredItem *mon) {
-    UA_Job job;
-    job.type = UA_JOBTYPE_METHODCALL;
-    job.job.methodCall.method = (UA_ServerCallback)UA_MoniteredItem_SampleCallback;
-    job.job.methodCall.data = mon;
-    UA_StatusCode retval = UA_Server_addRepeatedJob(server, job,
-                                                    (UA_UInt32)mon->samplingInterval,
+    UA_StatusCode retval = UA_Server_addInternalRepeatedJob(server,
+                                                    (UA_ServerInternalCallback)UA_MoniteredItem_SampleCallback,
+                                                    mon, (UA_UInt32)mon->samplingInterval,
                                                     &mon->sampleJobGuid);
     if(retval == UA_STATUSCODE_GOOD)
         mon->sampleJobIsRegistered = true;
@@ -570,13 +567,11 @@ Subscription_registerPublishJob(UA_Server *server, UA_Subscription *sub) {
     UA_LOG_DEBUG_SESSION(server->config.logger, sub->session,
                          "Subscription %u | Register subscription publishing callback",
                          sub->subscriptionID);
-    UA_Job job;
-    job.type = UA_JOBTYPE_METHODCALL;
-    job.job.methodCall.method = (UA_ServerCallback)UA_Subscription_publishCallback;
-    job.job.methodCall.data = sub;
     UA_StatusCode retval =
-        UA_Server_addRepeatedJob(server, job, (UA_UInt32)sub->publishingInterval,
-                                 &sub->publishJobGuid);
+        UA_Server_addInternalRepeatedJob(server,
+                                         (UA_ServerInternalCallback)UA_Subscription_publishCallback,
+                                         sub, (UA_UInt32)sub->publishingInterval,
+                                         &sub->publishJobGuid);
     if(retval == UA_STATUSCODE_GOOD)
         sub->publishJobIsRegistered = true;
     return retval;

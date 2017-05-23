@@ -199,7 +199,8 @@ void UA_Server_delete(UA_Server *server) {
 }
 
 /* Recurring cleanup. Removing unused and timed-out channels and sessions */
-static void UA_Server_cleanup(UA_Server *server, void *_) {
+static void
+UA_Server_cleanup(UA_Server *server, void *_) {
     UA_DateTime nowMonotonic = UA_DateTime_nowMonotonic();
     UA_SessionManager_cleanupTimedOut(&server->sessionManager, nowMonotonic);
     UA_SecureChannelManager_cleanupTimedOut(&server->secureChannelManager, nowMonotonic);
@@ -273,13 +274,7 @@ UA_Server_new(const UA_ServerConfig config) {
 #endif
 
     /* Initialize the handling of repeated jobs */
-#ifdef UA_ENABLE_MULTITHREADING
-    UA_RepeatedJobsList_init(&server->repeatedJobs,
-                             (UA_RepeatedJobsListProcessCallback)UA_Server_dispatchJob, server);
-#else
-    UA_RepeatedJobsList_init(&server->repeatedJobs,
-                             (UA_RepeatedJobsListProcessCallback)UA_Server_processJob, server);
-#endif
+    UA_RepeatedJobsList_init(&server->repeatedJobs);
 
     /* Initialized the linked list for delayed callbacks */
 #ifndef UA_ENABLE_MULTITHREADING
@@ -307,11 +302,8 @@ UA_Server_new(const UA_ServerConfig config) {
     UA_SessionManager_init(&server->sessionManager, server);
 
     /* Add a regular job for cleanup and maintenance */
-    UA_Job cleanup;
-    cleanup.type = UA_JOBTYPE_METHODCALL;
-    cleanup.job.methodCall.data = NULL;
-    cleanup.job.methodCall.method = UA_Server_cleanup;
-    UA_Server_addRepeatedJob(server, cleanup, 10000, NULL);
+    UA_Server_addInternalRepeatedJob(server, (UA_ServerInternalCallback)UA_Server_cleanup,
+                                     NULL, 10000, NULL);
 
     /* Initialized discovery database */
 #ifdef UA_ENABLE_DISCOVERY
@@ -355,9 +347,33 @@ UA_Server_new(const UA_ServerConfig config) {
 /* Repeated Jobs */
 /*****************/
 
+static void
+callbackTrampoline(void *application, void *context, void *data) {
+    ((UA_ServerCallback)context)(data);
+}
+
+static void
+internalCallbackTrampoline(void *application, void *context, void *data) {
+    ((UA_ServerInternalCallback)context)(application, data);
+}
+
 UA_StatusCode
-UA_Server_addRepeatedJob(UA_Server *server, UA_Job job,
-                         UA_UInt32 interval, UA_Guid *jobId) {
+UA_Server_addRepeatedJob(UA_Server *server, UA_ServerCallback callback,
+                         void *data, UA_UInt32 interval, UA_Guid *jobId) {
+    UA_Job job;
+    job.callback = callbackTrampoline;
+    job.context = callback;
+    job.data = data;
+    return UA_RepeatedJobsList_addRepeatedJob(&server->repeatedJobs, job, interval, jobId);
+}
+
+UA_StatusCode
+UA_Server_addInternalRepeatedJob(UA_Server *server, UA_ServerInternalCallback callback,
+                                 void *data, UA_UInt32 interval, UA_Guid *jobId) {
+    UA_Job job;
+    job.callback = internalCallbackTrampoline;
+    job.context = callback;
+    job.data = data;
     return UA_RepeatedJobsList_addRepeatedJob(&server->repeatedJobs, job, interval, jobId);
 }
 

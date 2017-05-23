@@ -89,9 +89,6 @@ UA_Server_dispatchJob(UA_Server *server, const UA_Job *job);
 
 #endif
 
-void
-UA_Server_processJob(UA_Server *server, UA_Job *job);
-
 #if defined(UA_ENABLE_METHODCALLS) && defined(UA_ENABLE_SUBSCRIPTIONS)
 /* Internally used context to a session 'context' of the current mehtod call */
 extern UA_THREAD_LOCAL UA_Session* methodCallSession;
@@ -215,10 +212,12 @@ UA_StatusCode UA_Server_editNode(UA_Server *server, UA_Session *session, const U
 /* Event Processing */
 /********************/
 
-void UA_Server_processBinaryMessage(UA_Server *server, UA_Connection *connection,
-                                    const UA_ByteString *message);
+typedef void (*UA_ServerInternalCallback)(UA_Server *server, void *data);
 
-UA_StatusCode UA_Server_delayedCallback(UA_Server *server, UA_ServerCallback callback, void *data);
+UA_StatusCode UA_EXPORT
+UA_Server_addInternalRepeatedJob(UA_Server *server, UA_ServerInternalCallback callback,
+                                 void *data, UA_UInt32 interval, UA_Guid *jobId);
+UA_StatusCode UA_Server_delayedCallback(UA_Server *server, UA_ServerInternalCallback callback, void *data);
 UA_StatusCode UA_Server_delayedFree(UA_Server *server, void *data);
 
 /*********************/

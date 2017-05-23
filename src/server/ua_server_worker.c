@@ -42,41 +42,6 @@
 
 #define UA_MAXTIMEOUT 50 // max timeout in millisec until the next main loop iteration
 
-void
-UA_Server_processJob(UA_Server *server, UA_Job *job) {
-    UA_ASSERT_RCU_UNLOCKED();
-    UA_RCU_LOCK();
-    switch(job->type) {
-    case UA_JOBTYPE_NOTHING:
-        break;
-    case UA_JOBTYPE_DETACHCONNECTION:
-        UA_Connection_detachSecureChannel(job->job.closeConnection);
-        break;
-    case UA_JOBTYPE_BINARYMESSAGE_NETWORKLAYER:
-        {
-        UA_Server_processBinaryMessage(server, job->job.binaryMessage.connection,
-                                       &job->job.binaryMessage.message);
-        UA_Connection *connection = job->job.binaryMessage.connection;
-        connection->releaseRecvBuffer(connection, &job->job.binaryMessage.message);
-        }
-        break;
-    case UA_JOBTYPE_BINARYMESSAGE_ALLOCATED:
-        UA_Server_processBinaryMessage(server, job->job.binaryMessage.connection,
-                                       &job->job.binaryMessage.message);
-        UA_ByteString_deleteMembers(&job->job.binaryMessage.message);
-        break;
-    case UA_JOBTYPE_METHODCALL:
-    case UA_JOBTYPE_METHODCALL_DELAYED:
-        job->job.methodCall.method(server, job->job.methodCall.data);
-        break;
-    default:
-        UA_LOG_WARNING(server->config.logger, UA_LOGCATEGORY_SERVER,
-                       "Trying to execute a job of unknown type");
-        break;
-    }
-    UA_RCU_UNLOCK();
-}
-
 /*******************************/
 /* Worker Threads and Dispatch */
 /*******************************/
@@ -102,7 +67,7 @@ workerLoop(UA_Worker *worker) {
         struct DispatchJob *dj = (struct DispatchJob*)
             cds_wfcq_dequeue_blocking(&server->dispatchQueue_head, &server->dispatchQueue_tail);
         if(dj) {
-            UA_Server_processJob(server, &dj->job);
+            dj->job.callback(server, dj->job.context, dj->job.data);
             UA_free(dj);
         } else {
             /* nothing to do. sleep until a job is dispatched (and wakes up all worker threads) */
@@ -134,7 +99,7 @@ emptyDispatchQueue(UA_Server *server) {
     while(!cds_wfcq_empty(&server->dispatchQueue_head, &server->dispatchQueue_tail)) {
         struct DispatchJob *dj = (struct DispatchJob*)
             cds_wfcq_dequeue_blocking(&server->dispatchQueue_head, &server->dispatchQueue_tail);
-        UA_Server_processJob(server, &dj->job);
+        dj->job.callback(server, dj->job.context, dj->job.data);
         UA_free(dj);
     }
 }
@@ -145,13 +110,13 @@ emptyDispatchQueue(UA_Server *server) {
 /* Delayed Jobs */
 /****************/
 
-static void
-delayed_free(UA_Server *server, void *data) {
-    UA_free(data);
+static void myFree(UA_Server *_, void *p) {
+    UA_free(p);
 }
+    
 
 UA_StatusCode UA_Server_delayedFree(UA_Server *server, void *data) {
-    return UA_Server_delayedCallback(server, delayed_free, data);
+    return UA_Server_delayedCallback(server, myFree, data);
 }
 
 #ifndef UA_ENABLE_MULTITHREADING
@@ -162,13 +127,13 @@ typedef struct UA_DelayedJob {
 } UA_DelayedJob;
 
 UA_StatusCode
-UA_Server_delayedCallback(UA_Server *server, UA_ServerCallback callback, void *data) {
+UA_Server_delayedCallback(UA_Server *server, UA_ServerInternalCallback callback, void *data) {
     UA_DelayedJob *dj = (UA_DelayedJob *)UA_malloc(sizeof(UA_DelayedJob));
     if(!dj)
         return UA_STATUSCODE_BADOUTOFMEMORY;
-    dj->job.type = UA_JOBTYPE_METHODCALL;
-    dj->job.job.methodCall.data = data;
-    dj->job.job.methodCall.method = callback;
+    dj->job.callback = NULL;
+    dj->job.context = callback;
+    dj->job.data = data;
     SLIST_INSERT_HEAD(&server->delayedCallbacks, dj, next);
     return UA_STATUSCODE_GOOD;
 }
@@ -178,7 +143,7 @@ processDelayedCallbacks(UA_Server *server) {
     UA_DelayedJob *dj, *dj_tmp;
     SLIST_FOREACH_SAFE(dj, &server->delayedCallbacks, next, dj_tmp) {
         SLIST_REMOVE(&server->delayedCallbacks, dj, UA_DelayedJob, next);
-        UA_Server_processJob(server, &dj->job);
+        ((UA_ServerInternalCallback)dj->job.context)(server, dj->job.data);
         UA_free(dj);
     }
 }
@@ -285,7 +250,7 @@ dispatchDelayedJobs(UA_Server *server, void *_) {
     /* process and free all delayed jobs from here on */
     while(dw) {
         for(size_t i = 0; i < dw->jobsCount; ++i)
-            UA_Server_processJob(server, &dw->jobs[i]);
+            dw->jobs[i].callback(server, dw->jobs[i].context, dw->jobs[i].data);
         struct DelayedJobs *next = UA_atomic_xchg((void**)&beforedw->next, NULL);
         UA_free(dw->workerCounters);
         UA_free(dw);
@@ -308,7 +273,7 @@ static void processMainLoopJobs(UA_Server *server) {
     struct MainLoopJob *mlw = (struct MainLoopJob*)&head->node;
     struct MainLoopJob *next;
     do {
-        UA_Server_processJob(server, &mlw->job);
+        mlw->job.callback(server, mlw->job.context, mlw->job.data);
         next = (struct MainLoopJob*)mlw->node.next;
         UA_free(mlw);
         //cppcheck-suppress unreadVariable
@@ -356,33 +321,6 @@ UA_StatusCode UA_Server_run_startup(UA_Server *server) {
     return result;
 }
 
-/* completeMessages is run synchronous on the jobs returned from the network
-   layer, so that the order for processing TCP packets is never mixed up. */
-static void
-completeMessages(UA_Server *server, UA_Job *job) {
-    UA_Boolean realloced = UA_FALSE;
-    UA_StatusCode retval = UA_Connection_completeMessages(job->job.binaryMessage.connection,
-                                                          &job->job.binaryMessage.message, &realloced);
-    if(retval != UA_STATUSCODE_GOOD) {
-        if(retval == UA_STATUSCODE_BADOUTOFMEMORY)
-            UA_LOG_WARNING(server->config.logger, UA_LOGCATEGORY_NETWORK,
-                           "Lost message(s) from Connection %i as memory could not be allocated",
-                           job->job.binaryMessage.connection->sockfd);
-        else if(retval != UA_STATUSCODE_GOOD)
-            UA_LOG_INFO(server->config.logger, UA_LOGCATEGORY_NETWORK,
-                        "Could not merge half-received messages on Connection %i with error 0x%08x",
-                        job->job.binaryMessage.connection->sockfd, retval);
-        job->type = UA_JOBTYPE_NOTHING;
-        return;
-    }
-    if(realloced)
-        job->type = UA_JOBTYPE_BINARYMESSAGE_ALLOCATED;
-
-    /* discard the job if message is empty - also no leak is possible here */
-    if(job->job.binaryMessage.message.length == 0)
-        job->type = UA_JOBTYPE_NOTHING;
-}
-
 UA_UInt16 UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
 #ifdef UA_ENABLE_MULTITHREADING
     /* Run work assigned for the main thread */
@@ -392,7 +330,7 @@ UA_UInt16 UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
     UA_DateTime now = UA_DateTime_nowMonotonic();
     UA_Boolean dispatched = false; /* to wake up worker threads */
     UA_DateTime nextRepeated =
-        UA_RepeatedJobsList_process(&server->repeatedJobs, now, &dispatched);
+        UA_RepeatedJobsList_process(&server->repeatedJobs, now, server, &dispatched);
     UA_DateTime latest = now + (UA_MAXTIMEOUT * UA_MSEC_TO_DATETIME);
     if(nextRepeated > latest)
         nextRepeated = latest;
@@ -404,41 +342,7 @@ UA_UInt16 UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
     /* Get work from the networklayer */
     for(size_t i = 0; i < server->config.networkLayersSize; ++i) {
         UA_ServerNetworkLayer *nl = &server->config.networkLayers[i];
-        UA_Job *jobs = NULL;
-        size_t jobsSize;
-        /* only the last networklayer waits on the tieout */
-        if(i == server->config.networkLayersSize-1)
-            jobsSize = nl->getJobs(nl, &jobs, timeout);
-        else
-            jobsSize = nl->getJobs(nl, &jobs, 0);
-
-        for(size_t k = 0; k < jobsSize; ++k) {
-#ifdef UA_ENABLE_MULTITHREADING
-            /* Filter out delayed work */
-            if(jobs[k].type == UA_JOBTYPE_METHODCALL_DELAYED) {
-                addDelayedJob(server, &jobs[k]);
-                jobs[k].type = UA_JOBTYPE_NOTHING;
-                continue;
-            }
-#endif
-            /* Merge half-received messages */
-            if(jobs[k].type == UA_JOBTYPE_BINARYMESSAGE_NETWORKLAYER)
-                completeMessages(server, &jobs[k]);
-        }
-
-        /* Dispatch/process jobs */
-        for(size_t j = 0; j < jobsSize; ++j) {
-#ifdef UA_ENABLE_MULTITHREADING
-            UA_Server_dispatchJob(server, &jobs[j]);
-            dispatched = true;
-#else
-            UA_Server_processJob(server, &jobs[j]);
-#endif
-        }
-
-        /* Clean up jobs list */
-        if(jobsSize > 0)
-            UA_free(jobs);
+        nl->listen(nl, server, timeout);
     }
 
 #ifdef UA_ENABLE_MULTITHREADING
@@ -472,11 +376,7 @@ UA_UInt16 UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
 UA_StatusCode UA_Server_run_shutdown(UA_Server *server) {
     for(size_t i = 0; i < server->config.networkLayersSize; ++i) {
         UA_ServerNetworkLayer *nl = &server->config.networkLayers[i];
-        UA_Job *stopJobs = NULL;
-        size_t stopJobsSize = nl->stop(nl, &stopJobs);
-        for(size_t j = 0; j < stopJobsSize; ++j)
-            UA_Server_processJob(server, &stopJobs[j]);
-        UA_free(stopJobs);
+        nl->stop(nl, server);
     }
 
 #ifdef UA_ENABLE_MULTITHREADING

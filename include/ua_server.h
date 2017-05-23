@@ -15,8 +15,13 @@ extern "C" {
 #include "ua_types_generated_handling.h"
 #include "ua_nodeids.h"
 #include "ua_log.h"
-#include "ua_job.h"
 #include "ua_connection.h"
+
+struct UA_Server;
+typedef struct UA_Server UA_Server;
+
+struct UA_ServerNetworkLayer;
+typedef struct UA_ServerNetworkLayer UA_ServerNetworkLayer;
 
 /**
  * .. _server:
@@ -29,9 +34,6 @@ extern "C" {
  * Interface to the binary network layers. The functions in the network layer
  * are never called in parallel but only sequentially from the server's main
  * loop. So the network layer does not need to be thread-safe. */
-struct UA_ServerNetworkLayer;
-typedef struct UA_ServerNetworkLayer UA_ServerNetworkLayer;
-
 struct UA_ServerNetworkLayer {
     void *handle; // pointer to internal data
     UA_String discoveryUrl;
@@ -47,23 +49,21 @@ struct UA_ServerNetworkLayer {
      * messages and close events) for dispatch.
      *
      * @param nl The network layer
-     * @param jobs When the returned integer is >0, *jobs points to an array of
-     *        UA_Job of the returned size.
+     * @param server The server that processes the incoming packets and for closing
+     *               connections before deleting them.
      * @param timeout The timeout during which an event must arrive in
-     *        microseconds
-     * @return The size of the jobs array. If the result is negative,
-     *         an error has occurred. */
-    size_t (*getJobs)(UA_ServerNetworkLayer *nl, UA_Job **jobs, UA_UInt16 timeout);
+     *                microseconds
+     * @return A statuscode for the status of the network layer. */
+    UA_StatusCode (*listen)(UA_ServerNetworkLayer *nl, UA_Server *server, UA_UInt16 timeout);
 
     /* Closes the network connection and returns all the jobs that need to be
      * finished before the network layer can be safely deleted.
      *
      * @param nl The network layer
-     * @param jobs When the returned integer is >0, jobs points to an array of
-     *        UA_Job of the returned size.
-     * @return The size of the jobs array. If the result is negative,
-     *         an error has occurred. */
-    size_t (*stop)(UA_ServerNetworkLayer *nl, UA_Job **jobs);
+     * @param server The server that processes the incoming packets and for closing
+     *               connections before deleting them.
+     * @return A statuscode for the status of the closing operation. */
+    void (*stop)(UA_ServerNetworkLayer *nl, UA_Server *server);
 
     /** Deletes the network content. Call only after stopping. */
     void (*deleteMembers)(UA_ServerNetworkLayer *nl);
@@ -204,9 +204,6 @@ typedef struct {
 #endif
 } UA_ServerConfig;
 
-/* Add a new namespace to the server. Returns the index of the new namespace */
-UA_UInt16 UA_EXPORT UA_Server_addNamespace(UA_Server *server, const char* name);
-
 /**
  * .. _server-lifecycle:
  *
@@ -248,6 +245,8 @@ UA_StatusCode UA_EXPORT UA_Server_run_shutdown(UA_Server *server);
 /**
  * Repeated jobs
  * ------------- */
+typedef void (*UA_ServerCallback)(void *data);
+
 /* Add a job for cyclic repetition to the server.
  *
  * @param server The server object.
@@ -260,8 +259,8 @@ UA_StatusCode UA_EXPORT UA_Server_run_shutdown(UA_Server *server);
  * @return Upon success, UA_STATUSCODE_GOOD is returned.
  *         An error code otherwise. */
 UA_StatusCode UA_EXPORT
-UA_Server_addRepeatedJob(UA_Server *server, UA_Job job,
-                         UA_UInt32 interval, UA_Guid *jobId);
+UA_Server_addRepeatedJob(UA_Server *server, UA_ServerCallback callback,
+                         void *data, UA_UInt32 interval, UA_Guid *jobId);
 
 /* Remove repeated job.
  *
@@ -271,6 +270,22 @@ UA_Server_addRepeatedJob(UA_Server *server, UA_Job job,
  *         An error code otherwise. */
 UA_StatusCode UA_EXPORT
 UA_Server_removeRepeatedJob(UA_Server *server, UA_Guid jobId);
+
+/*
+ * Networking
+ * ----------
+ *
+ * Connections are created in the network layer. The server gets called to
+ * remove the connection.
+ * - Unlink the securechannel, and so on.
+ * - Free the connection when no (concurrent) server thread uses it any more. */
+void UA_Server_Connection_removeConnection(UA_Server *server,
+                                           UA_Connection *connection);
+
+void
+UA_Server_Connection_processBinaryMessage(UA_Server *server,
+                                          UA_Connection *connection,
+                                          UA_ByteString *message);
 
 /**
  * Reading and Writing Node Attributes
@@ -1060,6 +1075,12 @@ UA_Server_deleteReference(UA_Server *server, const UA_NodeId sourceNodeId,
                           const UA_NodeId referenceTypeId, UA_Boolean isForward,
                           const UA_ExpandedNodeId targetNodeId,
                           UA_Boolean deleteBidirectional);
+
+/**
+ * Utility Functions
+ * ----------------- */
+/* Add a new namespace to the server. Returns the index of the new namespace */
+UA_UInt16 UA_EXPORT UA_Server_addNamespace(UA_Server *server, const char* name);
 
 #ifdef __cplusplus
 }

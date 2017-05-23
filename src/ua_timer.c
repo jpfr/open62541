@@ -20,15 +20,11 @@ struct UA_RepeatedJob {
 };
 
 void
-UA_RepeatedJobsList_init(UA_RepeatedJobsList *rjl,
-                         UA_RepeatedJobsListProcessCallback processCallback,
-                         void *processContext) {
+UA_RepeatedJobsList_init(UA_RepeatedJobsList *rjl) {
     SLIST_INIT(&rjl->repeatedJobs);
     rjl->changes_head = (UA_RepeatedJob*)&rjl->changes_stub;
     rjl->changes_tail = (UA_RepeatedJob*)&rjl->changes_stub;
     rjl->changes_stub = NULL;
-    rjl->processCallback = processCallback;
-    rjl->processContext = processContext;
 }
 
 static void
@@ -180,6 +176,7 @@ processChanges(UA_RepeatedJobsList *rjl, UA_DateTime nowMonotonic) {
 UA_DateTime
 UA_RepeatedJobsList_process(UA_RepeatedJobsList *rjl,
                             UA_DateTime nowMonotonic,
+                            void *application,
                             UA_Boolean *dispatched) {
     /* Insert and remove jobs */
     processChanges(rjl, nowMonotonic);
@@ -217,7 +214,7 @@ UA_RepeatedJobsList_process(UA_RepeatedJobsList *rjl,
         SLIST_REMOVE_HEAD(&executedNowList, next);
 
         /* Dispatch/process job */
-        rjl->processCallback(rjl->processContext, &rj->job);
+        rj->job.callback(application, rj->job.context, &rj->job.data);
         *dispatched = true;
 
         /* Set the time for the next execution. Prevent an infinite loop by
