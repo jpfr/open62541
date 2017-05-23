@@ -173,11 +173,11 @@ struct UA_Server {
     UA_ExternalNamespace *externalNamespaces;
 #endif
 
-    /* Jobs with a repetition interval */
-    UA_RepeatedJobsList repeatedJobs;
+    /* Callbacks with a repetition interval */
+    UA_RepeatedCallbacksList repeatedCallbacks;
 
 #ifndef UA_ENABLE_MULTITHREADING
-    SLIST_HEAD(DelayedJobsList, UA_DelayedJob) delayedCallbacks;
+    SLIST_HEAD(DelayedCallbacksList, UA_DelayedCallback) delayedCallbacks;
 #else
     /* Dispatch queue head for the worker threads (the tail should not be in the same cache line) */
     struct cds_wfcq_head dispatchQueue_head;

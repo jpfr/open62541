@@ -141,7 +141,7 @@ UA_Server_forEachChildNodeCall(UA_Server *server, UA_NodeId parentNodeId,
 /* The server needs to be stopped before it can be deleted */
 void UA_Server_delete(UA_Server *server) {
     // Delete the timed work
-    UA_RepeatedJobsList_deleteMembers(&server->repeatedJobs);
+    UA_RepeatedCallbacksList_deleteMembers(&server->repeatedCallbacks);
 
     // Delete all internal data
     UA_SecureChannelManager_deleteMembers(&server->secureChannelManager);
@@ -163,8 +163,8 @@ void UA_Server_delete(UA_Server *server) {
         UA_RegisteredServer_deleteMembers(&rs->registeredServer);
         UA_free(rs);
     }
-    if(server->periodicServerRegisterJob)
-        UA_free(server->periodicServerRegisterJob);
+    if(server->periodicServerRegisterCallback)
+        UA_free(server->periodicServerRegisterCallback);
 
 # ifdef UA_ENABLE_DISCOVERY_MULTICAST
     if(server->config.applicationDescription.applicationType == UA_APPLICATIONTYPE_DISCOVERYSERVER)
@@ -273,8 +273,8 @@ UA_Server_new(const UA_ServerConfig config) {
     UA_random_seed((UA_UInt64)UA_DateTime_now());
 #endif
 
-    /* Initialize the handling of repeated jobs */
-    UA_RepeatedJobsList_init(&server->repeatedJobs);
+    /* Initialize the handling of repeated callbacks */
+    UA_RepeatedCallbacksList_init(&server->repeatedCallbacks);
 
     /* Initialized the linked list for delayed callbacks */
 #ifndef UA_ENABLE_MULTITHREADING
@@ -301,9 +301,9 @@ UA_Server_new(const UA_ServerConfig config) {
     UA_SecureChannelManager_init(&server->secureChannelManager, server);
     UA_SessionManager_init(&server->sessionManager, server);
 
-    /* Add a regular job for cleanup and maintenance */
-    UA_Server_addRepeatedJob(server, (UA_ServerCallback)UA_Server_cleanup, NULL,
-                             10000, NULL);
+    /* Add a regular callback for cleanup and maintenance */
+    UA_Server_addRepeatedCallback(server, (UA_ServerCallback)UA_Server_cleanup, NULL,
+                                  10000, NULL);
 
     /* Initialized discovery database */
 #ifdef UA_ENABLE_DISCOVERY
@@ -347,22 +347,24 @@ UA_Server_new(const UA_ServerConfig config) {
 /* Repeated Jobs */
 /*****************/
 
+/* Convert from three arguments to only two */
 static void
 callbackTrampoline(void *application, void *context, void *data) {
     ((UA_ServerCallback)context)(application, data);
 }
 
 UA_StatusCode
-UA_Server_addRepeatedJob(UA_Server *server, UA_ServerCallback callback,
-                         void *data, UA_UInt32 interval, UA_Guid *jobId) {
-    UA_Job job;
-    job.callback = callbackTrampoline;
-    job.context = callback;
-    job.data = data;
-    return UA_RepeatedJobsList_addRepeatedJob(&server->repeatedJobs, job, interval, jobId);
+UA_Server_addRepeatedCallback(UA_Server *server, UA_ServerCallback callback,
+                              void *data, UA_UInt32 interval, UA_UInt64 *callbackId) {
+    UA_Callback internalCallback;
+    internalCallback.callback = callbackTrampoline;
+    internalCallback.context = callback;
+    internalCallback.data = data;
+    return UA_RepeatedCallbacksList_addRepeatedCallback(&server->repeatedCallbacks, internalCallback,
+                                                        interval, callbackId);
 }
 
 UA_StatusCode
-UA_Server_removeRepeatedJob(UA_Server *server, UA_Guid jobId) {
-    return UA_RepeatedJobsList_removeRepeatedJob(&server->repeatedJobs, jobId);
+UA_Server_removeRepeatedCallback(UA_Server *server, UA_UInt64 callbackId) {
+    return UA_RepeatedCallbacksList_removeRepeatedCallback(&server->repeatedCallbacks, callbackId);
 }

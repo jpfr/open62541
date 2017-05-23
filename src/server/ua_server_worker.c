@@ -121,29 +121,29 @@ UA_StatusCode UA_Server_delayedFree(UA_Server *server, void *data) {
 
 #ifndef UA_ENABLE_MULTITHREADING
 
-typedef struct UA_DelayedJob {
-    SLIST_ENTRY(UA_DelayedJob) next;
-    UA_Job job;
-} UA_DelayedJob;
+typedef struct UA_DelayedCallback {
+    SLIST_ENTRY(UA_DelayedCallback) next;
+    UA_Callback callback;
+} UA_DelayedCallback;
 
 UA_StatusCode
 UA_Server_delayedCallback(UA_Server *server, UA_ServerCallback callback, void *data) {
-    UA_DelayedJob *dj = (UA_DelayedJob *)UA_malloc(sizeof(UA_DelayedJob));
+    UA_DelayedCallback *dj = (UA_DelayedCallback*)UA_malloc(sizeof(UA_DelayedCallback));
     if(!dj)
         return UA_STATUSCODE_BADOUTOFMEMORY;
-    dj->job.callback = NULL;
-    dj->job.context = callback;
-    dj->job.data = data;
+    dj->callback.callback = NULL;
+    dj->callback.context = callback;
+    dj->callback.data = data;
     SLIST_INSERT_HEAD(&server->delayedCallbacks, dj, next);
     return UA_STATUSCODE_GOOD;
 }
 
 static void
 processDelayedCallbacks(UA_Server *server) {
-    UA_DelayedJob *dj, *dj_tmp;
+    UA_DelayedCallback *dj, *dj_tmp;
     SLIST_FOREACH_SAFE(dj, &server->delayedCallbacks, next, dj_tmp) {
-        SLIST_REMOVE(&server->delayedCallbacks, dj, UA_DelayedJob, next);
-        ((UA_ServerCallback)dj->job.context)(server, dj->job.data);
+        SLIST_REMOVE(&server->delayedCallbacks, dj, UA_DelayedCallback, next);
+        ((UA_ServerCallback)dj->callback.context)(server, dj->callback.data);
         UA_free(dj);
     }
 }
@@ -330,7 +330,7 @@ UA_UInt16 UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
     UA_DateTime now = UA_DateTime_nowMonotonic();
     UA_Boolean dispatched = false; /* to wake up worker threads */
     UA_DateTime nextRepeated =
-        UA_RepeatedJobsList_process(&server->repeatedJobs, now, server, &dispatched);
+        UA_RepeatedCallbacksList_process(&server->repeatedCallbacks, now, server, &dispatched);
     UA_DateTime latest = now + (UA_MAXTIMEOUT * UA_MSEC_TO_DATETIME);
     if(nextRepeated > latest)
         nextRepeated = latest;

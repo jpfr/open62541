@@ -11,179 +11,184 @@
  * design by Dmitry Vyukov.
  * http://www.1024cores.net/home/lock-free-algorithms/queues/intrusive-mpsc-node-based-queue */
 
-struct UA_RepeatedJob {
-    SLIST_ENTRY(UA_RepeatedJob) next; /* Next element in the list */
-    UA_DateTime nextTime;             /* The next time when the jobs are to be executed */
-    UA_UInt64 interval;               /* Interval in 100ns resolution */
-    UA_Guid id;                       /* Id of the repeated job */
-    UA_Job job;                       /* The job description itself */
+struct UA_RepeatedCallback {
+    SLIST_ENTRY(UA_RepeatedCallback) next; /* Next element in the list */
+    UA_DateTime nextTime;                  /* The next time when the callbacks are to be executed */
+    UA_UInt64 interval;                    /* Interval in 100ns resolution */
+    UA_UInt64 id;                          /* Id of the repeated callback */
+    UA_Callback callback;                  /* The callback description itself */
 };
 
 void
-UA_RepeatedJobsList_init(UA_RepeatedJobsList *rjl) {
-    SLIST_INIT(&rjl->repeatedJobs);
-    rjl->changes_head = (UA_RepeatedJob*)&rjl->changes_stub;
-    rjl->changes_tail = (UA_RepeatedJob*)&rjl->changes_stub;
-    rjl->changes_stub = NULL;
+UA_RepeatedCallbacksList_init(UA_RepeatedCallbacksList *rcl) {
+    SLIST_INIT(&rcl->repeatedCallbacks);
+    rcl->changes_head = (UA_RepeatedCallback*)&rcl->changes_stub;
+    rcl->changes_tail = (UA_RepeatedCallback*)&rcl->changes_stub;
+    rcl->changes_stub = NULL;
+    rcl->identiferCounter = 0;
 }
 
 static void
-enqueueChange(UA_RepeatedJobsList *rjl, UA_RepeatedJob *rj) {
-    rj->next.sle_next = NULL;
-    UA_RepeatedJob *prev = (UA_RepeatedJob *)UA_atomic_xchg((void* volatile *)&rjl->changes_head, rj);
+enqueueChange(UA_RepeatedCallbacksList *rcl, UA_RepeatedCallback *rc) {
+    rc->next.sle_next = NULL;
+    UA_RepeatedCallback *prev = (UA_RepeatedCallback*)UA_atomic_xchg((void * volatile *)&rcl->changes_head, rc);
     /* Nothing can be dequeued while the producer is blocked here */
-    prev->next.sle_next = rj; /* Once this change is visible in the consumer,
+    prev->next.sle_next = rc; /* Once this change is visible in the consumer,
                                * the node is dequeued in the following
                                * iteration */
 }
 
-static UA_RepeatedJob *
-dequeueChange(UA_RepeatedJobsList *rjl) {
-    UA_RepeatedJob *tail = rjl->changes_tail;
-    UA_RepeatedJob *next = tail->next.sle_next;
-    if(tail == (UA_RepeatedJob*)&rjl->changes_stub) {
+static UA_RepeatedCallback *
+dequeueChange(UA_RepeatedCallbacksList *rcl) {
+    UA_RepeatedCallback *tail = rcl->changes_tail;
+    UA_RepeatedCallback *next = tail->next.sle_next;
+    if(tail == (UA_RepeatedCallback*)&rcl->changes_stub) {
         if(!next)
             return NULL;
-        rjl->changes_tail = next;
+        rcl->changes_tail = next;
         tail = next;
         next = next->next.sle_next;
     }
     if(next) {
-        rjl->changes_tail = next;
+        rcl->changes_tail = next;
         return tail;
     }
-    UA_RepeatedJob* head = rjl->changes_head;
+    UA_RepeatedCallback* head = rcl->changes_head;
     if(tail != head)
         return NULL;
-    enqueueChange(rjl, (UA_RepeatedJob*)&rjl->changes_stub);
+    enqueueChange(rcl, (UA_RepeatedCallback*)&rcl->changes_stub);
     next = tail->next.sle_next;
     if(next) {
-        rjl->changes_tail = next;
+        rcl->changes_tail = next;
         return tail;
     }
     return NULL;
 }
 
-/* Adding repeated jobs: Add an entry with the "nextTime" timestamp in the
+/* Adding repeated callbacks: Add an entry with the "nextTime" timestamp in the
  * future. This will be picked up in the next iteration and inserted at the
  * correct place. So that the next execution takes place ät "nextTime". */
 UA_StatusCode
-UA_RepeatedJobsList_addRepeatedJob(UA_RepeatedJobsList *rjl, const UA_Job job,
-                                   const UA_UInt32 interval, UA_Guid *jobId) {
+UA_RepeatedCallbacksList_addRepeatedCallback(UA_RepeatedCallbacksList *rcl,
+                                             const UA_Callback callback,
+                                             const UA_UInt32 interval,
+                                             UA_UInt64 *callbackId) {
     /* The interval needs to be at least 5ms */
     if(interval < 5)
         return UA_STATUSCODE_BADINTERNALERROR;
 
-    /* Allocate the repeated job structure */
-    UA_RepeatedJob *rj = (UA_RepeatedJob*)UA_malloc(sizeof(UA_RepeatedJob));
-    if(!rj)
+    /* Allocate the repeated callback structure */
+    UA_RepeatedCallback *rc = (UA_RepeatedCallback*)UA_malloc(sizeof(UA_RepeatedCallback));
+    if(!rc)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
-    /* Set the repeated job */
-    rj->interval = (UA_UInt64)interval * (UA_UInt64)UA_MSEC_TO_DATETIME;
-    rj->id = UA_Guid_random();
-    rj->job = job;
-    rj->nextTime = UA_DateTime_nowMonotonic() + (UA_DateTime)rj->interval;
+    /* Set the repeated callback */
+    rc->interval = (UA_UInt64)interval * (UA_UInt64)UA_MSEC_TO_DATETIME;
+    rc->id = ++rcl->identiferCounter;
+    rc->callback = callback;
+    rc->nextTime = UA_DateTime_nowMonotonic() + (UA_DateTime)rc->interval;
 
-    /* Set the output guid */
-    if(jobId)
-        *jobId = rj->id;
+    /* Set the output identifier */
+    if(callbackId)
+        *callbackId = rc->id;
 
     /* Enqueue the changes in the MPSC queue */
-    enqueueChange(rjl, rj);
+    enqueueChange(rcl, rc);
     return UA_STATUSCODE_GOOD;
 }
 
 static void
-addRepeatedJob(UA_RepeatedJobsList *rjl,
-               UA_RepeatedJob * UA_RESTRICT rj,
-               UA_DateTime nowMonotonic) {
+addRepeatedCallback(UA_RepeatedCallbacksList *rcl,
+                    UA_RepeatedCallback * UA_RESTRICT rc,
+                    UA_DateTime nowMonotonic) {
     /* The latest time for the first execution */
-    rj->nextTime = nowMonotonic + (UA_Int64)rj->interval;
+    rc->nextTime = nowMonotonic + (UA_Int64)rc->interval;
 
-    /* Find the last entry before this job */
-    UA_RepeatedJob *tmpRj, *afterRj = NULL;
-    SLIST_FOREACH(tmpRj, &rjl->repeatedJobs, next) {
-        if(tmpRj->nextTime >= rj->nextTime)
+    /* Find the last entry before this callback */
+    UA_RepeatedCallback *tmpRc, *afterRc = NULL;
+    SLIST_FOREACH(tmpRc, &rcl->repeatedCallbacks, next) {
+        if(tmpRc->nextTime >= rc->nextTime)
             break;
-        afterRj = tmpRj;
+        afterRc = tmpRc;
 
-        /* The goal is to have many repeated jobs with the same repetition
+        /* The goal is to have many repeated callbacks with the same repetition
          * interval in a "block" in order to reduce linear search for re-entry
          * to the sorted list after processing. Allow the first execution to lie
-         * between "nextTime - 1s" and "nextTime" if this adjustment groups jobs
+         * between "nextTime - 1s" and "nextTime" if this adjustment groups callbacks
          * with the same repetition interval. */
-        if(tmpRj->interval == rj->interval &&
-           tmpRj->nextTime > (rj->nextTime - UA_SEC_TO_DATETIME))
-            rj->nextTime = tmpRj->nextTime;
+        if(tmpRc->interval == rc->interval &&
+           tmpRc->nextTime > (rc->nextTime - UA_SEC_TO_DATETIME))
+            rc->nextTime = tmpRc->nextTime;
     }
 
-    /* Add the repeated job */
-    if(afterRj)
-        SLIST_INSERT_AFTER(afterRj, rj, next);
+    /* Add the repeated callback */
+    if(afterRc)
+        SLIST_INSERT_AFTER(afterRc, rc, next);
     else
-        SLIST_INSERT_HEAD(&rjl->repeatedJobs, rj, next);
+        SLIST_INSERT_HEAD(&rcl->repeatedCallbacks, rc, next);
 }
 
-/* Removing a repeated job: Add an entry with the "nextTime" timestamp set to
- * UA_INT64_MAX. The next iteration picks this up and removes the repated job
+/* Removing a repeated callback: Add an entry with the "nextTime" timestamp set to
+ * UA_INT64_MAX. The next iteration picks this up and removes the repated callback
  * from the linked list. */
 UA_StatusCode
-UA_RepeatedJobsList_removeRepeatedJob(UA_RepeatedJobsList *rjl, const UA_Guid jobId) {
-    /* Allocate the repeated job structure */
-    UA_RepeatedJob *rj = (UA_RepeatedJob*)UA_malloc(sizeof(UA_RepeatedJob));
-    if(!rj)
+UA_RepeatedCallbacksList_removeRepeatedCallback(UA_RepeatedCallbacksList *rcl,
+                                                const UA_UInt64 callbackId) {
+    /* Allocate the repeated callback structure */
+    UA_RepeatedCallback *rc = (UA_RepeatedCallback*)UA_malloc(sizeof(UA_RepeatedCallback));
+    if(!rc)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
-    /* Set the repeated job with the sentinel nextTime */
-    rj->id = jobId;
-    rj->nextTime = UA_INT64_MAX;
+    /* Set the repeated callback with the sentinel nextTime */
+    rc->id = callbackId;
+    rc->nextTime = UA_INT64_MAX;
 
     /* Enqueue the changes in the MPSC queue */
-    enqueueChange(rjl, rj);
+    enqueueChange(rcl, rc);
     return UA_STATUSCODE_GOOD;
 }
 
 static void
-removeRepeatedJob(UA_RepeatedJobsList *rjl, const UA_Guid *jobId) {
-    UA_RepeatedJob *rj, *prev = NULL;
-    SLIST_FOREACH(rj, &rjl->repeatedJobs, next) {
-        if(UA_Guid_equal(jobId, &rj->id)) {
+removeRepeatedCallback(UA_RepeatedCallbacksList *rcl,
+                       const UA_UInt64 *callbackId) {
+    UA_RepeatedCallback *rc, *prev = NULL;
+    SLIST_FOREACH(rc, &rcl->repeatedCallbacks, next) {
+        if(callbackId == &rc->id) {
             if(prev)
                 SLIST_REMOVE_AFTER(prev, next);
             else
-                SLIST_REMOVE_HEAD(&rjl->repeatedJobs, next);
-            UA_free(rj);
+                SLIST_REMOVE_HEAD(&rcl->repeatedCallbacks, next);
+            UA_free(rc);
             break;
         }
-        prev = rj;
+        prev = rc;
     }
 }
 
 static void
-processChanges(UA_RepeatedJobsList *rjl, UA_DateTime nowMonotonic) {
-    UA_RepeatedJob *change;
-    while((change = dequeueChange(rjl))) {
+processChanges(UA_RepeatedCallbacksList *rcl, UA_DateTime nowMonotonic) {
+    UA_RepeatedCallback *change;
+    while((change = dequeueChange(rcl))) {
         if(change->nextTime < UA_INT64_MAX) {
-            addRepeatedJob(rjl, change, nowMonotonic);
+            addRepeatedCallback(rcl, change, nowMonotonic);
         } else {
-            removeRepeatedJob(rjl, &change->id);
+            removeRepeatedCallback(rcl, &change->id);
             UA_free(change);
         }
     }
 }
 
 UA_DateTime
-UA_RepeatedJobsList_process(UA_RepeatedJobsList *rjl,
-                            UA_DateTime nowMonotonic,
-                            void *application,
-                            UA_Boolean *dispatched) {
-    /* Insert and remove jobs */
-    processChanges(rjl, nowMonotonic);
+UA_RepeatedCallbacksList_process(UA_RepeatedCallbacksList *rcl,
+                                 UA_DateTime nowMonotonic,
+                                 void *application,
+                                 UA_Boolean *dispatched) {
+    /* Insert and remove callbacks */
+    processChanges(rcl, nowMonotonic);
 
-    /* Find the last job to be executed now */
-    UA_RepeatedJob *firstAfter, *lastNow = NULL;
-    SLIST_FOREACH(firstAfter, &rjl->repeatedJobs, next) {
+    /* Find the last callback to be executed now */
+    UA_RepeatedCallback *firstAfter, *lastNow = NULL;
+    SLIST_FOREACH(firstAfter, &rcl->repeatedCallbacks, next) {
         if(firstAfter->nextTime > nowMonotonic)
             break;
         lastNow = firstAfter;
@@ -196,79 +201,79 @@ UA_RepeatedJobsList_process(UA_RepeatedJobsList *rjl,
         return UA_INT64_MAX;
     }
 
-    /* Put the jobs that are executed now in a separate list */
-    struct memberstruct(UA_RepeatedJobsList,RepeatedJobsSList) executedNowList;
-    executedNowList.slh_first = SLIST_FIRST(&rjl->repeatedJobs);
+    /* Put the callbacks that are executed now in a separate list */
+    struct memberstruct(UA_RepeatedCallbacksList,RepeatedCallbacksSList) executedNowList;
+    executedNowList.slh_first = SLIST_FIRST(&rcl->repeatedCallbacks);
     lastNow->next.sle_next = NULL;
 
     /* Fake entry to represent the first element in the newly-sorted list */
-    UA_RepeatedJob tmp_first;
+    UA_RepeatedCallback tmp_first;
     tmp_first.nextTime = nowMonotonic - 1; /* never matches for last_dispatched */
     tmp_first.next.sle_next = firstAfter;
-    UA_RepeatedJob *last_dispatched = &tmp_first;
+    UA_RepeatedCallback *last_dispatched = &tmp_first;
 
-    /* Iterate over the list of jobs to process now */
-    UA_RepeatedJob *rj;
-    while((rj = SLIST_FIRST(&executedNowList))) {
+    /* Iterate over the list of callbacks to process now */
+    UA_RepeatedCallback *rc;
+    while((rc = SLIST_FIRST(&executedNowList))) {
         /* Remove from the list */
         SLIST_REMOVE_HEAD(&executedNowList, next);
 
-        /* Dispatch/process job */
-        rj->job.callback(application, rj->job.context, &rj->job.data);
+        /* Dispatch/process callback */
+        rc->callback.callback(application, rc->callback.context, &rc->callback.data);
         *dispatched = true;
 
         /* Set the time for the next execution. Prevent an infinite loop by
          * forcing the next processing into the next iteration. */
-        rj->nextTime += (UA_Int64)rj->interval;
-        if(rj->nextTime < nowMonotonic)
-            rj->nextTime = nowMonotonic + 1;
+        rc->nextTime += (UA_Int64)rc->interval;
+        if(rc->nextTime < nowMonotonic)
+            rc->nextTime = nowMonotonic + 1;
 
-        /* Find the new position for rj to keep the list sorted */
-        UA_RepeatedJob *prev_rj;
-        if(last_dispatched->nextTime == rj->nextTime) {
-            /* We "batch" repeatedJobs with the same interval in
-             * addRepeatedJobs. So this might occur quite often. */
+        /* Find the new position for rc to keep the list sorted */
+        UA_RepeatedCallback *prev_rc;
+        if(last_dispatched->nextTime == rc->nextTime) {
+            /* We "batch" repeatedCallbacks with the same interval in
+             * addRepeatedCallbacks. So this might occur quite often. */
             UA_assert(last_dispatched != &tmp_first);
-            prev_rj = last_dispatched;
+            prev_rc = last_dispatched;
         } else {
             /* Find the position for the next execution by a linear search
-             * starting at the first possible job */
-            prev_rj = &tmp_first;
+             * starting at the first possible callback */
+            prev_rc = &tmp_first;
             while(true) {
-                UA_RepeatedJob *n = SLIST_NEXT(prev_rj, next);
-                if(!n || n->nextTime >= rj->nextTime)
+                UA_RepeatedCallback *n = SLIST_NEXT(prev_rc, next);
+                if(!n || n->nextTime >= rc->nextTime)
                     break;
-                prev_rj = n;
+                prev_rc = n;
             }
 
             /* Update last_dispatched */
-            last_dispatched = rj;
+            last_dispatched = rc;
         }
 
         /* Add entry to the new position in the sorted list */
-        SLIST_INSERT_AFTER(prev_rj, rj, next);
+        SLIST_INSERT_AFTER(prev_rc, rc, next);
     }
 
     /* Set the entry-point for the newly sorted list */
-    rjl->repeatedJobs.slh_first = tmp_first.next.sle_next;
+    rcl->repeatedCallbacks.slh_first = tmp_first.next.sle_next;
 
-    /* Re-repeat processAddRemoved since one of the jobs might have removed or
-     * added a job. So we get the returned timeout right. */
-    processChanges(rjl, nowMonotonic);
+    /* Re-repeat processAddRemoved since one of the callbacks might have removed or
+     * added a callback. So we get the returned timeout right. */
+    processChanges(rcl, nowMonotonic);
 
     /* Return timestamp of next repetition */
-    return SLIST_FIRST(&rjl->repeatedJobs)->nextTime;
+    return SLIST_FIRST(&rcl->repeatedCallbacks)->nextTime;
 }
 
 void
-UA_RepeatedJobsList_deleteMembers(UA_RepeatedJobsList *rjl) {
+UA_RepeatedCallbacksList_deleteMembers(UA_RepeatedCallbacksList *rcl) {
     /* Process changes to empty the queue */
-    processChanges(rjl, 0);
+    processChanges(rcl, 0);
 
-    /* Remove repeated jobs */
-    UA_RepeatedJob *current;
-    while((current = SLIST_FIRST(&rjl->repeatedJobs))) {
-        SLIST_REMOVE_HEAD(&rjl->repeatedJobs, next);
+    /* Remove repeated callbacks */
+    UA_RepeatedCallback *current;
+    while((current = SLIST_FIRST(&rcl->repeatedCallbacks))) {
+        SLIST_REMOVE_HEAD(&rcl->repeatedCallbacks, next);
         UA_free(current);
     }
 }

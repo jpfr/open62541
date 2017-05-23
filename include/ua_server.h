@@ -254,13 +254,13 @@ typedef void (*UA_ServerCallback)(UA_Server *server, void *data);
  * @param interval The job shall be repeatedly executed with the given interval
  *        (in ms). The interval must be larger than 5ms. The first execution
  *        occurs at now() + interval at the latest.
- * @param jobId Set to the guid of the repeated job. This can be used to cancel
- *        the job later on. If the pointer is null, the guid is not set.
+ * @param callbackId Set to the identifier of the repeated job. This can be used to cancel
+ *        the job later on. If the pointer is null, the identifier is not set.
  * @return Upon success, UA_STATUSCODE_GOOD is returned.
  *         An error code otherwise. */
 UA_StatusCode UA_EXPORT
-UA_Server_addRepeatedJob(UA_Server *server, UA_ServerCallback callback,
-                         void *data, UA_UInt32 interval, UA_Guid *jobId);
+UA_Server_addRepeatedCallback(UA_Server *server, UA_ServerCallback callback,
+                              void *data, UA_UInt32 interval, UA_UInt64 *callbackId);
 
 /* Remove repeated job.
  *
@@ -269,7 +269,7 @@ UA_Server_addRepeatedJob(UA_Server *server, UA_ServerCallback callback,
  * @return Upon sucess, UA_STATUSCODE_GOOD is returned.
  *         An error code otherwise. */
 UA_StatusCode UA_EXPORT
-UA_Server_removeRepeatedJob(UA_Server *server, UA_Guid jobId);
+UA_Server_removeRepeatedCallback(UA_Server *server, UA_UInt64 callbackId);
 
 /*
  * Networking

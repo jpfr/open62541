@@ -11,59 +11,61 @@ extern "C" {
 
 #include "ua_util.h"
 
-/* Three pointers are passed into jobs:
+/* Three pointers are passed into callbacks:
  * - application (server / client)
  * - context (connection, session, ...)
- * - data (userdefined) */
+ * - data (anything else) */
 typedef struct {
     void (*callback)(void *application, void *context, void *data);
     void *context;
     void *data;
-} UA_Job;
+} UA_Callback;
 
 typedef void
-(*UA_RepeatedJobsListProcessCallback)(void *application, UA_Job *job);
+(*UA_RepeatedCallbacksListProcessCallback)(void *application, UA_Callback *callback);
 
-struct UA_RepeatedJob;
-typedef struct UA_RepeatedJob UA_RepeatedJob;
+struct UA_RepeatedCallback;
+typedef struct UA_RepeatedCallback UA_RepeatedCallback;
 
 typedef struct {
-    /* The linked list of jobs is sorted according to the execution timestamp. */
-    SLIST_HEAD(RepeatedJobsSList, UA_RepeatedJob) repeatedJobs;
+    /* The linked list of callbacks is sorted according to the execution timestamp. */
+    SLIST_HEAD(RepeatedCallbacksSList, UA_RepeatedCallback) repeatedCallbacks;
 
-    /* Changes to the repeated jobs in a multi-producer single-consumer queue */
-    UA_RepeatedJob * volatile changes_head;
-    UA_RepeatedJob *changes_tail;
-    UA_RepeatedJob *changes_stub;
-} UA_RepeatedJobsList;
+    /* Changes to the repeated callbacks in a multi-producer single-consumer queue */
+    UA_RepeatedCallback * volatile changes_head;
+    UA_RepeatedCallback *changes_tail;
+    UA_RepeatedCallback *changes_stub;
 
-/* Initialize the RepeatedJobsSList. Not thread-safe. */
-void
-UA_RepeatedJobsList_init(UA_RepeatedJobsList *rjl);
+    UA_UInt64 identiferCounter;
+} UA_RepeatedCallbacksList;
 
-/* Add a repated job. Thread-safe, can be used in parallel and in parallel with
- * UA_RepeatedJobsList_process. */
+/* Initialize the RepeatedCallbacksSList. Not thread-safe. */
+void UA_RepeatedCallbacksList_init(UA_RepeatedCallbacksList *rcl);
+
+/* Add a repated callback. Thread-safe, can be used in parallel and in parallel
+ * with UA_RepeatedCallbacksList_process. */
 UA_StatusCode
-UA_RepeatedJobsList_addRepeatedJob(UA_RepeatedJobsList *rjl, const UA_Job job,
-                                   const UA_UInt32 interval, UA_Guid *jobId);
+UA_RepeatedCallbacksList_addRepeatedCallback(UA_RepeatedCallbacksList *rcl,
+                                             const UA_Callback callback,
+                                             const UA_UInt32 interval,
+                                             UA_UInt64 *callbackId);
 
-/* Remove a repated job. Thread-safe, can be used in parallel and in parallel
- * with UA_RepeatedJobsList_process. */
+/* Remove a repated callback. Thread-safe, can be used in parallel and in
+ * parallel with UA_RepeatedCallbacksList_process. */
 UA_StatusCode
-UA_RepeatedJobsList_removeRepeatedJob(UA_RepeatedJobsList *rjl, const UA_Guid jobId);
+UA_RepeatedCallbacksList_removeRepeatedCallback(UA_RepeatedCallbacksList *rcl,
+                                                const UA_UInt64 callbackId);
 
-/* Process the repeated jobs that have timed out. Returns the timestamp of the
- * next scheduled repeated job. Not thread-safe.
-
- * application is a pointer to the client / server environment for the callback.
- * dispatched is set to true when at least one job was run / dispatched. */
+/* Process the repeated callbacks that have timed out. Returns the timestamp of
+ * the next scheduled repeated callback. Not thread-safe. Application is a
+ * pointer to the client / server environment for the callback. Dispatched is
+ * set to true when at least one callback was run / dispatched. */
 UA_DateTime
-UA_RepeatedJobsList_process(UA_RepeatedJobsList *rjl, UA_DateTime nowMonotonic,
-                            void *application, UA_Boolean *dispatched);
+UA_RepeatedCallbacksList_process(UA_RepeatedCallbacksList *rcl, UA_DateTime nowMonotonic,
+                                 void *application, UA_Boolean *dispatched);
 
-/* Remove all repeated jobs. Not thread-safe. */
-void
-UA_RepeatedJobsList_deleteMembers(UA_RepeatedJobsList *rjl);
+/* Remove all repeated callbacks. Not thread-safe. */
+void UA_RepeatedCallbacksList_deleteMembers(UA_RepeatedCallbacksList *rcl);
 
 #ifdef __cplusplus
 } // extern "C"
