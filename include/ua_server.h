@@ -245,7 +245,7 @@ UA_StatusCode UA_EXPORT UA_Server_run_shutdown(UA_Server *server);
 /**
  * Repeated jobs
  * ------------- */
-typedef void (*UA_ServerCallback)(void *data);
+typedef void (*UA_ServerCallback)(UA_Server *server, void *data);
 
 /* Add a job for cyclic repetition to the server.
  *

@@ -302,8 +302,8 @@ UA_Server_new(const UA_ServerConfig config) {
     UA_SessionManager_init(&server->sessionManager, server);
 
     /* Add a regular job for cleanup and maintenance */
-    UA_Server_addInternalRepeatedJob(server, (UA_ServerInternalCallback)UA_Server_cleanup,
-                                     NULL, 10000, NULL);
+    UA_Server_addRepeatedJob(server, (UA_ServerCallback)UA_Server_cleanup, NULL,
+                             10000, NULL);
 
     /* Initialized discovery database */
 #ifdef UA_ENABLE_DISCOVERY
@@ -349,12 +349,7 @@ UA_Server_new(const UA_ServerConfig config) {
 
 static void
 callbackTrampoline(void *application, void *context, void *data) {
-    ((UA_ServerCallback)context)(data);
-}
-
-static void
-internalCallbackTrampoline(void *application, void *context, void *data) {
-    ((UA_ServerInternalCallback)context)(application, data);
+    ((UA_ServerCallback)context)(application, data);
 }
 
 UA_StatusCode
@@ -362,16 +357,6 @@ UA_Server_addRepeatedJob(UA_Server *server, UA_ServerCallback callback,
                          void *data, UA_UInt32 interval, UA_Guid *jobId) {
     UA_Job job;
     job.callback = callbackTrampoline;
-    job.context = callback;
-    job.data = data;
-    return UA_RepeatedJobsList_addRepeatedJob(&server->repeatedJobs, job, interval, jobId);
-}
-
-UA_StatusCode
-UA_Server_addInternalRepeatedJob(UA_Server *server, UA_ServerInternalCallback callback,
-                                 void *data, UA_UInt32 interval, UA_Guid *jobId) {
-    UA_Job job;
-    job.callback = internalCallbackTrampoline;
     job.context = callback;
     job.data = data;
     return UA_RepeatedJobsList_addRepeatedJob(&server->repeatedJobs, job, interval, jobId);

@@ -110,10 +110,10 @@ emptyDispatchQueue(UA_Server *server) {
 /* Delayed Jobs */
 /****************/
 
-static void myFree(UA_Server *_, void *p) {
+static void
+myFree(UA_Server *_, void *p) {
     UA_free(p);
 }
-    
 
 UA_StatusCode UA_Server_delayedFree(UA_Server *server, void *data) {
     return UA_Server_delayedCallback(server, myFree, data);
@@ -127,7 +127,7 @@ typedef struct UA_DelayedJob {
 } UA_DelayedJob;
 
 UA_StatusCode
-UA_Server_delayedCallback(UA_Server *server, UA_ServerInternalCallback callback, void *data) {
+UA_Server_delayedCallback(UA_Server *server, UA_ServerCallback callback, void *data) {
     UA_DelayedJob *dj = (UA_DelayedJob *)UA_malloc(sizeof(UA_DelayedJob));
     if(!dj)
         return UA_STATUSCODE_BADOUTOFMEMORY;
@@ -143,7 +143,7 @@ processDelayedCallbacks(UA_Server *server) {
     UA_DelayedJob *dj, *dj_tmp;
     SLIST_FOREACH_SAFE(dj, &server->delayedCallbacks, next, dj_tmp) {
         SLIST_REMOVE(&server->delayedCallbacks, dj, UA_DelayedJob, next);
-        ((UA_ServerInternalCallback)dj->job.context)(server, dj->job.data);
+        ((UA_ServerCallback)dj->job.context)(server, dj->job.data);
         UA_free(dj);
     }
 }

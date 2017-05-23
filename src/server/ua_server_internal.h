@@ -212,12 +212,7 @@ UA_StatusCode UA_Server_editNode(UA_Server *server, UA_Session *session, const U
 /* Event Processing */
 /********************/
 
-typedef void (*UA_ServerInternalCallback)(UA_Server *server, void *data);
-
-UA_StatusCode UA_EXPORT
-UA_Server_addInternalRepeatedJob(UA_Server *server, UA_ServerInternalCallback callback,
-                                 void *data, UA_UInt32 interval, UA_Guid *jobId);
-UA_StatusCode UA_Server_delayedCallback(UA_Server *server, UA_ServerInternalCallback callback, void *data);
+UA_StatusCode UA_Server_delayedCallback(UA_Server *server, UA_ServerCallback callback, void *data);
 UA_StatusCode UA_Server_delayedFree(UA_Server *server, void *data);
 
 /*********************/

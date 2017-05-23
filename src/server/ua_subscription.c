@@ -243,8 +243,8 @@ void UA_MoniteredItem_SampleCallback(UA_Server *server, UA_MonitoredItem *monito
 
 UA_StatusCode
 MonitoredItem_registerSampleJob(UA_Server *server, UA_MonitoredItem *mon) {
-    UA_StatusCode retval = UA_Server_addInternalRepeatedJob(server,
-                                                    (UA_ServerInternalCallback)UA_MoniteredItem_SampleCallback,
+    UA_StatusCode retval = UA_Server_addRepeatedJob(server,
+                                                    (UA_ServerCallback)UA_MoniteredItem_SampleCallback,
                                                     mon, (UA_UInt32)mon->samplingInterval,
                                                     &mon->sampleJobGuid);
     if(retval == UA_STATUSCODE_GOOD)
@@ -568,10 +568,10 @@ Subscription_registerPublishJob(UA_Server *server, UA_Subscription *sub) {
                          "Subscription %u | Register subscription publishing callback",
                          sub->subscriptionID);
     UA_StatusCode retval =
-        UA_Server_addInternalRepeatedJob(server,
-                                         (UA_ServerInternalCallback)UA_Subscription_publishCallback,
-                                         sub, (UA_UInt32)sub->publishingInterval,
-                                         &sub->publishJobGuid);
+        UA_Server_addRepeatedJob(server,
+                                 (UA_ServerCallback)UA_Subscription_publishCallback,
+                                 sub, (UA_UInt32)sub->publishingInterval,
+                                 &sub->publishJobGuid);
     if(retval == UA_STATUSCODE_GOOD)
         sub->publishJobIsRegistered = true;
     return retval;
