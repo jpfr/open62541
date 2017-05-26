@@ -243,8 +243,8 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal);
 UA_StatusCode UA_EXPORT UA_Server_run_shutdown(UA_Server *server);
 
 /**
- * Repeated jobs
- * ------------- */
+ * Repeated Callbacks
+ * ------------------ */
 typedef void (*UA_ServerCallback)(UA_Server *server, void *data);
 
 /* Add a job for cyclic repetition to the server.
@@ -662,12 +662,17 @@ UA_Server_unregister_discovery(UA_Server *server, const char* discoveryServerUrl
   *        'opc.tcp://localhost:4840' will be used
   * @param intervalMs
   * @param delayFirstRegisterMs
-  * @param periodicJobId */
+  * @param periodicCallbackId */
 UA_StatusCode UA_EXPORT
-UA_Server_addPeriodicServerRegisterJob(UA_Server *server, const char* discoveryServerUrl,
-                                       const UA_UInt32 intervalMs,
-                                       const UA_UInt32 delayFirstRegisterMs,
-                                       UA_Guid* periodicJobId);
+UA_Server_addPeriodicServerRegisterCallback(UA_Server *server,
+                                            const char* discoveryServerUrl,
+                                            const UA_UInt32 intervalMs,
+                                            const UA_UInt32 delayFirstRegisterMs,
+                                            UA_UInt64* periodicCallbackId);
+
+UA_StatusCode UA_EXPORT
+UA_Server_removePeriodicServerRegisterCallback(UA_Server *server,
+                                               UA_UInt64 periodicCallbackId);
 
 /* Callback for RegisterServer. Data is passed from the register call */
 typedef void (*UA_Server_registerServerCallback)(const UA_RegisteredServer *registeredServer,

@@ -102,6 +102,17 @@ typedef struct registeredServer_list_entry {
     UA_DateTime lastSeen;
 } registeredServer_list_entry;
 
+/* The register callback adjusts its own timing when the target is not
+ * reachable. For this, it needs to delete and reinsert itself to the callback
+ * queue. */
+typedef struct PeriodicServerRegisterCallbackData {
+    LIST_ENTRY(PeriodicServerRegisterCallbackData) pointers;
+    UA_UInt64 callbackId;
+    UA_UInt32 currentIntervalMs;
+    UA_UInt32 regularInternvalMs;
+    char* discoveryServerUrl;
+} PeriodicServerRegisterCallbackData;
+
 # ifdef UA_ENABLE_DISCOVERY_MULTICAST
 typedef struct serverOnNetwork_list_entry {
     LIST_ENTRY(serverOnNetwork_list_entry) pointers;
@@ -138,11 +149,16 @@ struct UA_Server {
 
 #ifdef UA_ENABLE_DISCOVERY
     /* Discovery */
-    LIST_HEAD(registeredServer_list, registeredServer_list_entry) registeredServers; // doubly-linked list of registered servers
+    LIST_HEAD(registeredServer_list, registeredServer_list_entry) registeredServers;
     size_t registeredServersSize;
-    struct PeriodicServerRegisterJob *periodicServerRegisterJob;
+
+    /* Outgoing registering */
+    LIST_HEAD(registerCallback_list, PeriodicServerRegisterCallbackData) registerCallbacks;
+
+    /* Incoming registering */
     UA_Server_registerServerCallback registerServerCallback;
     void* registerServerCallbackData;
+
 # ifdef UA_ENABLE_DISCOVERY_MULTICAST
     mdns_daemon_t *mdnsDaemon;
     int mdnsSocket;
@@ -152,8 +168,9 @@ struct UA_Server {
     UA_Boolean mdnsRunning;
 #  endif
 
-    LIST_HEAD(serverOnNetwork_list, serverOnNetwork_list_entry) serverOnNetwork; // doubly-linked list of servers on the network (from mDNS)
+    LIST_HEAD(serverOnNetwork_list, serverOnNetwork_list_entry) serverOnNetwork;
     size_t serverOnNetworkSize;
+
     UA_UInt32 serverOnNetworkRecordIdCounter;
     UA_DateTime serverOnNetworkRecordIdLastReset;
     // hash mapping domain name to serverOnNetwork list entry

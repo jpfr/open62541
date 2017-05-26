@@ -91,8 +91,6 @@ UA_Boolean *running_register;
 UA_ServerNetworkLayer nl_register;
 pthread_t server_thread_register;
 
-UA_Guid periodicRegisterJobId;
-
 static void * serverloop_register(void *_) {
     while(*running_register)
         UA_Server_run_iterate(server_register, true);
@@ -166,9 +164,13 @@ START_TEST(Server_unregister_semaphore) {
     }
 END_TEST
 
+UA_UInt64 periodicRegisterJobId;
+
 START_TEST(Server_register_periodic) {
         // periodic register every minute, first register immediately
-        UA_StatusCode retval = UA_Server_addPeriodicServerRegisterJob(server_register, NULL, 60*1000, 100, &periodicRegisterJobId);
+        UA_StatusCode retval =
+            UA_Server_addPeriodicServerRegisterCallback(server_register, NULL, 60*1000,
+                                                        100, &periodicRegisterJobId);
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     }
 END_TEST
@@ -176,7 +178,7 @@ END_TEST
 START_TEST(Server_unregister_periodic) {
         // wait for first register delay
         sleep(1);
-        UA_Server_removeRepeatedJob(server_register, periodicRegisterJobId);
+        UA_Server_removeRepeatedCallback(server_register, periodicRegisterJobId);
         UA_StatusCode retval = UA_Server_unregister_discovery(server_register, NULL);
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     }
