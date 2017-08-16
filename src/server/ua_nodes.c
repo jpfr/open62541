@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ua_server_internal.h"
-#include "ua_nodes.h"
+#include "ua_plugin_nodestore_nodes.h"
 
 void UA_Node_deleteReferences(UA_Node *node) {
     for(size_t i = 0; i < node->referencesSize; ++i) {

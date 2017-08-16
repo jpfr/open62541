@@ -11,11 +11,11 @@ extern "C" {
 
 #include "ua_util.h"
 #include "ua_server.h"
+#include "ua_plugin_nodestore_nodes.h"
 #include "ua_timer.h"
 #include "ua_connection_internal.h"
 #include "ua_session_manager.h"
 #include "ua_securechannel_manager.h"
-#include "ua_nodestore.h"
 
 #ifdef UA_ENABLE_DISCOVERY_MULTICAST
 #include "mdnsd/libmdnsd/mdnsd.h"
@@ -102,9 +102,6 @@ struct UA_Server {
     UA_SecureChannelManager secureChannelManager;
     UA_SessionManager sessionManager;
 
-    /* Address Space */
-    UA_NodeStore *nodestore;
-
 #ifdef UA_ENABLE_DISCOVERY
     /* Discovery */
     LIST_HEAD(registeredServer_list, registeredServer_list_entry) registeredServers; // doubly-linked list of registered servers
@@ -162,9 +159,7 @@ struct UA_Server {
 /* Node Handling */
 /*****************/
 
-void UA_Node_deleteMembersAnyNodeClass(UA_Node *node);
 void UA_Node_deleteReferences(UA_Node *node);
-UA_StatusCode UA_Node_copyAnyNodeClass(const UA_Node *src, UA_Node *dst);
 
 /* Calls callback on the node. In the multithreaded case, the node is copied before and replaced in
    the nodestore. */
@@ -196,15 +191,12 @@ UA_UInt16 addNamespace(UA_Server *server, const UA_String name);
 UA_Boolean
 UA_Node_hasSubTypeOrInstances(const UA_Node *node);
 
-const UA_VariableTypeNode *
-getVariableNodeType(UA_Server *server, const UA_VariableNode *node);
-
-const UA_ObjectTypeNode *
-getObjectNodeType(UA_Server *server, const UA_ObjectNode *node);
+const UA_Node *
+getNodeType(UA_Server *server, const UA_Node *node);
 
 /* Recursively searches "upwards" in the tree following specific reference types */
 UA_Boolean
-isNodeInTree(UA_NodeStore *ns, const UA_NodeId *leafNode,
+isNodeInTree(UA_Nodestore *ns, const UA_NodeId *leafNode,
              const UA_NodeId *nodeToFind, const UA_NodeId *referenceTypeIds,
              size_t referenceTypeIdsSize);
 
@@ -213,12 +205,8 @@ isNodeInTree(UA_NodeStore *ns, const UA_NodeId *leafNode,
  * ``hasSubType`` references. Since multiple-inheritance is possible in general,
  * duplicate entries are avoided. */
 UA_StatusCode
-getTypeHierarchy(UA_NodeStore *ns, const UA_NodeId *leafType,
+getTypeHierarchy(UA_Nodestore *ns, const UA_NodeId *leafType,
                  UA_NodeId **typeHierarchy, size_t *typeHierarchySize);
-
-/* Returns a pointer to the nodeid of the node type in the node's references. If
- * no type is defined, a pointer to UA_NODEID_NULL is returned */
-const UA_NodeId * getNodeType(UA_Server *server, const UA_Node *node);
 
 typedef void (*UA_ServiceOperation)(UA_Server *server, UA_Session *session,
                                     const void *requestOperation, void *responseOperation);
@@ -242,7 +230,7 @@ UA_StatusCode
 typeCheckValue(UA_Server *server, const UA_NodeId *targetDataTypeId,
                UA_Int32 targetValueRank, size_t targetArrayDimensionsSize,
                const UA_UInt32 *targetArrayDimensions, const UA_Variant *value,
-               const UA_NumericRange *range, UA_Variant *editableValue);
+               const UA_NumericRange *range);
 
 UA_StatusCode
 compatibleArrayDimensions(size_t constraintArrayDimensionsSize,

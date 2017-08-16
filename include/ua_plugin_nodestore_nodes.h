@@ -2,14 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef UA_NODES_H_
-#define UA_NODES_H_
+#ifndef UA_PLUGIN_NODESTORE_NODES_H_
+#define UA_PLUGIN_NODESTORE_NODES_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include "ua_server.h"
+
+/* !!! Warning !!!
+ *
+ * If you are not developing a nodestore plugin, then you should not work with
+ * the definitions from this file directly. The underlying node structures are
+ * purposefully hidden from end users. Please use the public server API or OPC
+ * UA services to interact with the information model. */
 
 /**
  * .. _information-modelling:
@@ -66,9 +73,13 @@ typedef struct {
     size_t referencesSize;                      \
     UA_NodeReferenceKind *references;
 
-typedef struct {
+/* Forward declared in ua_plugin_nodestore.h */
+struct UA_Node {
     UA_NODE_BASEATTRIBUTES
-} UA_Node;
+};
+
+void UA_Node_deleteMembersAnyNodeClass(UA_Node *node);
+UA_StatusCode UA_Node_copyAnyNodeClass(const UA_Node *src, UA_Node *dst);
 
 /**
  * VariableNode
@@ -392,4 +403,4 @@ typedef struct {
 } // extern "C"
 #endif
 
-#endif /* UA_NODES_H_ */
+#endif /* UA_PLUGIN_NODESTORE_NODES_H_ */

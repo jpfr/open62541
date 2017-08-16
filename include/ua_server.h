@@ -16,6 +16,7 @@ extern "C" {
 #include "ua_plugin_network.h"
 #include "ua_plugin_access_control.h"
 #include "ua_plugin_securitypolicy.h"
+#include "ua_plugin_nodestore.h"
 
 /**
  * .. _server:
@@ -49,6 +50,9 @@ typedef struct {
     size_t serverCapabilitiesSize;
     UA_String *serverCapabilities;
 #endif
+
+    /* Nodestore */
+    UA_Nodestore nodestore;
 
     /* Custom DataTypes */
     size_t customDataTypesSize;
