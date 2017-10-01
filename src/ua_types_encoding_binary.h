@@ -11,17 +11,23 @@ extern "C" {
 
 #include "ua_types.h"
 
-typedef UA_StatusCode (*UA_exchangeEncodeBuffer)(void *handle, UA_Byte **bufPos, const UA_Byte **bufEnd);
+typedef UA_StatusCode (*UA_exchangeEncodeBuffer)(void *handle, UA_Byte **bufPos,
+                                                 const UA_Byte **bufEnd);
 
 UA_StatusCode
 UA_encodeBinary(const void *src, const UA_DataType *type,
                 UA_Byte **bufPos, const UA_Byte **bufEnd,
-                UA_exchangeEncodeBuffer exchangeCallback, void *exchangeHandle) UA_FUNC_ATTR_WARN_UNUSED_RESULT;
+                UA_exchangeEncodeBuffer exchangeCallback,
+                void *exchangeHandle) UA_FUNC_ATTR_WARN_UNUSED_RESULT;
 
 UA_StatusCode
 UA_decodeBinary(const UA_ByteString *src, size_t *offset, void *dst,
                 const UA_DataType *type, size_t customTypesSize,
                 const UA_DataType *customTypes) UA_FUNC_ATTR_WARN_UNUSED_RESULT;
+
+#ifdef UA_ENABLE_INSITU_DECODING
+void UA_decodeBinary_resetInSituBuf(void);
+#endif
 
 size_t UA_calcSizeBinary(void *p, const UA_DataType *type);
 

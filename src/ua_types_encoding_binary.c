@@ -28,13 +28,16 @@
 #endif
 
 #ifndef UA_BINARY_OVERLAYABLE_INTEGER
-# warning Integer endianness could not be detected to be little endian. Use slow generic encoding.
+# warning Integer endianness could not be detected to be little endian. \
+    Use slow generic encoding.
 #endif
 
-/* There is no robust way to detect float endianness in clang. This warning can be removed
- * if the target is known to be little endian with floats in the IEEE 754 format. */
+/* There is no robust way to detect float endianness in clang. This warning can
+ * be removed if the target is known to be little endian with floats in the IEEE
+ * 754 format. */
 #ifndef UA_BINARY_OVERLAYABLE_FLOAT
-# warning Float endianness could not be detected to be little endian in the IEEE 754 format. Use slow generic encoding.
+# warning Float endianness could not be detected to be little endian in the IEEE \
+    754 format. Use slow generic encoding.
 #endif
 
 #if defined(__clang__)
@@ -105,6 +108,48 @@ exchangeBuffer(void) {
     g_exchangeBufferCallbackHandle = store_exchangeBufferCallbackHandle;
     return ret;
 }
+
+/********************/
+/* In-Situ Decoding */
+/********************/
+
+/* Methods starting with is_ are meant for in-situ decoding of data types. With
+ * in-situ decoding, the decoded data structures point into the message buffer
+ * whenever content has the same memory layout on the network and in decoded
+ * form. Content that needs copying/decoding is moved to a static buffer. The
+ * buffer is reset only at the end of a service call. So there is no "freeing"
+ * of the individual decoded memory segments required. */
+
+#ifdef UA_ENABLE_INSITU_DECODING
+
+static UA_THREAD_LOCAL u8 inSituDecodingBuffer[UA_ENABLE_INSITU_DECODING];
+static UA_THREAD_LOCAL size_t inSituDecodingBufferOffset;
+
+void UA_decodeBinary_resetInSituBuf(void) {
+    inSituDecodingBufferOffset = 0;
+}
+
+static void *
+is_calloc(size_t num, size_t size) {
+    if((num*size) + inSituDecodingBufferOffset > UA_ENABLE_INSITU_DECODING)
+        return NULL;
+    void *p = (void*)&inSituDecodingBuffer[inSituDecodingBufferOffset];
+    memset(p, 0, num*size);
+    inSituDecodingBufferOffset += num*size;
+    return p;
+}
+
+static UA_INLINE void *
+is_new(const UA_DataType *type) {
+    return is_calloc(1, type->memSize);
+}
+
+#else
+
+static UA_INLINE void * is_calloc(size_t num, size_t size) { return UA_calloc(num, size); }
+static UA_INLINE void * is_new(const UA_DataType *type) { return UA_new(type); }
+
+#endif
 
 /*****************/
 /* Integer Types */
@@ -544,42 +589,57 @@ Array_decodeBinary(void *UA_RESTRICT *UA_RESTRICT dst,
         return UA_STATUSCODE_GOOD;
     }
 
-    /* Filter out arrays that can obviously not be decoded, because the message
-     * is too small for the array length. This prevents the allocation of very
-     * long arrays for bogus messages.*/
     size_t length = (size_t)signed_length;
-    if(g_pos + ((type->memSize * length) / 32) > g_end)
-        return UA_STATUSCODE_BADDECODINGERROR;
 
-    /* Allocate memory */
-    *dst = UA_calloc(length, type->memSize);
-    if(!*dst)
-        return UA_STATUSCODE_BADOUTOFMEMORY;
-
-    if(type->overlayable) {
-        /* memcpy overlayable array */
-        if(g_end < g_pos + (type->memSize * length)) {
-            UA_free(*dst);
-            *dst = NULL;
+    if(!type->overlayable) {
+        /* Filter out arrays that can obviously not be decoded, because the
+         * message is too small for the array length. This prevents the
+         * allocation of very long arrays for bogus messages.*/
+        if(g_pos + ((type->memSize * length) / 32) > g_end)
             return UA_STATUSCODE_BADDECODINGERROR;
-        }
-        memcpy(*dst, g_pos, type->memSize * length);
-        g_pos += type->memSize * length;
-    } else {
+
+        /* Allocate memory */
+        *dst = is_calloc(length, type->memSize);
+        if(!*dst)
+            return UA_STATUSCODE_BADOUTOFMEMORY;
+
         /* Decode array members */
         uintptr_t ptr = (uintptr_t)*dst;
         size_t decode_index = type->builtin ? type->typeIndex : UA_BUILTIN_TYPES_COUNT;
         for(size_t i = 0; i < length; ++i) {
             ret = decodeBinaryJumpTable[decode_index]((void*)ptr, type);
             if(ret != UA_STATUSCODE_GOOD) {
-                // +1 because last element is also already initialized
+#ifndef UA_ENABLE_INSITU_DECODING
+                /* +1 because last element is also already initialized */
                 UA_Array_delete(*dst, i+1, type);
+#endif
                 *dst = NULL;
                 return ret;
             }
             ptr += type->memSize;
         }
+        *out_length = length;
+        return UA_STATUSCODE_GOOD;
     }
+
+    /* The array must fit into the message */
+    if(g_end < g_pos + (type->memSize * length)) {
+        *dst = NULL;
+        return UA_STATUSCODE_BADDECODINGERROR;
+    }
+
+#ifndef UA_ENABLE_INSITU_DECODING
+    /* Flat-copy the content to a new buffer */
+    *dst = is_calloc(length, type->memSize);
+    if(!*dst)
+        return UA_STATUSCODE_BADOUTOFMEMORY;
+    memcpy(*dst, g_pos, type->memSize * length);
+#else
+    /* Point into the message buffer */
+    *dst = (void*)g_pos;
+#endif
+
+    g_pos += type->memSize * length;
     *out_length = length;
     return UA_STATUSCODE_GOOD;
 }
@@ -952,7 +1012,7 @@ ExtensionObject_decodeBinaryContent(UA_ExtensionObject *dst, const UA_NodeId *ty
     }
 
     /* Allocate memory */
-    dst->content.decoded.data = UA_new(type);
+    dst->content.decoded.data = is_new(type);
     if(!dst->content.decoded.data)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
@@ -976,7 +1036,9 @@ ExtensionObject_decodeBinary(UA_ExtensionObject *dst, const UA_DataType *_) {
     if(typeId.identifierType != UA_NODEIDTYPE_NUMERIC)
         ret = UA_STATUSCODE_BADDECODINGERROR;
     if(ret != UA_STATUSCODE_GOOD) {
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_NodeId_deleteMembers(&typeId);
+#endif
         return ret;
     }
 
@@ -1099,7 +1161,9 @@ Variant_decodeBinaryUnwrapExtensionObject(UA_Variant *dst) {
     u8 encoding;
     ret = Byte_decodeBinary(&encoding, NULL);
     if(ret != UA_STATUSCODE_GOOD) {
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_NodeId_deleteMembers(&typeId);
+#endif
         return ret;
     }
 
@@ -1112,11 +1176,13 @@ Variant_decodeBinaryUnwrapExtensionObject(UA_Variant *dst) {
         /* Reset and decode as ExtensionObject */
         dst->type = &UA_TYPES[UA_TYPES_EXTENSIONOBJECT];
         g_pos = old_pos;
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_NodeId_deleteMembers(&typeId);
+#endif
     }
 
     /* Allocate memory */
-    dst->data = UA_new(dst->type);
+    dst->data = is_new(dst->type);
     if(!dst->data)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
@@ -1152,7 +1218,7 @@ Variant_decodeBinary(UA_Variant *dst, const UA_DataType *_) {
     if(isArray) {
         ret = Array_decodeBinary(&dst->data, &dst->arrayLength, dst->type);
     } else if(typeIndex != UA_TYPES_EXTENSIONOBJECT) {
-        dst->data = UA_new(dst->type);
+        dst->data = is_new(dst->type);
         if(!dst->data)
             return UA_STATUSCODE_BADOUTOFMEMORY;
         ret = decodeBinaryJumpTable[typeIndex](dst->data, dst->type);
@@ -1340,7 +1406,7 @@ DiagnosticInfo_decodeBinary(UA_DiagnosticInfo *dst, const UA_DataType *_) {
     if(encodingMask & 0x40) {
         /* innerDiagnosticInfo is allocated on the heap */
         dst->innerDiagnosticInfo = (UA_DiagnosticInfo*)
-            UA_calloc(1, sizeof(UA_DiagnosticInfo));
+            is_calloc(1, sizeof(UA_DiagnosticInfo));
         if(!dst->innerDiagnosticInfo)
             return UA_STATUSCODE_BADOUTOFMEMORY;
         dst->hasInnerDiagnosticInfo = true;
@@ -1519,8 +1585,10 @@ UA_decodeBinary(const UA_ByteString *src, size_t *offset, void *dst,
     /* Clean up */
     if(ret == UA_STATUSCODE_GOOD)
         *offset = (size_t)(g_pos - src->data) / sizeof(u8);
+#ifndef UA_ENABLE_INSITU_DECODING
     else
         UA_deleteMembers(dst, type);
+#endif
     return ret;
 }
 

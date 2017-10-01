@@ -31,8 +31,9 @@ sendError(UA_SecureChannel *channel, const UA_ByteString *msg,
     responseHeader->timestamp = UA_DateTime_now();
     responseHeader->serviceResult = error;
     UA_SecureChannel_sendBinaryMessage(channel, requestId, response, responseType);
+#ifndef UA_ENABLE_INSITU_DECODING
     UA_RequestHeader_deleteMembers(&requestHeader);
-    UA_ResponseHeader_deleteMembers(responseHeader);
+#endif
 }
 
 static void
@@ -241,12 +242,14 @@ processHEL(UA_Server *server, UA_Connection *connection, const UA_ByteString *ms
     if(connection->localConf.recvBufferSize > helloMessage.sendBufferSize)
         connection->localConf.recvBufferSize = helloMessage.sendBufferSize;
     connection->state = UA_CONNECTION_ESTABLISHED;
+#ifndef UA_ENABLE_INSITU_DECODING
     UA_TcpHelloMessage_deleteMembers(&helloMessage);
+#endif
 
-    if (connection->remoteConf.recvBufferSize == 0) {
+    if(connection->remoteConf.recvBufferSize == 0) {
         UA_LOG_INFO(server->config.logger, UA_LOGCATEGORY_NETWORK,
-                    "Connection %i | Remote end indicated a receive buffer size of 0. Not able to send any messages.",
-                    connection->sockfd);
+                    "Connection %i | Remote end indicated a receive buffer size of 0. "
+                    "Not able to send any messages.", connection->sockfd);
         connection->close(connection);
         return;
     }
@@ -308,9 +311,11 @@ processOPN(UA_Server *server, UA_Connection *connection,
 
     /* Error occured */
     if(retval != UA_STATUSCODE_GOOD || requestType.identifier.numeric != 446) {
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
         UA_NodeId_deleteMembers(&requestType);
         UA_OpenSecureChannelRequest_deleteMembers(&r);
+#endif
         UA_LOG_INFO(server->config.logger, UA_LOGCATEGORY_NETWORK,
                     "Connection %i | Could not decode the OPN message. Closing the connection.",
                     connection->sockfd);
@@ -322,14 +327,18 @@ processOPN(UA_Server *server, UA_Connection *connection,
     UA_OpenSecureChannelResponse p;
     UA_OpenSecureChannelResponse_init(&p);
     Service_OpenSecureChannel(server, connection, &r, &p);
+#ifndef UA_ENABLE_INSITU_DECODING
     UA_OpenSecureChannelRequest_deleteMembers(&r);
+#endif
 
     /* Opening the channel failed */
     UA_SecureChannel *channel = connection->channel;
     if(!channel) {
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_OpenSecureChannelResponse_deleteMembers(&p);
         UA_NodeId_deleteMembers(&requestType);
         UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
+#endif
         UA_LOG_INFO(server->config.logger, UA_LOGCATEGORY_NETWORK,
                     "Connection %i | Could not open a SecureChannel. "
                     "Closing the connection.", connection->sockfd);
@@ -340,10 +349,13 @@ processOPN(UA_Server *server, UA_Connection *connection,
     // every message contains secureconversationmessageheader. Thus its size has to be
     // the minimum buffer size
     if (connection->localConf.sendBufferSize <= 12) {
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_OpenSecureChannelResponse_deleteMembers(&p);
         UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
+#endif
         UA_LOG_INFO(server->config.logger, UA_LOGCATEGORY_NETWORK,
-                    "Connection %i | Response too large for client configuration. %s", connection->sockfd, UA_StatusCode_name(UA_STATUSCODE_BADRESPONSETOOLARGE));
+                    "Connection %i | Response too large for client configuration. %s",
+                    connection->sockfd, UA_StatusCode_name(UA_STATUSCODE_BADRESPONSETOOLARGE));
         connection->close(connection);
         return;
     }
@@ -356,8 +368,10 @@ processOPN(UA_Server *server, UA_Connection *connection,
     UA_ByteString_init(&resp_msg);
     retval = connection->getSendBuffer(connection, connection->localConf.sendBufferSize, &resp_msg);
     if(retval != UA_STATUSCODE_GOOD) {
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_OpenSecureChannelResponse_deleteMembers(&p);
         UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
+#endif
         UA_LOG_INFO(server->config.logger, UA_LOGCATEGORY_NETWORK,
                     "Connection %i | Could not obtain a buffer to answer the OPN message. "
                     "Closing the connection.", connection->sockfd);
@@ -371,7 +385,8 @@ processOPN(UA_Server *server, UA_Connection *connection,
     seqHeader.sequenceNumber = UA_atomic_add(&channel->sendSequenceNumber, 1);
     retval |= UA_AsymmetricAlgorithmSecurityHeader_encodeBinary(&asymHeader, &bufPos, &bufEnd); // just mirror back
     retval |= UA_SequenceHeader_encodeBinary(&seqHeader, &bufPos, &bufEnd);
-    UA_NodeId responseType = UA_NODEID_NUMERIC(0, UA_TYPES[UA_TYPES_OPENSECURECHANNELRESPONSE].binaryEncodingId);
+    UA_NodeId responseType =
+        UA_NODEID_NUMERIC(0, UA_TYPES[UA_TYPES_OPENSECURECHANNELRESPONSE]. binaryEncodingId);
     retval |= UA_NodeId_encodeBinary(&responseType, &bufPos, &bufEnd);
     retval |= UA_OpenSecureChannelResponse_encodeBinary(&p, &bufPos, &bufEnd);
 
@@ -380,8 +395,10 @@ processOPN(UA_Server *server, UA_Connection *connection,
                     "Connection %i | Could not encode the OPN message. "
                     "Closing the connection. %s", connection->sockfd, UA_StatusCode_name(retval));
         connection->releaseSendBuffer(connection, &resp_msg);
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_OpenSecureChannelResponse_deleteMembers(&p);
         UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
+#endif
         connection->close(connection);
         return;
     }
@@ -397,8 +414,10 @@ processOPN(UA_Server *server, UA_Connection *connection,
     connection->send(connection, &resp_msg);
 
     /* Clean up */
+#ifndef UA_ENABLE_INSITU_DECODING
     UA_OpenSecureChannelResponse_deleteMembers(&p);
     UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
+#endif
 }
 
 static void
@@ -414,7 +433,11 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
     if(retval != UA_STATUSCODE_GOOD)
         return;
     if(requestTypeId.identifierType != UA_NODEIDTYPE_NUMERIC)
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_NodeId_deleteMembers(&requestTypeId); /* leads to badserviceunsupported */
+#else
+        UA_NodeId_init(&requestTypeId);
+#endif
 
     /* Store the start-position of the request */
     size_t requestPos = *offset;
@@ -456,6 +479,7 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
     }
 
     /* Prepare the respone */
+    UA_Session anonymousSession;
     void *response = UA_alloca(responseType->memSize);
     UA_init(response, responseType);
     UA_Session *session = NULL; /* must be initialized before goto send_response */
@@ -481,8 +505,7 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
                                  "not known in the server");
             sendError(channel, msg, requestPos, responseType,
                       requestId, UA_STATUSCODE_BADSESSIONIDINVALID);
-            UA_deleteMembers(request, requestType);
-            return;
+            goto cleanup;
         }
         Service_ActivateSession(server, channel, session,
                                 (const UA_ActivateSessionRequest*)request,
@@ -491,7 +514,6 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
     }
 
     /* Set an anonymous, inactive session for services that need no session */
-    UA_Session anonymousSession;
     if(!session) {
         if(sessionRequired) {
             UA_LOG_INFO_CHANNEL(server->config.logger, channel,
@@ -499,8 +521,7 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
                                 requestType->binaryEncodingId);
             sendError(channel, msg, requestPos, responseType,
                       requestId, UA_STATUSCODE_BADSESSIONIDINVALID);
-            UA_deleteMembers(request, requestType);
-            return;
+            goto cleanup;
         }
         UA_Session_init(&anonymousSession);
         anonymousSession.sessionId = UA_NODEID_GUID(0, UA_GUID_NULL);
@@ -517,8 +538,7 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
                   requestId, UA_STATUSCODE_BADSESSIONNOTACTIVATED);
         UA_SessionManager_removeSession(&server->sessionManager,
                                         &session->authenticationToken);
-        UA_deleteMembers(request, requestType);
-        return;
+        goto cleanup;
     }
 
     /* The session is bound to another channel */
@@ -527,8 +547,7 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
                              "Client tries to use an obsolete securechannel");
         sendError(channel, msg, requestPos, responseType,
                   requestId, UA_STATUSCODE_BADSECURECHANNELIDINVALID);
-        UA_deleteMembers(request, requestType);
-        return;
+        goto cleanup;
     }
 
     /* Update the session lifetime */
@@ -539,8 +558,7 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
     if(requestType == &UA_TYPES[UA_TYPES_PUBLISHREQUEST]) {
         Service_Publish(server, session,
                         (const UA_PublishRequest*)request, requestId);
-        UA_deleteMembers(request, requestType);
-        return;
+        goto cleanup;
     }
 #endif
 
@@ -560,12 +578,20 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
                             "with StatusCode %s", UA_StatusCode_name(retval));
 
     /* Clean up */
-    UA_deleteMembers(request, requestType);
+#ifndef UA_ENABLE_INSITU_DECODING
     UA_deleteMembers(response, responseType);
+#endif
+
+ cleanup:
+#ifndef UA_ENABLE_INSITU_DECODING
+    UA_deleteMembers(request, requestType);
+#endif
+    return;
 }
 
 /* ERR -> Error from the remote connection */
-static void processERR(UA_Server *server, UA_Connection *connection, const UA_ByteString *msg, size_t *offset) {
+static void processERR(UA_Server *server, UA_Connection *connection,
+                       const UA_ByteString *msg, size_t *offset) {
     UA_TcpErrorMessage errorMessage;
     if (UA_TcpErrorMessage_decodeBinary(msg, offset, &errorMessage) != UA_STATUSCODE_GOOD) {
         UA_LOG_INFO(server->config.logger, UA_LOGCATEGORY_NETWORK,
@@ -580,7 +606,9 @@ static void processERR(UA_Server *server, UA_Connection *connection, const UA_By
                  connection->sockfd, UA_StatusCode_name(errorMessage.error),
                  (int)errorMessage.reason.length, errorMessage.reason.data);
 
+#ifndef UA_ENABLE_INSITU_DECODING
     UA_TcpErrorMessage_deleteMembers(&errorMessage);
+#endif
 }
 
 /* Takes decoded messages starting at the nodeid of the content type. Only OPN
@@ -592,6 +620,7 @@ UA_Server_processSecureChannelMessage(UA_Server *server, UA_SecureChannel *chann
                                       const UA_ByteString *message) {
     UA_assert(channel);
     UA_assert(channel->connection);
+
     switch(messagetype) {
     case UA_MESSAGETYPE_ERR: {
         const UA_TcpErrorMessage *msg = (const UA_TcpErrorMessage *) message;
@@ -631,9 +660,13 @@ processBinaryMessage(UA_Server *server, UA_Connection *connection,
     UA_LOG_TRACE(server->config.logger, UA_LOGCATEGORY_NETWORK,
                  "Connection %i | Received a packet.", connection->sockfd);
 
-    #ifdef UA_DEBUG_DUMP_PKGS
+#ifdef UA_ENABLE_INSITU_DECODING
+    UA_decodeBinary_resetInSituBuf();
+#endif
+
+#ifdef UA_DEBUG_DUMP_PKGS
     UA_dump_hex_pkg(message->data, message->length);
-    #endif
+#endif
 
     UA_Boolean realloced = UA_FALSE;
     UA_StatusCode retval = UA_Connection_completeChunks(connection, message, &realloced);

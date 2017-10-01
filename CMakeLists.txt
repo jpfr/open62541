@@ -78,6 +78,9 @@ endif()
 option(UA_ENABLE_MULTITHREADING "Enable multithreading (experimental)" OFF)
 mark_as_advanced(UA_ENABLE_MULTITHREADING)
 
+set(UA_ENABLE_INSITU_DECODING "" CACHE STRING "If set, the number of bytes used for the in-situ decoding buffer")
+mark_as_advanced(UA_ENABLE_INSITU_DECODING)
+
 option(UA_ENABLE_STATUSCODE_DESCRIPTIONS "Enable conversion of StatusCode to human-readable error message" ON)
 mark_as_advanced(UA_ENABLE_STATUSCODE_DESCRIPTIONS)
 

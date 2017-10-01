@@ -818,8 +818,7 @@ DiagnosticInfo_copy(UA_DiagnosticInfo const *src, UA_DiagnosticInfo *dst,
 
 void *
 UA_new(const UA_DataType *type) {
-    void *p = UA_calloc(1, type->memSize);
-    return p;
+    return UA_calloc(1, type->memSize);
 }
 
 static UA_StatusCode

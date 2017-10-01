@@ -21,7 +21,7 @@ extern "C" {
 /**
  * Options
  * ------- */
-#define UA_LOGLEVEL ${UA_LOGLEVEL}
+#cmakedefine UA_LOGLEVEL ${UA_LOGLEVEL}
 #cmakedefine UA_ENABLE_METHODCALLS
 #cmakedefine UA_ENABLE_NODEMANAGEMENT
 #cmakedefine UA_ENABLE_SUBSCRIPTIONS
@@ -39,6 +39,7 @@ extern "C" {
 #cmakedefine UA_ENABLE_DISCOVERY
 #cmakedefine UA_ENABLE_DISCOVERY_MULTICAST
 #cmakedefine UA_ENABLE_DISCOVERY_SEMAPHORE
+#cmakedefine UA_ENABLE_INSITU_DECODING ${UA_ENABLE_INSITU_DECODING}
 #cmakedefine UA_DEBUG_DUMP_PKGS
 
 /**

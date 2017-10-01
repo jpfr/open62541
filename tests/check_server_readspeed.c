@@ -73,7 +73,11 @@ int main(int argc, char** argv) {
         retval |= UA_encodeBinary(&rr, &UA_TYPES[UA_TYPES_READRESPONSE], &resp_pos, &resp_end, NULL, NULL);
         assert(retval == UA_STATUSCODE_GOOD);
 
+#ifndef UA_ENABLE_INSITU_DECODING
         UA_ReadRequest_deleteMembers(&rq);
+#else
+        UA_decodeBinary_resetInSituBuf();
+#endif
         UA_ReadResponse_deleteMembers(&rr);
     }
 
