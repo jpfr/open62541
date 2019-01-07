@@ -13,8 +13,8 @@
 
 _UA_BEGIN_DECLS
 
-UA_ServerNetworkLayer UA_EXPORT
-UA_ServerNetworkLayerTCP(UA_ConnectionConfig conf, UA_UInt16 port, UA_Logger *logger);
+//UA_ServerNetworkLayer UA_EXPORT
+//UA_ServerNetworkLayerTCP(UA_ConnectionConfig conf, UA_UInt16 port, UA_Logger *logger);
 
 UA_Connection UA_EXPORT
 UA_ClientConnectionTCP(UA_ConnectionConfig conf, const UA_String endpointUrl,
