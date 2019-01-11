@@ -132,7 +132,7 @@ struct UA_Client {
     UA_StatusCode connectStatus;
 
     /* Connection */
-    UA_Connection connection;
+    UA_Connection_old connection;
 
     /* SecureChannel */
     UA_SecureChannel channel;
@@ -193,11 +193,11 @@ UA_StatusCode
 receivePacketAsync(UA_Client *client);
 
 UA_StatusCode
-processACKResponseAsync(void *application, UA_Connection *connection,
+processACKResponseAsync(void *application, UA_Connection_old *connection,
                         UA_ByteString *chunk);
 
 UA_StatusCode
-processOPNResponseAsync(void *application, UA_Connection *connection,
+processOPNResponseAsync(void *application, UA_Connection_old *connection,
                         UA_ByteString *chunk);
 
 UA_StatusCode
