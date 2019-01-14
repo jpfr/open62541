@@ -29,15 +29,10 @@ typedef UA_StatusCode (*UA_Connection_old_processChunk)(void *application,
                                                         UA_Connection_old *connection,
                                                         UA_ByteString *chunk);
 
-typedef UA_StatusCode (*UA_Connection_processChunkFunction)(void *application,
-                                                            UA_Connection *connection,
-                                                            UA_ByteString *chunk);
-
-/* The network layer may receive several chunks in one packet since TCP is a
- * streaming protocol. The last chunk in the packet may be only partial. This
- * method calls the processChunk callback on all full chunks that were received.
- * The last incomplete chunk is buffered in the connection for the next
- * iteration.
+/* The network layer may receive chopped up messages since TCP is a streaming
+ * protocol. This method calls the processChunk callback on all full chunks that
+ * were received. Dangling half-complete chunks are buffered in the connection
+ * and considered for the next received packet.
  *
  * The packet itself is not edited in this method. But possibly in the callback
  * that is executed on complete chunks.
@@ -53,11 +48,6 @@ UA_StatusCode
 UA_Connection_old_processChunks(UA_Connection_old *connection, void *application,
                                 UA_Connection_old_processChunk processCallback,
                                 const UA_ByteString *packet);
-
-UA_StatusCode
-UA_Connection_processChunks(UA_Connection *connection, void *application,
-                            UA_Connection_processChunkFunction processCallback,
-                            const UA_ByteString *packet);
 
 /* Try to receive at least one complete chunk on the connection. This blocks the
  * current thread up to the given timeout.
