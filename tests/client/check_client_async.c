@@ -13,7 +13,7 @@
 #include "ua_network_tcp.h"
 #include "check.h"
 #include "testing_clock.h"
-#include "testing_networklayers.h"
+#include "testing_socket.h"
 #include "client/ua_client_internal.h"
 
 #include "thread_wrapper.h"
@@ -73,8 +73,9 @@ START_TEST(Client_highlevel_async_readValue) {
         UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
-        UA_Client_recv = client->connection.recv;
-        client->connection.recv = UA_Client_recvTesting;
+        // TODO: New networking api
+//        UA_Client_recv = client->connection.recv;
+//        client->connection.recv = UA_Client_recvTesting;
 
         UA_UInt16 asyncCounter = 0;
 
@@ -151,8 +152,9 @@ START_TEST(Client_read_async_timed) {
         UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
-        UA_Client_recv = client->connection.recv;
-        client->connection.recv = UA_Client_recvTesting;
+        // TODO: New networking api
+//        UA_Client_recv = client->connection.recv;
+//        client->connection.recv = UA_Client_recvTesting;
 
         UA_UInt16 asyncCounter = 0;
 
@@ -212,8 +214,9 @@ START_TEST(Client_connectivity_check) {
         UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
-        UA_Client_recv = client->connection.recv;
-        client->connection.recv = UA_Client_recvTesting;
+        // TODO: New networking api
+//        UA_Client_recv = client->connection.recv;
+//        client->connection.recv = UA_Client_recvTesting;
 
         inactivityCallbackTriggered = false;
 
