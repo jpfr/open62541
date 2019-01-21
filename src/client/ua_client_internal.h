@@ -21,6 +21,7 @@
 #include "ua_client_subscriptions.h"
 #include "ua_timer.h"
 #include "open62541_queue.h"
+#include "ua_plugin_network_manager.h"
 
 _UA_BEGIN_DECLS
 
@@ -131,8 +132,11 @@ struct UA_Client {
     UA_Timer timer;
     UA_StatusCode connectStatus;
 
+    /* NetworkManager */
+    UA_NetworkManager networkManager;
+
     /* Connection */
-    UA_Connection_old connection;
+    UA_Connection* connection;
 
     /* SecureChannel */
     UA_SecureChannel channel;
@@ -171,8 +175,24 @@ struct UA_Client {
 void
 setClientState(UA_Client *client, UA_ClientState state);
 
-/* The endpointUrl must be set in the configuration. If the complete
- * endpointdescription is not set, a GetEndpoints is performed. */
+/**
+ * Creates a new connection with the supplied socket.
+ * @param client
+ * @param sock
+ * @return
+ */
+UA_StatusCode
+UA_Client_createConnection(UA_Client *client, UA_Socket *sock);
+
+/**
+ * Removes the currently set connection from the client.
+ * @param client
+ * @param sock
+ * @return
+ */
+UA_StatusCode
+UA_Client_removeConnection(UA_Client *client, UA_Socket *sock);
+
 UA_StatusCode
 UA_Client_connectInternal(UA_Client *client, const UA_String endpointUrl);
 
@@ -193,11 +213,11 @@ UA_StatusCode
 receivePacketAsync(UA_Client *client);
 
 UA_StatusCode
-processACKResponseAsync(void *application, UA_Connection_old *connection,
+processACKResponseAsync(void *application, UA_Connection *connection,
                         UA_ByteString *chunk);
 
 UA_StatusCode
-processOPNResponseAsync(void *application, UA_Connection_old *connection,
+processOPNResponseAsync(void *application, UA_Connection *connection,
                         UA_ByteString *chunk);
 
 UA_StatusCode

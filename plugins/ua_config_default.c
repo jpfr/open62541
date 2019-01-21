@@ -775,8 +775,13 @@ UA_ServerConfig_addPubSubTransportLayer(UA_ServerConfig *config,
 /* Default Client Settings */
 /***************************/
 
-static UA_INLINE void UA_ClientConnectionTCP_poll_callback(UA_Client *client, void *data) {
-    UA_ClientConnectionTCP_poll(client, data);
+static UA_StatusCode
+createDefaultClientSocket(UA_SocketConfig *config, UA_SocketHook socketHook) {
+    UA_ClientSocketConfig *clientSocketConfig = (UA_ClientSocketConfig *)config;
+    return UA_TCP_DataSocket_ConnectTo(clientSocketConfig->endpointUrl, clientSocketConfig->timeout,
+                                       clientSocketConfig->socketConfig.logger,
+                                       clientSocketConfig->socketConfig.sendBufferSize,
+                                       clientSocketConfig->socketConfig.recvBufferSize, socketHook);
 }
 
 UA_StatusCode
@@ -812,9 +817,14 @@ UA_ClientConfig_setDefault(UA_ClientConfig *config) {
     }
     config->securityPoliciesSize = 1;
 
-    config->connectionFunc = UA_ClientConnectionTCP;
-    config->initConnectionFunc = UA_ClientConnectionTCP_init; /* for async client */
-    config->pollConnectionFunc = UA_ClientConnectionTCP_poll_callback; /* for async connection */
+    config->clientSocketConfig.socketConfig.sendBufferSize = 65535;
+    config->clientSocketConfig.socketConfig.sendBufferSize = 65535;
+    config->clientSocketConfig.socketConfig.port = 4840;
+    config->clientSocketConfig.socketConfig.logger = NULL;
+    config->clientSocketConfig.socketConfig.customHostname = UA_STRING_NULL;
+    config->clientSocketConfig.socketConfig.createSocket = createDefaultClientSocket;
+    config->clientSocketConfig.endpointUrl = UA_STRING_NULL;
+    config->clientSocketConfig.timeout = 5000;
 
     config->customDataTypes = NULL;
     config->stateCallback = NULL;

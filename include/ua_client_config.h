@@ -50,6 +50,13 @@ typedef enum {
 } UA_ClientState;
 
 typedef struct {
+    UA_SocketConfig socketConfig;
+
+    UA_String endpointUrl;
+    UA_UInt32 timeout;
+} UA_ClientSocketConfig;
+
+typedef struct {
     /* Basic client configuration */
     void *clientContext; /* User-defined data attached to the client */
     UA_Logger logger;   /* Logger used by the client */
@@ -83,7 +90,6 @@ typedef struct {
     UA_UserTokenPolicy userTokenPolicy;
 
     /* Advanced client configuration */
-
     UA_UInt32 secureChannelLifeTime; /* Lifetime in ms (then the channel needs
                                         to be renewed) */
     UA_UInt32 requestedSessionTimeout; /* Session timeout in ms */
@@ -102,11 +108,7 @@ typedef struct {
 
     /* Certificate Verification Plugin */
     UA_CertificateVerification certificateVerification;
-
-    /* Callbacks for async connection handshakes */
-    UA_ConnectClientConnection connectionFunc;
-    UA_ConnectClientConnection initConnectionFunc;
-    void (*pollConnectionFunc)(UA_Client *client, void *context);
+    UA_ClientSocketConfig clientSocketConfig;
 
     /* Callback for state changes */
     void (*stateCallback)(UA_Client *client, UA_ClientState clientState);
