@@ -9,7 +9,7 @@
  *    Copyright 2018 (c) Kalycito Infotech Private Limited
  */
 
-#include <networking/ua_sockets.h>
+#include "networking/ua_sockets.h"
 #include "ua_client_internal.h"
 #include "ua_transport_generated.h"
 #include "ua_transport_generated_handling.h"
@@ -41,45 +41,21 @@ setClientState(UA_Client *client, UA_ClientState state) {
 #define UA_BITMASK_MESSAGETYPE 0x00ffffff
 #define UA_BITMASK_CHUNKTYPE 0xff000000
 
-static UA_StatusCode
-processACKResponse(void *application, UA_Connection *connection, UA_ByteString *chunk) {
+UA_StatusCode
+processACKResponse(void *application, UA_Connection *connection,
+                   UA_ByteString *chunk, size_t *offset) {
     UA_Client *client = (UA_Client*)application;
 
     /* Decode the message */
-    size_t offset = 0;
     UA_StatusCode retval;
-    UA_TcpMessageHeader messageHeader;
     UA_TcpAcknowledgeMessage ackMessage;
-    retval = UA_TcpMessageHeader_decodeBinary(chunk, &offset, &messageHeader);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "Decoding ACK message failed");
-        return retval;
-    }
-
-    // check if we got an error response from the server
-    UA_MessageType messageType = (UA_MessageType)
-        (messageHeader.messageTypeAndChunkType & UA_BITMASK_MESSAGETYPE);
-    UA_ChunkType chunkType = (UA_ChunkType)
-        (messageHeader.messageTypeAndChunkType & UA_BITMASK_CHUNKTYPE);
-    if (messageType == UA_MESSAGETYPE_ERR) {
-        // Header + ErrorMessage (error + reasonLength_field + length)
-        UA_StatusCode error = *(UA_StatusCode*)(&chunk->data[offset]);
-        UA_UInt32 len = *((UA_UInt32*)&chunk->data[offset + 4]);
-        UA_Byte *data = (UA_Byte*)&chunk->data[offset + 4+4];
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                    "Received ERR response. %s - %.*s", UA_StatusCode_name(error), len, data);
-        return error;
-    }
-    if (chunkType != UA_CHUNKTYPE_FINAL) {
-        return UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
-    }
 
     /* Decode the ACK message */
-    retval = UA_TcpAcknowledgeMessage_decodeBinary(chunk, &offset, &ackMessage);
+    retval = UA_TcpAcknowledgeMessage_decodeBinary(chunk, offset, &ackMessage);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "Decoding ACK message failed");
+                     "Decoding ACK message failed: %s",
+                     UA_StatusCode_name(retval));
         return retval;
     }
     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Received ACK message");
@@ -134,14 +110,9 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                  "Sent HEL message");
 
-    /* Loop until we have a complete chunk */
-    // TODO: Fix for new networking api
-//    retval = UA_Connection_old_receiveChunksBlocking(conn, client, processACKResponse,
-//                                                     client->config.timeout);
     retval = client->networkManager.processSocket(&client->networkManager,
                                                   client->config.timeout,
                                                   UA_Connection_getSocket(client->connection));
-    (void)processACKResponse;
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                      "Receiving ACK message failed with %s", UA_StatusCode_name(retval));
@@ -382,7 +353,7 @@ encryptUserIdentityToken(UA_Client *client, const UA_String *userTokenSecurityPo
                        "Could not instantiate the SecurityPolicy for the UserToken");
         return UA_STATUSCODE_BADINTERNALERROR;
     }
-    
+
     /* Compute the encrypted length (at least one byte padding) */
     size_t plainTextBlockSize = sp->asymmetricModule.cryptoModule.
         encryptionAlgorithm.getRemotePlainTextBlockSize(sp, channelContext);
@@ -760,6 +731,9 @@ UA_Client_createConnection(UA_Client *client, UA_Socket *sock) {
 
     client->networkManager.registerSocket(&client->networkManager, sock);
 
+    connection->chunkCallback.callbackContext = client;
+    connection->chunkCallback.function = (UA_ProcessChunkCallbackFunction)UA_Client_processChunk;
+
     client->connection = connection;
 
     return retval;
@@ -887,7 +861,7 @@ UA_Client_connectSession(UA_Client *client) {
         UA_Client_disconnect(client);
         return retval;
     }
-    
+
     /* A new session has been created. We need to clean up the subscriptions */
 #ifdef UA_ENABLE_SUBSCRIPTIONS
     UA_Client_Subscriptions_clean(client);
