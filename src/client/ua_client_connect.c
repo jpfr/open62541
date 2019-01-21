@@ -138,7 +138,10 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     // TODO: Fix for new networking api
 //    retval = UA_Connection_old_receiveChunksBlocking(conn, client, processACKResponse,
 //                                                     client->config.timeout);
-    retval = processACKResponse(NULL, NULL, NULL);
+    retval = client->networkManager.processSocket(&client->networkManager,
+                                                  client->config.timeout,
+                                                  UA_Connection_getSocket(client->connection));
+    (void)processACKResponse;
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                      "Receiving ACK message failed with %s", UA_StatusCode_name(retval));
@@ -756,6 +759,8 @@ UA_Client_createConnection(UA_Client *client, UA_Socket *sock) {
     sock->deletionHook.hook = (UA_SocketHookFunction)UA_Client_removeConnection;
 
     client->networkManager.registerSocket(&client->networkManager, sock);
+
+    client->connection = connection;
 
     return retval;
 }

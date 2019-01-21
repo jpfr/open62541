@@ -104,6 +104,14 @@ UA_StatusCode UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
     /* FIXME: Will most likely break somewhere in the future */
     /************************************************************/
 
+    // TODO: This is a workaround. Fix after finishing the rebase
+    if(client->config.configureNetworkManager != NULL) {
+        retval = client->config.configureNetworkManager(&client->config, &client->networkManager);
+        if(retval != UA_STATUSCODE_GOOD)
+            return retval;
+        client->config.configureNetworkManager = NULL;
+    }
+
     if(timeout) {
         if(retval != UA_STATUSCODE_GOOD)
             return retval;

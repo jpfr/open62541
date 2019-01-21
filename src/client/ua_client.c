@@ -31,6 +31,7 @@
 /* Client Lifecycle */
 /********************/
 
+// TODO: return StatusCode
 static void
 UA_Client_init(UA_Client* client) {
     memset(client, 0, sizeof(UA_Client));
@@ -101,6 +102,9 @@ UA_Client_deleteMembers(UA_Client *client) {
 
     /* Clean up the work queue */
     UA_WorkQueue_cleanup(&client->workQueue);
+
+    client->networkManager.shutdown(&client->networkManager);
+    client->networkManager.deleteMembers(&client->networkManager);
 
     UA_ClientConfig_deleteMembers(&client->config);
 }
