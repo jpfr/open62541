@@ -104,7 +104,7 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     retval = sock->send(sock);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "Sending HEL failed");
+                     "Sending HEL failed: %s", UA_StatusCode_name(retval));
         return retval;
     }
     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK,
@@ -747,6 +747,12 @@ UA_Client_removeConnection(UA_Client *client, UA_Socket *sock) {
     return retval;
 }
 
+static UA_StatusCode
+UA_Client_openSocket(UA_Client *client, UA_Socket *sock) {
+    (void)client;
+    return sock->open(sock);
+}
+
 UA_StatusCode
 UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl) {
     if(client->state >= UA_CLIENTSTATE_CONNECTED)
@@ -758,12 +764,19 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     client->requestId = 0;
 
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    UA_SocketHook creationHook;
-    creationHook.hookContext = client;
-    creationHook.hook = (UA_SocketHookFunction)UA_Client_createConnection;
+    UA_SocketHook openHook;
+    openHook.hookContext = client;
+    openHook.hook = (UA_SocketHookFunction)UA_Client_createConnection;
     if(client->config.clientSocketConfig.endpointUrl.data == NULL) {
         client->config.clientSocketConfig.endpointUrl = endpointUrl;
     }
+    if(client->config.clientSocketConfig.openHook.hook == NULL &&
+       client->config.clientSocketConfig.openHook.hookContext == NULL)
+        client->config.clientSocketConfig.openHook = openHook;
+
+    UA_SocketHook creationHook;
+    creationHook.hookContext = client;
+    creationHook.hook = (UA_SocketHookFunction)UA_Client_openSocket;
     retval = client->config.clientSocketConfig.
         socketConfig.createSocket((UA_SocketConfig *)&client->config.clientSocketConfig, creationHook);
     if(retval != UA_STATUSCODE_GOOD)

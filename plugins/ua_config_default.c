@@ -778,10 +778,11 @@ UA_ServerConfig_addPubSubTransportLayer(UA_ServerConfig *config,
 static UA_StatusCode
 createDefaultClientSocket(UA_SocketConfig *config, UA_SocketHook socketHook) {
     UA_ClientSocketConfig *clientSocketConfig = (UA_ClientSocketConfig *)config;
-    return UA_TCP_DataSocket_ConnectTo(clientSocketConfig->endpointUrl, clientSocketConfig->timeout,
-                                       clientSocketConfig->socketConfig.logger,
-                                       clientSocketConfig->socketConfig.sendBufferSize,
-                                       clientSocketConfig->socketConfig.recvBufferSize, socketHook);
+    return UA_TCP_ClientDataSocket(clientSocketConfig->endpointUrl, clientSocketConfig->timeout,
+                                   clientSocketConfig->socketConfig.logger,
+                                   clientSocketConfig->socketConfig.sendBufferSize,
+                                   clientSocketConfig->socketConfig.recvBufferSize, socketHook,
+                                   clientSocketConfig->openHook);
 }
 
 /**
