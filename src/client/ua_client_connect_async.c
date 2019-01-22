@@ -578,6 +578,33 @@ UA_Client_connect_iterate(UA_Client *client) {
     return client->connectStatus;
 }
 
+static void
+UA_Client_open_repeatedCallback(UA_Client *client, void *data) {
+    UA_Socket *sock = (UA_Socket *)data;
+
+    UA_StatusCode retval = sock->open(sock);
+    if(retval == UA_STATUSCODE_GOOD) {
+        UA_Client_removeRepeatedCallback(client, client->openRepeatedCallbackId);
+        client->openRepeatedCallbackId = 0;
+    }
+}
+
+static UA_StatusCode
+UA_Client_addOpenCallback(UA_Client *client, UA_Socket *sock) {
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
+    if(!client->openRepeatedCallbackId) {
+        UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_CLIENT,
+                     "Adding async connection callback");
+        retval = UA_Client_addRepeatedCallback(
+            client, UA_Client_open_repeatedCallback, sock, 100.0,
+            &client->openRepeatedCallbackId);
+        if(retval != UA_STATUSCODE_GOOD)
+            return retval;
+    }
+
+    return retval;
+}
+
 UA_StatusCode
 UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
                         UA_ClientAsyncServiceCallback callback,
@@ -586,6 +613,9 @@ UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
                  "Client internal async");
 
     if(client->state >= UA_CLIENTSTATE_WAITING_FOR_ACK)
+        return UA_STATUSCODE_GOOD;
+
+    if(client->connection != NULL)
         return UA_STATUSCODE_GOOD;
 
     UA_ChannelSecurityToken_init(&client->channel.securityToken);
@@ -598,16 +628,26 @@ UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
     client->endpointUrl = UA_STRING_ALLOC(endpointUrl);
 
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-//    client->connection =
-//        client->config.initConnectionFunc(client->config.localConnectionConfig,
-//                                          client->endpointUrl,
-//                                          client->config.timeout, &client->config.logger);
-    if(client->connection->state != UA_CONNECTION_OPENING) {
-        UA_LOG_TRACE(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                     "Could not init async connection");
-        retval = UA_STATUSCODE_BADCONNECTIONCLOSED;
-        goto cleanup;
+
+    UA_SocketHook openHook;
+    openHook.hookContext = client;
+    openHook.hook = (UA_SocketHookFunction)UA_Client_createConnection;
+    if(client->config.clientSocketConfig.endpointUrl.data == NULL) {
+        client->config.clientSocketConfig.endpointUrl = client->endpointUrl;
     }
+    if(client->config.clientSocketConfig.openHook.hook == NULL &&
+       client->config.clientSocketConfig.openHook.hookContext == NULL)
+        client->config.clientSocketConfig.openHook = openHook;
+
+    UA_SocketHook creationHook;
+    creationHook.hookContext = client;
+    creationHook.hook = (UA_SocketHookFunction)UA_Client_addOpenCallback;
+    retval = client->config.clientSocketConfig.
+        socketConfig.createSocket((UA_SocketConfig *)&client->config.clientSocketConfig, creationHook);
+    if(retval != UA_STATUSCODE_GOOD)
+        return retval;
+
+
 
     /* Set the channel SecurityMode if not done so far */
     if(client->channel.securityMode == UA_MESSAGESECURITYMODE_INVALID)
