@@ -108,9 +108,9 @@ START_TEST(SecureChannel_networkfail) {
 
     /* Forward the clock after recv in the client */
     UA_ClientConfig *cconfig = UA_Client_getConfig(client);
-//    UA_Client_recv = client->connection.recv;
-//    client->connection.recv = UA_Client_recvTesting;
-    UA_Client_recvSleepDuration = cconfig->secureChannelLifeTime + 1;
+    UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
+    UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
+    UA_Socket_activitySleepDuration = cconfig->secureChannelLifeTime + 1;
 
     UA_Variant val;
     UA_Variant_init(&val);
@@ -160,12 +160,11 @@ START_TEST(SecureChannel_cableunplugged) {
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     UA_Variant_deleteMembers(&val);
 
-    // TODO: New networking api
-//    UA_Client_recv = client->connection.recv;
-//    client->connection.recv = UA_Client_recvTesting;
+    UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
+    UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
 
     /* Simulate network cable unplugged (no response from server) */
-    UA_Client_recvTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
+    UA_Socket_activityTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
 
     UA_Variant_init(&val);
     retval = UA_Client_readValueAttribute(client, nodeId, &val);
@@ -173,7 +172,7 @@ START_TEST(SecureChannel_cableunplugged) {
 
     ck_assert_msg(UA_Client_getState(client) == UA_CLIENTSTATE_DISCONNECTED);
 
-    UA_Client_recvTesting_result = UA_STATUSCODE_GOOD;
+    UA_Socket_activityTesting_result = UA_STATUSCODE_GOOD;
 
     UA_Client_delete(client);
 }
