@@ -11,7 +11,7 @@
 
 #include "ua_config.h"
 #include "ua_plugin_securitypolicy.h"
-#include "ua_plugin_network.h"
+#include "ua_connection.h"
 #include "ua_plugin_network_manager.h"
 
 _UA_BEGIN_DECLS
