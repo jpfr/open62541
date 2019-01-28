@@ -278,7 +278,6 @@ UA_TCP_DataSocket_allocate(UA_UInt64 sockFd, UA_UInt32 sendBufferSize,
 error:
     UA_ByteString_deleteMembers(&internalData->receiveBuffer);
     UA_ByteString_deleteMembers(&internalData->sendBuffer);
-    UA_free(internalData);
     UA_free(sock);
     return retval;
 }
@@ -482,14 +481,14 @@ UA_TCP_ClientDataSocket_open(UA_Socket *sock) {
             }
             while(resultSize == 0);
 #else
-            fd_set fd_set;
-            FD_ZERO(&fd_set);
-            UA_fd_set(client_sockfd, &fd_set);
+            fd_set fdSet;
+            FD_ZERO(&fdSet);
+            UA_fd_set(client_sockfd, &fdSet);
             UA_DateTime timeoutMicroseconds = (dtTimeout - timeSinceStart) / UA_DATETIME_USEC;
             struct timeval tmp_tv = {(long int)(timeoutMicroseconds / 1000000),
                                     (int)(timeoutMicroseconds % 1000000)};
 
-            int resultSize = UA_select((UA_Int32)(client_sockfd + 1), NULL, &fd_set, NULL, &tmp_tv);
+            int resultSize = UA_select((UA_Int32)(client_sockfd + 1), NULL, &fdSet, NULL, &tmp_tv);
 #endif
 
             if(resultSize == 1) {
@@ -615,7 +614,12 @@ UA_TCP_ClientDataSocket(UA_String endpointUrl,
     sock->open = UA_TCP_ClientDataSocket_open;
     sock->free = UA_TCP_ClientDataSocket_free;
 
-    UA_SocketHook_call(creationHook, sock);
+    retval = UA_SocketHook_call(creationHook, sock);
+    if(retval != UA_STATUSCODE_GOOD) {
+        UA_free(internalData);
+        UA_free(sock);
+        return retval;
+    }
 
     return retval;
 }
