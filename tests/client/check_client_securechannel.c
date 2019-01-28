@@ -108,6 +108,8 @@ START_TEST(SecureChannel_networkfail) {
 
     /* Forward the clock after recv in the client */
     UA_ClientConfig *cconfig = UA_Client_getConfig(client);
+    UA_NetworkManager_process = client->networkManager.process;
+    client->networkManager.process = UA_NetworkManager_processTesting;
     UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
     UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
     UA_Socket_activitySleepDuration = cconfig->secureChannelLifeTime + 1;
@@ -116,7 +118,7 @@ START_TEST(SecureChannel_networkfail) {
     UA_Variant_init(&val);
     UA_NodeId nodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_SERVERSTATUS_STATE);
     retval = UA_Client_readValueAttribute(client, nodeId, &val);
-    ck_assert_msg(retval == UA_STATUSCODE_BADSECURECHANNELCLOSED);
+    ck_assert_msg(retval == UA_STATUSCODE_BADSECURECHANNELCLOSED, UA_StatusCode_name(retval));
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
