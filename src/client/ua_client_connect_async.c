@@ -553,6 +553,7 @@ UA_Client_open_repeatedCallback(UA_Client *client, void *data) {
 static UA_StatusCode
 UA_Client_addOpenCallback(UA_Client *client, UA_Socket *sock) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
+    sock->logger = &client->config.logger;
     if(!client->openRepeatedCallbackId) {
         UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                      "Adding async connection callback");
@@ -563,6 +564,9 @@ UA_Client_addOpenCallback(UA_Client *client, UA_Socket *sock) {
             return retval;
         client->repeatedCallbackSocket = sock;
     }
+    else {
+        sock->free(sock);
+    }
 
     return retval;
 }
@@ -571,6 +575,8 @@ UA_StatusCode
 UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
                         UA_ClientAsyncServiceCallback callback,
                         void *userdata) {
+    if(client->openRepeatedCallbackId != 0)
+        return UA_STATUSCODE_GOODCOMPLETESASYNCHRONOUSLY;
     UA_LOG_TRACE(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                  "Client internal async");
 
@@ -589,8 +595,6 @@ UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
     UA_String_deleteMembers(&client->endpointUrl);
     client->endpointUrl = UA_STRING_ALLOC(endpointUrl);
 
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-
     UA_SocketHook openHook;
     openHook.hookContext = client;
     openHook.hook = (UA_SocketHookFunction)UA_Client_createConnection;
@@ -604,7 +608,7 @@ UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
     UA_SocketHook creationHook;
     creationHook.hookContext = client;
     creationHook.hook = (UA_SocketHookFunction)UA_Client_addOpenCallback;
-    retval = client->config.clientSocketConfig.
+    UA_StatusCode retval = client->config.clientSocketConfig.
         socketConfig.createSocket((UA_SocketConfig *)&client->config.clientSocketConfig, creationHook);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;

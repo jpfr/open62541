@@ -11,6 +11,7 @@
 #ifndef UA_SERVER_CONFIG_H_
 #define UA_SERVER_CONFIG_H_
 
+#include "ua_config.h"
 #include "ua_server.h"
 #include "ua_plugin_log.h"
 #include "ua_connection.h"
@@ -18,6 +19,7 @@
 #include "ua_plugin_pki.h"
 #include "ua_plugin_securitypolicy.h"
 #include "ua_plugin_nodestore.h"
+#include "ua_plugin_network_manager.h"
 
 #ifdef UA_ENABLE_PUBSUB
 #include "ua_plugin_pubsub.h"

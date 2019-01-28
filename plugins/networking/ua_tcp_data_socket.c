@@ -288,7 +288,7 @@ UA_TCP_DataSocket_AcceptFrom(UA_Socket *listenerSocket, UA_Logger *logger, UA_UI
                              UA_Socket_DataCallback dataCallback) {
     struct sockaddr_storage remote;
     socklen_t remote_size = sizeof(remote);
-    UA_SOCKET newSockFd = UA_accept((int)listenerSocket->id,
+    UA_SOCKET newSockFd = UA_accept((UA_SOCKET)listenerSocket->id,
                                     (struct sockaddr *)&remote, &remote_size);
     if(newSockFd == UA_INVALID_SOCKET) {
         UA_LOG_SOCKET_ERRNO_WRAP(
@@ -300,7 +300,7 @@ UA_TCP_DataSocket_AcceptFrom(UA_Socket *listenerSocket, UA_Logger *logger, UA_UI
     }
     UA_LOG_TRACE(logger, UA_LOGCATEGORY_NETWORK,
                  "New TCP sock (fd: %i) accepted from listener socket (fd: %i)",
-                 newSockFd, (int)listenerSocket->id);
+                 (int)newSockFd, (int)listenerSocket->id);
 
     UA_Socket *sock = NULL;
     void *internalData = UA_malloc(sizeof(TCPDataSocketData));
@@ -560,7 +560,7 @@ UA_TCP_ClientDataSocket_open(UA_Socket *sock) {
 
     sock->id = (UA_UInt64)client_sockfd;
 
-    UA_SocketHook_call(internalData->openHook, sock);
+    retval = UA_SocketHook_call(internalData->openHook, sock);
 
     return retval;
 error:
@@ -612,8 +612,7 @@ UA_TCP_ClientDataSocket(UA_String endpointUrl,
 
     retval = UA_SocketHook_call(creationHook, sock);
     if(retval != UA_STATUSCODE_GOOD) {
-        UA_free(internalData);
-        UA_free(sock);
+        sock->free(sock);
         return retval;
     }
 

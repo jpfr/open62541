@@ -8,6 +8,7 @@
  * provides both a server- and clientside API, so creating a client is as easy as
  * creating a server. Copy the following into a file `myClient.c`: */
 
+#include <signal.h>
 #include <ua_client_highlevel.h>
 #include <ua_config_default.h>
 #include <ua_log_stdout.h>
@@ -25,7 +26,8 @@ int main(void) {
     signal(SIGINT, stopHandler); /* catches ctrl-c */
     signal(SIGTERM, stopHandler);
 
-    UA_Client *client = UA_Client_new(UA_ClientConfig_default);
+    UA_Client *client = UA_Client_new();
+    UA_ClientConfig_setDefault(UA_Client_getConfig(client));
     UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     if(retval != UA_STATUSCODE_GOOD) {
         UA_Client_delete(client);
@@ -39,8 +41,9 @@ int main(void) {
 
     /* NodeId of the variable holding the current time */
     //const UA_NodeId nodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_SERVERSTATUS_CURRENTTIME);
-    char *testString = UA_malloc(10); // 1MB string
+    char *testString = (char *)UA_malloc(10);
     memset(testString, 'A', 10);
+    testString[9] = 0;
     const UA_NodeId nodeId = UA_NODEID_BYTESTRING(0, testString);
 
     while(running) {

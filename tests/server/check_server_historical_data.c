@@ -5,6 +5,8 @@
  *    Copyright 2018 (c) basysKom GmbH <opensource@basyskom.com> (Author: Peter Rustler)
  */
 
+#include "ua_networkmanagers.h"
+#include "ua_log_stdout.h"
 #include "ua_types.h"
 #include "ua_server.h"
 #include "server/ua_server_internal.h"
@@ -38,6 +40,7 @@ static THREAD_HANDLE server_thread;
 static MUTEX_HANDLE serverMutex;
 
 static UA_Client *client;
+static UA_NetworkManager g_networkManager;
 static UA_NodeId parentNodeId;
 static UA_NodeId parentReferenceNodeId;
 static UA_NodeId outNodeId;
@@ -122,6 +125,9 @@ setup(void)
     }
 
     client = UA_Client_new();
+    retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &g_networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &g_networkManager);
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
     retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     if (retval != UA_STATUSCODE_GOOD)
@@ -130,9 +136,10 @@ setup(void)
         exit(1);
     }
 
-    // TODO: new networking api
-//    UA_Socket_activity = client->connection.recv;
-//    client->connection.recv = UA_Socket_activityTesting;
+    UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
+    UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
+    UA_NetworkManager_process = client->networkManager->process;
+    client->networkManager->process = UA_NetworkManager_processTesting;
 }
 
 static void
@@ -156,6 +163,8 @@ teardown(void)
         fprintf(stderr, "Server mutex was not destroyed correctly.\n");
         exit(1);
     }
+    g_networkManager.shutdown(&g_networkManager);
+    g_networkManager.deleteMembers(&g_networkManager);
 }
 
 #ifdef UA_ENABLE_HISTORIZING

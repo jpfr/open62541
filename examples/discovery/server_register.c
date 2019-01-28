@@ -8,9 +8,9 @@
 #include <ua_server.h>
 #include <ua_config_default.h>
 #include <ua_log_stdout.h>
-
 #include <signal.h>
 #include <stdlib.h>
+#include "ua_networkmanagers.h"
 
 #define DISCOVERY_SERVER_ENDPOINT "opc.tcp://localhost:4840"
 
@@ -61,6 +61,8 @@ writeInteger(UA_Server *server, const UA_NodeId *sessionId,
 int main(int argc, char **argv) {
     signal(SIGINT, stopHandler); /* catches ctrl-c */
     signal(SIGTERM, stopHandler);
+    UA_NetworkManager networkManager;
+    UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
 
     UA_ServerConfig *config = UA_ServerConfig_new_minimal(4841, NULL);;
     UA_String_clear(&config->applicationDescription.applicationUri);
@@ -93,6 +95,7 @@ int main(int argc, char **argv) {
 
     UA_Client *clientRegister = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(clientRegister));
+    UA_Client_setNetworkManager(clientRegister, &networkManager);
 
     // periodic server register after 10 Minutes, delay first register for 500ms
     UA_StatusCode retval =
@@ -135,5 +138,7 @@ int main(int argc, char **argv) {
     UA_Client_delete(clientRegister);
     UA_Server_delete(server);
     UA_ServerConfig_delete(config);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
     return retval == UA_STATUSCODE_GOOD ? EXIT_SUCCESS : EXIT_FAILURE;;
 }

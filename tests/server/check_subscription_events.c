@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ua_log_stdout.h"
+#include "ua_networkmanagers.h"
 #include "ua_client_subscriptions.h"
 #include "ua_server.h"
 #include "server/ua_services.h"
@@ -17,6 +19,7 @@
 
 static UA_Server *server;
 static UA_ServerConfig *config;
+static UA_NetworkManager g_networkManager;
 static UA_Boolean running;
 static THREAD_HANDLE server_thread;
 static MUTEX_HANDLE serverMutex;
@@ -187,8 +190,11 @@ setup(void) {
 
     client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &g_networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &g_networkManager);
 
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     if(retval != UA_STATUSCODE_GOOD) {
         fprintf(stderr, "Client can not connect to opc.tcp://localhost:4840. %s",
                 UA_StatusCode_name(retval));
@@ -214,6 +220,8 @@ teardown(void) {
         fprintf(stderr, "Server mutex was not destroyed correctly.");
         exit(1);
     }
+    g_networkManager.shutdown(&g_networkManager);
+    g_networkManager.deleteMembers(&g_networkManager);
 }
 
 static UA_StatusCode triggerEventLocked(const UA_NodeId eventNodeId, const UA_NodeId origin,
@@ -311,7 +319,7 @@ START_TEST(generateEvents) {
     // let the client fetch the event and check if the correct values were received
     notificationReceived = false;
     UA_comboSleep((UA_UInt32) publishingInterval + 100);
-    retval = UA_Client_run_iterate(client, 0);
+    retval = UA_Client_run_iterate(client, 1);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     ck_assert_uint_eq(notificationReceived, true);
     ck_assert_uint_eq(createResult.revisedQueueSize, 1);

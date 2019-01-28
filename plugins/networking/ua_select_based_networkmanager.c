@@ -2,11 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- *    Copyright 2018 (c) Mark Giraud, Fraunhofer IOSB
+ *    Copyright 2018-2019 (c) Mark Giraud, Fraunhofer IOSB
  */
 
 #include "open62541_queue.h"
 #include "ua_plugin_log.h"
+#include "ua_plugin_socket.h"
+#include "ua_plugin_network_manager.h"
 #include "ua_types_generated_handling.h"
 #include "ua_networkmanagers.h"
 
@@ -144,7 +146,7 @@ select_nm_processSocket(UA_NetworkManager *networkManager, UA_UInt32 timeout,
     fd_set fdset;
     FD_ZERO(&fdset);
     UA_fd_set((UA_SOCKET)sock->id, &fdset);
-    struct timeval tmptv = {0, timeout * 1000};
+    struct timeval tmptv = {0, (long int)(timeout * 1000)};
 
     int resultsize = UA_select((UA_Int32)(sock->id + 1), NULL, &fdset, NULL, &tmptv);
     UA_StatusCode retval = UA_STATUSCODE_GOOD;

@@ -63,6 +63,9 @@ UA_Client_getState(UA_Client *client);
 UA_EXPORT UA_ClientConfig *
 UA_Client_getConfig(UA_Client *client);
 
+UA_StatusCode
+UA_Client_setNetworkManager(UA_Client *client, UA_NetworkManager *networkManager);
+
 /* Get the client context */
 static UA_INLINE void *
 UA_Client_getContext(UA_Client *client) {

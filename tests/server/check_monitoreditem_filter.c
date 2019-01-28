@@ -5,6 +5,8 @@
  *    Copyright 2018 (c) basysKom GmbH <opensource@basyskom.com> (Author: Peter Rustler)
  */
 
+#include "ua_networkmanagers.h"
+#include "ua_log_stdout.h"
 #include "ua_types.h"
 #include "ua_server.h"
 #include "ua_client.h"
@@ -19,6 +21,7 @@
 
 UA_Server *server;
 UA_ServerConfig *config;
+UA_NetworkManager g_networkManager;
 UA_Boolean running;
 THREAD_HANDLE server_thread;
 
@@ -86,12 +89,18 @@ static void setup(void) {
 
     client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &g_networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &g_networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
-    // TODO: new networking api
-//    UA_Socket_activity = client->connection.recv;
-//    client->connection.recv = UA_Socket_activityTesting;
+    UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
+    UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
+    UA_NetworkManager_process = client->networkManager->process;
+    client->networkManager->process = UA_NetworkManager_processTesting;
 
     UA_CreateSubscriptionRequest request = UA_CreateSubscriptionRequest_default();
     request.requestedMaxKeepAliveCount = 100;
@@ -119,6 +128,9 @@ static void teardown(void) {
     UA_Server_delete(server);
     UA_ServerConfig_delete(config);
     UA_DataValue_deleteMembers(&lastValue);
+
+    g_networkManager.shutdown(&g_networkManager);
+    g_networkManager.deleteMembers(&g_networkManager);
 }
 
 #ifdef UA_ENABLE_SUBSCRIPTIONS

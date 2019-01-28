@@ -113,9 +113,14 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                  "Sent HEL message");
 
-    retval = client->networkManager.processSocket(&client->networkManager,
-                                                  client->config.timeout,
-                                                  UA_Connection_getSocket(client->connection));
+    if(client->networkManager == NULL) {
+        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
+                     "No NetworkManager configured");
+        return UA_STATUSCODE_BADCONFIGURATIONERROR;
+    }
+    retval = client->networkManager->processSocket(client->networkManager,
+                                                   client->config.timeout,
+                                                   UA_Connection_getSocket(client->connection));
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                      "Receiving ACK message failed with %s", UA_StatusCode_name(retval));
@@ -721,6 +726,13 @@ createSession(UA_Client *client) {
 
 UA_StatusCode
 UA_Client_createConnection(UA_Client *client, UA_Socket *sock) {
+    if(client == NULL || sock == NULL)
+        return UA_STATUSCODE_BADINVALIDARGUMENT;
+    if(client->networkManager == NULL) {
+        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
+                     "No NetworkManager configured");
+        return UA_STATUSCODE_BADCONFIGURATIONERROR;
+    }
     UA_Connection *connection = NULL;
     UA_StatusCode retval = UA_Connection_new(client->config.localConnectionConfig, sock, NULL, &connection);
     if(retval != UA_STATUSCODE_GOOD)
@@ -732,7 +744,7 @@ UA_Client_createConnection(UA_Client *client, UA_Socket *sock) {
     sock->deletionHook.hookContext = client;
     sock->deletionHook.hook = (UA_SocketHookFunction)UA_Client_removeConnection;
 
-    client->networkManager.registerSocket(&client->networkManager, sock);
+    client->networkManager->registerSocket(client->networkManager, sock);
 
     connection->chunkCallback.callbackContext = client;
     connection->chunkCallback.function = (UA_ProcessChunkCallbackFunction)UA_Client_processChunk;
@@ -792,8 +804,9 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     }
 
     /* Set the channel SecurityMode if not done so far */
+    client->channel.securityMode = client->config.endpoint.securityMode;
     if(client->channel.securityMode == UA_MESSAGESECURITYMODE_INVALID)
-        client->channel.securityMode = client->config.endpoint.securityMode;
+        client->channel.securityMode = UA_MESSAGESECURITYMODE_NONE;
 
     /* Initialized the SecureChannel */
     retval = UA_STATUSCODE_GOOD;
@@ -1032,7 +1045,7 @@ UA_Client_disconnect(UA_Client *client) {
         if(client->connection->state != UA_CONNECTION_CLOSED) {
             UA_Connection_close(client->connection);
             UA_Socket *const sock = UA_Connection_getSocket(client->connection);
-            client->networkManager.unregisterSocket(&client->networkManager, sock);
+            client->networkManager->unregisterSocket(client->networkManager, sock);
             sock->close(sock);
             sock->free(sock);
         }
@@ -1045,6 +1058,10 @@ UA_Client_disconnect(UA_Client *client) {
 #endif
 
     UA_SecureChannel_deleteMembers(&client->channel);
+
+    // process one last time to clean up closed sockets
+    if(client->networkManager != NULL)
+        client->networkManager->process(client->networkManager, 1);
 
     setClientState(client, UA_CLIENTSTATE_DISCONNECTED);
     return UA_STATUSCODE_GOOD;

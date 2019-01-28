@@ -5,6 +5,7 @@
 #include <ua_client_highlevel.h>
 #include <ua_config_default.h>
 #include <ua_log_stdout.h>
+#include <ua_networkmanagers.h>
 
 #include <stdlib.h>
 
@@ -32,10 +33,18 @@ int main(int argc, char *argv[]) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
+    /* Configure NetworkManager */
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    if(retval != UA_STATUSCODE_GOOD)
+        return (int)retval;
+
+    UA_Client_setNetworkManager(client, &networkManager);
+
     /* Listing endpoints */
     UA_EndpointDescription* endpointArray = NULL;
     size_t endpointArraySize = 0;
-    UA_StatusCode retval = UA_Client_getEndpoints(client, "opc.tcp://localhost:4840",
+    retval = UA_Client_getEndpoints(client, "opc.tcp://localhost:4840",
                                                   &endpointArraySize, &endpointArray);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_Array_delete(endpointArray, endpointArraySize, &UA_TYPES[UA_TYPES_ENDPOINTDESCRIPTION]);
@@ -257,5 +266,8 @@ int main(int argc, char *argv[]) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
     return EXIT_SUCCESS;
 }

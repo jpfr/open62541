@@ -170,6 +170,9 @@ processServiceResponse(void *application, UA_SecureChannel *channel,
     size_t offset = 0;
     UA_NodeId responseId;
     UA_StatusCode retval = UA_NodeId_decodeBinary(message, &offset, &responseId);
+    /* warning C4533: initialization of 'expectedNodeId' is skipped by 'goto finish'
+     * (because of windows (c++ compiler))*/
+    UA_NodeId expectedNodeId = UA_NODEID_NULL;
     if(retval != UA_STATUSCODE_GOOD)
         goto finish;
 
@@ -184,7 +187,7 @@ processServiceResponse(void *application, UA_SecureChannel *channel,
     rd->received = true;
 
     /* Check that the response type matches */
-    UA_NodeId expectedNodeId = UA_NODEID_NUMERIC(0, rd->responseType->binaryEncodingId);
+    expectedNodeId = UA_NODEID_NUMERIC(0, rd->responseType->binaryEncodingId);
     if(!UA_NodeId_equal(&responseId, &expectedNodeId)) {
         if(UA_NodeId_equal(&responseId, &serviceFaultId)) {
             UA_LOG_INFO(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
@@ -261,9 +264,14 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
 
         if(rd.requestId != 0) {
             do {
-                retval = client->networkManager.processSocket(&client->networkManager,
-                                                              timeout,
-                                                              UA_Connection_getSocket(client->connection));
+                if(client->networkManager == NULL) {
+                    UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
+                                 "No NetworkManager configured");
+                    return UA_STATUSCODE_BADCONFIGURATIONERROR;
+                }
+                retval = client->networkManager->processSocket(client->networkManager,
+                                                               timeout,
+                                                               UA_Connection_getSocket(client->connection));
                 if(retval != UA_STATUSCODE_GOOD)
                     return retval;
             } while(!UA_SecureChannel_isMessageComplete(&client->channel, rd.requestId));

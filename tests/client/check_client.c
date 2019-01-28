@@ -4,6 +4,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <networking/ua_networkmanagers.h>
+#include <ua_log_stdout.h>
 
 #include "ua_types.h"
 #include "ua_server.h"
@@ -73,24 +75,42 @@ static void teardown(void) {
 START_TEST(Client_connect) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
 
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
 START_TEST(Client_connect_username) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_StatusCode retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user1", "password");
+
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user1", "password");
 
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -98,9 +118,14 @@ START_TEST(Client_endpoints) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
     UA_EndpointDescription* endpointArray = NULL;
     size_t endpointArraySize = 0;
-    UA_StatusCode retval = UA_Client_getEndpoints(client, "opc.tcp://localhost:4840",
+    retval = UA_Client_getEndpoints(client, "opc.tcp://localhost:4840",
                                                   &endpointArraySize, &endpointArray);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     ck_assert_msg(endpointArraySize > 0);
@@ -108,6 +133,9 @@ START_TEST(Client_endpoints) {
     UA_Array_delete(endpointArray,endpointArraySize, &UA_TYPES[UA_TYPES_ENDPOINTDESCRIPTION]);
 
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -122,7 +150,12 @@ START_TEST(Client_endpoints_empty) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_GetEndpointsRequest request;
@@ -142,13 +175,22 @@ START_TEST(Client_endpoints_empty) {
     UA_GetEndpointsRequest_deleteMembers(&request);
 
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
 START_TEST(Client_read) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Variant val;
@@ -160,13 +202,22 @@ START_TEST(Client_read) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
 START_TEST(Client_renewSecureChannel) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     /* Forward the time */
@@ -183,15 +234,23 @@ START_TEST(Client_renewSecureChannel) {
     UA_Client_disconnect(client);
     UA_Client_delete(client);
 
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 } END_TEST
 
 START_TEST(Client_renewSecureChannelWithActiveSubscription) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
     UA_ClientConfig *cc = UA_Client_getConfig(client);
+
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
     cc->secureChannelLifeTime = 10000;
 
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_CreateSubscriptionRequest request = UA_CreateSubscriptionRequest_default();
@@ -209,12 +268,21 @@ START_TEST(Client_renewSecureChannelWithActiveSubscription) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 } END_TEST
 
 START_TEST(Client_reconnect) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Variant val;
@@ -239,14 +307,24 @@ START_TEST(Client_reconnect) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
 START_TEST(Client_delete_without_connect) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
     ck_assert_msg(client != NULL);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 

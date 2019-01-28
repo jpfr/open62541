@@ -20,6 +20,7 @@ typedef struct {
     SocketState state;
     UA_UInt32 recvBufferSize;
     UA_UInt32 sendBufferSize;
+    UA_String customHostname;
 } TcpSocketData;
 
 static UA_StatusCode
@@ -70,6 +71,15 @@ tcp_sock_open(UA_Socket *sock) {
     }
 
     socketData->state = UA_SOCKSTATE_OPEN;
+
+    struct sockaddr_in returned_addr;
+    bzero(&returned_addr, sizeof(returned_addr));
+    socklen_t len = sizeof(returned_addr);
+    getsockname((UA_SOCKET)sock->id, (struct sockaddr *)&returned_addr, &len);
+    UA_UInt16 port = ntohs(returned_addr.sin_port);
+
+    tcp_sock_setDiscoveryUrl(sock, port, &socketData->customHostname);
+
     return UA_STATUSCODE_GOOD;
 }
 
@@ -101,6 +111,7 @@ tcp_sock_free(UA_Socket *sock) {
 
     UA_SocketHook_call(sock->deletionHook, sock);
 
+    UA_String_deleteMembers(&socketData->customHostname);
     UA_ByteString_deleteMembers(&sock->discoveryUrl);
     UA_SocketFactory_deleteMembers(sock->socketFactory);
     UA_close((int)sock->id);
@@ -200,8 +211,8 @@ UA_TCP_ListenerSocketFromAddrinfo(struct addrinfo *addrinfo, UA_SocketConfig *so
     }
     sock->socketFactory = (UA_SocketFactory *)UA_malloc(sizeof(UA_SocketFactory));
     if(sock->socketFactory == NULL) {
-        UA_free(sock);
         UA_free(sock->internalData);
+        UA_free(sock);
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
 
@@ -211,13 +222,7 @@ UA_TCP_ListenerSocketFromAddrinfo(struct addrinfo *addrinfo, UA_SocketConfig *so
     socketData->state = UA_SOCKSTATE_NEW;
     socketData->recvBufferSize = socketConfig->recvBufferSize;
     socketData->sendBufferSize = socketConfig->sendBufferSize;
-
-    UA_UInt16 port;
-    if(addrinfo->ai_addr->sa_family == AF_INET)
-        port = (UA_UInt16)(((struct sockaddr_in *)addrinfo->ai_addr)->sin_port);
-    else
-        port = (UA_UInt16)(((struct sockaddr_in6 *)addrinfo->ai_addr)->sin6_port);
-    tcp_sock_setDiscoveryUrl(sock, port, &socketConfig->customHostname);
+    UA_String_copy(&socketConfig->customHostname, &socketData->customHostname);
 
     retval = UA_SocketFactory_init(sock->socketFactory, socketConfig->logger);
     if(retval != UA_STATUSCODE_GOOD)

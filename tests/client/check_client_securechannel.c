@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ua_networkmanagers.h"
+#include "ua_log_stdout.h"
 #include "ua_types.h"
 #include "ua_server.h"
 #include "ua_client.h"
@@ -45,7 +47,12 @@ START_TEST(SecureChannel_timeout_max) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_ClientConfig *cconfig = UA_Client_getConfig(client);
@@ -60,6 +67,9 @@ START_TEST(SecureChannel_timeout_max) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -68,7 +78,12 @@ START_TEST(SecureChannel_timeout_fail) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_ClientConfig *cconfig = UA_Client_getConfig(client);
@@ -85,6 +100,9 @@ START_TEST(SecureChannel_timeout_fail) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -93,7 +111,12 @@ START_TEST(SecureChannel_networkfail) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_ReadRequest rq;
@@ -107,8 +130,8 @@ START_TEST(SecureChannel_networkfail) {
 
     /* Forward the clock after recv in the client */
     UA_ClientConfig *cconfig = UA_Client_getConfig(client);
-    UA_NetworkManager_process = client->networkManager.process;
-    client->networkManager.process = UA_NetworkManager_processTesting;
+    UA_NetworkManager_process = client->networkManager->process;
+    client->networkManager->process = UA_NetworkManager_processTesting;
     UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
     UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
     UA_Socket_activitySleepDuration = cconfig->secureChannelLifeTime + 1;
@@ -122,6 +145,9 @@ START_TEST(SecureChannel_networkfail) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -129,7 +155,12 @@ START_TEST(SecureChannel_reconnect) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     
     client->state = UA_CLIENTSTATE_CONNECTED;
@@ -145,6 +176,8 @@ START_TEST(SecureChannel_reconnect) {
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Client_delete(client);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -152,7 +185,12 @@ START_TEST(SecureChannel_cableunplugged) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
+    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Variant val;
@@ -177,6 +215,8 @@ START_TEST(SecureChannel_cableunplugged) {
     UA_Socket_activityTesting_result = UA_STATUSCODE_GOOD;
 
     UA_Client_delete(client);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 

@@ -133,7 +133,7 @@ struct UA_Client {
     UA_StatusCode connectStatus;
 
     /* NetworkManager */
-    UA_NetworkManager networkManager;
+    UA_NetworkManager *networkManager;
     UA_UInt64 openRepeatedCallbackId;
     UA_Socket *repeatedCallbackSocket;
 

@@ -5,6 +5,7 @@
 #include <ua_client_subscriptions.h>
 #include <ua_log_stdout.h>
 #include <ua_client_highlevel_async.h>
+#include <ua_networkmanagers.h>
 
 #include <stdlib.h>
 
@@ -110,6 +111,14 @@ int
 main(int argc, char *argv[]) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    if(retval != UA_STATUSCODE_GOOD)
+        return (int)retval;
+
+    UA_Client_setNetworkManager(client, &networkManager);
+
     UA_UInt32 reqId = 0;
     UA_String userdata = UA_STRING("userdata");
 
@@ -198,6 +207,8 @@ main(int argc, char *argv[]) {
     }
     // process all remaining responses.
     // TODO: need to check how many responses are still pending
+    // wait a bit for remaining responses to arrive
+    UA_sleep_ms(100);
     for(int i = 0; i < 100; ++i)
         UA_Client_run_iterate(client, 0);
 
@@ -207,5 +218,7 @@ main(int argc, char *argv[]) {
     UA_Client_disconnect(client);
     UA_Client_delete(client);
 
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
     return EXIT_SUCCESS;
 }

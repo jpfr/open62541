@@ -115,16 +115,6 @@ struct UA_ClientConfig {
     UA_CertificateVerification certificateVerification;
 
     /* Networking */
-    /**
-     * This function is called by the server to create a networkManager.
-     * This enables configuration to be done on the user side in the config.
-     * The delayed configuration makes sure, that initialization is done during
-     * server startup. Also, only the server will have ownership of the NetworkManager.
-     *
-     * @param config The configuration.
-     * @param networkManager The networkManager to initialize.
-     */
-    UA_StatusCode (*configureNetworkManager)(const UA_ClientConfig *config, UA_NetworkManager *networkManager);
     UA_ClientSocketConfig clientSocketConfig;
 
     /* Callback for state changes */

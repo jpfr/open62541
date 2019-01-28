@@ -17,6 +17,8 @@
 #include "testing_clock.h"
 #include "thread_wrapper.h"
 #include "certificates.h"
+#include "ua_networkmanagers.h"
+#include "ua_log_stdout.h"
 
 UA_Server *server;
 UA_ServerConfig *config;
@@ -103,10 +105,14 @@ START_TEST(encryption_connect) {
      * and certificate */
     client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
     ck_assert_msg(client != NULL);
     remoteCertificate = UA_ByteString_new();
-    UA_StatusCode retval = UA_Client_getEndpoints(client, "opc.tcp://localhost:4840",
-                                                  &endpointArraySize, &endpointArray);
+    retval = UA_Client_getEndpoints(client, "opc.tcp://localhost:4840",
+                                    &endpointArraySize, &endpointArray);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     for(size_t endPointCount = 0; endPointCount < endpointArraySize; endPointCount++) {
@@ -141,6 +147,7 @@ START_TEST(encryption_connect) {
     /* Secure client initialization */
     client = UA_Client_new();
     UA_ClientConfig *cc = UA_Client_getConfig(client);
+    UA_Client_setNetworkManager(client, &networkManager);
     UA_ClientConfig_setDefaultEncryption(cc, certificate, privateKey,
                                          trustList, trustListSize,
                                          revocationList, revocationListSize);
@@ -167,6 +174,8 @@ START_TEST(encryption_connect) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 

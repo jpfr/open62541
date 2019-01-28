@@ -104,12 +104,10 @@ UA_StatusCode UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
     /* FIXME: Will most likely break somewhere in the future */
     /************************************************************/
 
-    // TODO: This is a workaround. Fix after finishing the rebase
-    if(client->config.configureNetworkManager != NULL) {
-        retval = client->config.configureNetworkManager(&client->config, &client->networkManager);
-        if(retval != UA_STATUSCODE_GOOD)
-            return retval;
-        client->config.configureNetworkManager = NULL;
+    if(client->networkManager == NULL) {
+        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
+                     "No NetworkManager configured");
+        return UA_STATUSCODE_BADCONFIGURATIONERROR;
     }
 
     if(timeout) {
@@ -120,7 +118,7 @@ UA_StatusCode UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
         if(retval != UA_STATUSCODE_GOOD)
             return retval;
 
-        retval = client->networkManager.process(&client->networkManager, timeout);
+        retval = client->networkManager->process(client->networkManager, timeout);
         if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT)
             return retval;
 
@@ -142,7 +140,7 @@ UA_StatusCode UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
         if(retval != UA_STATUSCODE_GOOD)
             return retval;
 
-        retval = client->networkManager.process(&client->networkManager, timeout);
+        retval = client->networkManager->process(client->networkManager, timeout);
         if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
             if(retval == UA_STATUSCODE_BADCONNECTIONCLOSED)
                 setClientState(client, UA_CLIENTSTATE_DISCONNECTED);

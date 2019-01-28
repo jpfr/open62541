@@ -15,6 +15,8 @@
 #include "testing_clock.h"
 #include "testing_socket.h"
 #include "thread_wrapper.h"
+#include "ua_networkmanagers.h"
+#include "ua_log_stdout.h"
 
 UA_Server *server;
 UA_ServerConfig *config;
@@ -65,6 +67,12 @@ START_TEST(Client_connect_async){
     UA_StatusCode retval;
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+
+    UA_NetworkManager networkManager;
+    retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
     UA_Boolean connected = false;
     UA_Client_connect_async(client, "opc.tcp://localhost:4840", onConnect, &connected);
     /*Windows needs time to response*/
@@ -101,20 +109,55 @@ START_TEST(Client_connect_async){
     ck_assert_uint_eq(asyncCounter, 10-4);
     UA_Client_disconnect(client);
     UA_Client_delete (client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
+END_TEST
+
+/* https://github.com/open62541/open62541/issues/2394 */
+START_TEST(Client_connect_async_memleak)
+    {
+        UA_Client *client = UA_Client_new();
+        UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+        UA_NetworkManager networkManager;
+        UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+        ck_assert(retval == UA_STATUSCODE_GOOD);
+        UA_Client_setNetworkManager(client, &networkManager);
+        const char* uri = "opc.tcp://localhost:4840";
+        const int iterations = 20;
+
+        UA_Boolean connected = false;
+        for (int i = 0; i < iterations; i++) {
+            retval = UA_Client_connect_async(client, uri, onConnect, &connected);
+            if(retval != UA_STATUSCODE_GOOD)
+                ck_assert_uint_eq(retval, UA_STATUSCODE_GOODCOMPLETESASYNCHRONOUSLY);
+            UA_Client_run_iterate(client, 0);
+            UA_comboSleep(25);
+        }
+        ck_assert(connected);
+
+        UA_Client_delete(client);
+        networkManager.shutdown(&networkManager);
+        networkManager.deleteMembers(&networkManager);
+    }
 END_TEST
 
 START_TEST(Client_no_connection) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
     UA_Boolean connected = false;
-    UA_StatusCode retval =
-        UA_Client_connect_async(client, "opc.tcp://localhost:4840", onConnect, &connected);
+    retval = UA_Client_connect_async(client, "opc.tcp://localhost:4840", onConnect, &connected);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
-    UA_NetworkManager_process = client->networkManager.process;
-    client->networkManager.process = UA_NetworkManager_processTesting;
+    UA_NetworkManager_process = client->networkManager->process;
+    client->networkManager->process = UA_NetworkManager_processTesting;
 
     /* Wait for connect. Otherwise we wont be able to replace the activity function */
     for(int i = 0; i < 100 && !connected; ++i) {
@@ -131,15 +174,24 @@ START_TEST(Client_no_connection) {
     ck_assert_uint_eq(retval, UA_STATUSCODE_BADCONNECTIONCLOSED);
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
 START_TEST(Client_without_run_iterate) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
     UA_Boolean connected = false;
     UA_Client_connect_async(client, "opc.tcp://localhost:4840", onConnect, &connected);
     UA_Client_delete(client);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -147,6 +199,7 @@ static Suite* testSuite_Client(void) {
     Suite *s = suite_create("Client");
     TCase *tc_client_connect = tcase_create("Client Connect Async");
     tcase_add_checked_fixture(tc_client_connect, setup, teardown);
+    tcase_add_test(tc_client_connect, Client_connect_async_memleak);
     tcase_add_test(tc_client_connect, Client_connect_async);
     tcase_add_test(tc_client_connect, Client_no_connection);
     tcase_add_test(tc_client_connect, Client_without_run_iterate);

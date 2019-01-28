@@ -25,6 +25,8 @@
 #include "historical_read_test_data.h"
 #endif
 #include <stddef.h>
+#include "ua_networkmanagers.h"
+#include "ua_log_stdout.h"
 
 
 static UA_Server *server;
@@ -36,6 +38,7 @@ static UA_Boolean running;
 static THREAD_HANDLE server_thread;
 
 static UA_Client *client;
+static UA_NetworkManager g_networkManager;
 static UA_NodeId parentNodeId;
 static UA_NodeId parentReferenceNodeId;
 static UA_NodeId outNodeId;
@@ -136,6 +139,9 @@ setup(void)
 #endif
     client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+    retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &g_networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &g_networkManager);
     retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_str_eq(UA_StatusCode_name(retval), UA_StatusCode_name(UA_STATUSCODE_GOOD));
 
@@ -161,6 +167,8 @@ teardown(void)
     UA_Server_run_shutdown(server);
     UA_Server_delete(server);
     UA_ServerConfig_delete(config);
+    g_networkManager.shutdown(&g_networkManager);
+    g_networkManager.deleteMembers(&g_networkManager);
 #ifdef UA_ENABLE_HISTORIZING
     UA_free(gathering);
 #endif

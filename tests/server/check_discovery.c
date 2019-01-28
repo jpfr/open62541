@@ -2,7 +2,9 @@
 *  License, v. 2.0. If a copy of the MPL was not distributed with this
 *  file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "server/ua_server_internal.h"
+#include "ua_networkmanagers.h"
+#include "ua_log_stdout.h"
+#include "ua_server_internal.h"
 #include "ua_client.h"
 #include "ua_config_default.h"
 #include "testing_clock.h"
@@ -28,6 +30,7 @@ UA_ServerConfig *config_lds;
 UA_Boolean *running_lds;
 THREAD_HANDLE server_thread_lds;
 UA_Client *clientRegisterRepeated;
+UA_NetworkManager g_networkManager;
 
 THREAD_CALLBACK(serverloop_lds) {
     while(*running_lds)
@@ -113,13 +116,19 @@ static void teardown_register(void) {
 START_TEST(Server_register) {
     UA_Client *clientRegister = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(clientRegister));
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(clientRegister, &networkManager);
 
-    UA_StatusCode retval = UA_Client_connect_noSession(clientRegister, "opc.tcp://localhost:4840");
+    retval = UA_Client_connect_noSession(clientRegister, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     retval = UA_Server_register_discovery(server_register, clientRegister , NULL);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     UA_Client_disconnect(clientRegister);
     UA_Client_delete(clientRegister);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -127,12 +136,19 @@ START_TEST(Server_unregister) {
     UA_Client *clientRegister = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(clientRegister));
 
-    UA_StatusCode retval = UA_Client_connect_noSession(clientRegister, "opc.tcp://localhost:4840");
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(clientRegister, &networkManager);
+
+    retval = UA_Client_connect_noSession(clientRegister, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     retval = UA_Server_unregister_discovery(server_register, clientRegister);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     UA_Client_disconnect(clientRegister);
     UA_Client_delete(clientRegister);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -158,12 +174,19 @@ START_TEST(Server_register_semaphore) {
     UA_Client *clientRegister = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(clientRegister));
 
-    UA_StatusCode retval = UA_Client_connect_noSession(clientRegister, "opc.tcp://localhost:4840");
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(clientRegister, &networkManager);
+
+    retval = UA_Client_connect_noSession(clientRegister, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     retval = UA_Server_register_discovery(server_register, clientRegister, SEMAPHORE_PATH);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     UA_Client_disconnect(clientRegister);
     UA_Client_delete(clientRegister);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 END_TEST
 
@@ -179,9 +202,13 @@ START_TEST(Server_register_periodic) {
     clientRegisterRepeated = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(clientRegisterRepeated));
 
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &g_networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(clientRegisterRepeated, &g_networkManager);
+
     ck_assert(clientRegisterRepeated != NULL);
     // periodic register every minute, first register immediately
-    UA_StatusCode retval = UA_Server_addPeriodicServerRegisterCallback(server_register, clientRegisterRepeated, "opc.tcp://localhost:4840",
+    retval = UA_Server_addPeriodicServerRegisterCallback(server_register, clientRegisterRepeated, "opc.tcp://localhost:4840",
                                                     60*1000, 100, &periodicRegisterCallbackId);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 }
@@ -197,6 +224,8 @@ START_TEST(Server_unregister_periodic) {
     UA_Client_disconnect(clientRegisterRepeated);
     UA_Client_delete(clientRegisterRepeated);
     clientRegisterRepeated=NULL;
+    g_networkManager.shutdown(&g_networkManager);
+    g_networkManager.deleteMembers(&g_networkManager);
 }
 END_TEST
 
@@ -208,6 +237,11 @@ FindAndCheck(const UA_String expectedUris[], size_t expectedUrisSize,
              const char *filterLocale) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
 
     UA_ApplicationDescription* applicationDescriptionArray = NULL;
     size_t applicationDescriptionArraySize = 0;
@@ -230,10 +264,9 @@ FindAndCheck(const UA_String expectedUris[], size_t expectedUrisSize,
         localeIds[0] = UA_String_fromChars(filterLocale);
     }
 
-    UA_StatusCode retval =
-        UA_Client_findServers(client, "opc.tcp://localhost:4840",
-                              serverUrisSize, serverUris, localeIdsSize, localeIds,
-                              &applicationDescriptionArraySize, &applicationDescriptionArray);
+    retval = UA_Client_findServers(client, "opc.tcp://localhost:4840",
+                                   serverUrisSize, serverUris, localeIdsSize, localeIds,
+                                   &applicationDescriptionArraySize, &applicationDescriptionArray);
 
     if(filterUri)
         UA_Array_delete(serverUris, serverUrisSize, &UA_TYPES[UA_TYPES_STRING]);
@@ -265,6 +298,8 @@ FindAndCheck(const UA_String expectedUris[], size_t expectedUrisSize,
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 
 #ifdef UA_ENABLE_DISCOVERY_MULTICAST
@@ -275,6 +310,10 @@ FindOnNetworkAndCheck(UA_String expectedServerNames[], size_t expectedServerName
                       const char** filterCapabilities, size_t filterCapabilitiesSize) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
 
     UA_ServerOnNetwork* serverOnNetwork = NULL;
     size_t serverOnNetworkSize = 0;
@@ -290,10 +329,9 @@ FindOnNetworkAndCheck(UA_String expectedServerNames[], size_t expectedServerName
     }
 
 
-    UA_StatusCode retval =
-        UA_Client_findServersOnNetwork(client, "opc.tcp://localhost:4840", 0, 0,
-                                       serverCapabilityFilterSize, serverCapabilityFilter,
-                                       &serverOnNetworkSize, &serverOnNetwork);
+    retval = UA_Client_findServersOnNetwork(client, "opc.tcp://localhost:4840", 0, 0,
+                                            serverCapabilityFilterSize, serverCapabilityFilter,
+                                            &serverOnNetworkSize, &serverOnNetwork);
 
     if(serverCapabilityFilterSize)
         UA_Array_delete(serverCapabilityFilter, serverCapabilityFilterSize,
@@ -317,6 +355,8 @@ FindOnNetworkAndCheck(UA_String expectedServerNames[], size_t expectedServerName
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 
 static UA_StatusCode
@@ -365,13 +405,18 @@ GetEndpointsAndCheck(const char* discoveryUrl, const char* filterTransportProfil
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
+    UA_NetworkManager networkManager;
+    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+    ck_assert(retval == UA_STATUSCODE_GOOD);
+    UA_Client_setNetworkManager(client, &networkManager);
+
     ck_assert_uint_eq(UA_Client_connect(client, discoveryUrl), UA_STATUSCODE_GOOD);
 
     UA_EndpointDescription* endpointArray = NULL;
     size_t endpointArraySize = 0;
     UA_String discoveryUrlUA = UA_String_fromChars(discoveryUrl);
-    UA_StatusCode retval = GetEndpoints(client, &discoveryUrlUA, &endpointArraySize,
-                                        &endpointArray, filterTransportProfileUri);
+    retval = GetEndpoints(client, &discoveryUrlUA, &endpointArraySize,
+                          &endpointArray, filterTransportProfileUri);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     UA_String_deleteMembers(&discoveryUrlUA);
 
@@ -384,6 +429,8 @@ GetEndpointsAndCheck(const char* discoveryUrl, const char* filterTransportProfil
 
     UA_Array_delete(endpointArray, endpointArraySize, &UA_TYPES[UA_TYPES_ENDPOINTDESCRIPTION]);
     UA_Client_delete(client);
+    networkManager.shutdown(&networkManager);
+    networkManager.deleteMembers(&networkManager);
 }
 
 // Test if discovery server lists himself as registered server if it is filtered by his uri

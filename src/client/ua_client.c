@@ -82,9 +82,6 @@ UA_Client_deleteMembers(UA_Client *client) {
      * in UA_Client_disconnect function */
     //UA_SecureChannel_deleteMembersCleanup(&client->channel);
 
-    client->networkManager.shutdown(&client->networkManager);
-    client->networkManager.deleteMembers(&client->networkManager);
-
     if(client->connection != NULL)
         UA_Connection_close(client->connection);
     if(client->endpointUrl.data)
@@ -116,9 +113,6 @@ UA_Client_deleteMembers(UA_Client *client) {
     /* Clean up the work queue */
     UA_WorkQueue_cleanup(&client->workQueue);
 
-    client->networkManager.shutdown(&client->networkManager);
-    client->networkManager.deleteMembers(&client->networkManager);
-
     UA_ClientConfig_deleteMembers(&client->config);
 }
 
@@ -144,6 +138,14 @@ UA_Client_getConfig(UA_Client *client) {
     if(!client)
         return NULL;
     return &client->config;
+}
+
+UA_StatusCode
+UA_Client_setNetworkManager(UA_Client *client, UA_NetworkManager *networkManager) {
+    if(client == NULL || networkManager == NULL)
+        return UA_STATUSCODE_BADINVALIDARGUMENT;
+    client->networkManager = networkManager;
+    return UA_STATUSCODE_GOOD;
 }
 
 /****************/
