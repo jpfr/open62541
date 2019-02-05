@@ -1,7 +1,7 @@
 /* This work is licensed under a Creative Commons CCZero 1.0 Universal License.
  * See http://creativecommons.org/publicdomain/zero/1.0/ for more information.
  *
- *    Copyright 2018 (c) Mark Giraud, Fraunhofer IOSB
+ *    Copyright 2018-2019 (c) Mark Giraud, Fraunhofer IOSB
  */
 
 #include "ua_types_generated_handling.h"
@@ -37,13 +37,13 @@ tcp_sock_setDiscoveryUrl(UA_Socket *sock, UA_UInt16 port, UA_ByteString *customH
         du.length = (size_t)UA_snprintf(discoveryUrlBuffer, 255, "opc.tcp://%.*s:%d/",
                                         (int)customHostname->length,
                                         customHostname->data,
-                                        UA_ntohs(port));
+                                        port);
         du.data = (UA_Byte *)discoveryUrlBuffer;
     } else {
         char hostnameBuffer[256];
         if(UA_gethostname(hostnameBuffer, 255) == 0) {
             du.length = (size_t)UA_snprintf(discoveryUrlBuffer, 255, "opc.tcp://%s:%d/",
-                                            hostnameBuffer, UA_ntohs(port));
+                                            hostnameBuffer, port);
             du.data = (UA_Byte *)discoveryUrlBuffer;
         } else {
             UA_LOG_ERROR(sock->logger, UA_LOGCATEGORY_NETWORK, "Could not get the hostname");
@@ -77,8 +77,13 @@ tcp_sock_open(UA_Socket *sock) {
     struct sockaddr_in returned_addr;
     memset(&returned_addr, 0, sizeof(returned_addr));
     socklen_t len = sizeof(returned_addr);
-    getsockname((UA_SOCKET)sock->id, (struct sockaddr *)&returned_addr, &len);
-    UA_UInt16 port = ntohs(returned_addr.sin_port);
+    if(UA_getsockname((UA_SOCKET)sock->id, (struct sockaddr *)&returned_addr, &len) < 0) {
+        UA_LOG_SOCKET_ERRNO_WRAP(
+            UA_LOG_WARNING(sock->logger, UA_LOGCATEGORY_NETWORK,
+                           "Error getting the socket port on server socket: %s", errno_str));
+        return UA_STATUSCODE_BADINTERNALERROR;
+    }
+    UA_UInt16 port = UA_ntohs(returned_addr.sin_port);
 
     tcp_sock_setDiscoveryUrl(sock, port, &internalSock->customHostname);
 

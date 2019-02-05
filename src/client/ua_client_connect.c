@@ -789,6 +789,8 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     if(client->config.clientSocketConfig.openHook.hook == NULL &&
        client->config.clientSocketConfig.openHook.hookContext == NULL)
         client->config.clientSocketConfig.openHook = openHook;
+    if(client->config.clientSocketConfig.socketConfig.logger == NULL)
+        client->config.clientSocketConfig.socketConfig.logger = &client->config.logger;
 
     UA_SocketHook creationHook;
     creationHook.hookContext = client;

@@ -147,6 +147,7 @@ START_TEST(Server_set_customHostname) {
     UA_Server *server = UA_Server_new(config);
     UA_StatusCode retval = UA_Server_run_startup(server);
     ck_assert_int_eq(retval, UA_STATUSCODE_GOOD);
+    UA_Server_run_iterate(server, true);
 
     // TODO when we have more network layers, extend this
     ck_assert_uint_ge(config->socketConfigsSize, 1);

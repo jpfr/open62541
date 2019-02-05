@@ -246,7 +246,7 @@ useVariableTypeAttributes(UA_Server *server, UA_Session *session,
         /* A value is present */
         UA_DataValue_deleteMembers(&orig);
     } else {
-        UA_LOG_DEBUG_SESSION(&server->config.logger, session,
+        UA_LOG_TRACE_SESSION(&server->config.logger, session,
                              "AddNodes: No value given; Copy the value "
                              "from the TypeDefinition");
         UA_WriteValue v;

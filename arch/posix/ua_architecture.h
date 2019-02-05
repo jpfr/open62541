@@ -106,6 +106,7 @@
 #define UA_accept accept
 #define UA_connect connect
 #define UA_getaddrinfo getaddrinfo
+#define UA_getsockname getsockname
 #define UA_getsockopt getsockopt
 #define UA_setsockopt setsockopt
 #define UA_freeaddrinfo freeaddrinfo

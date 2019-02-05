@@ -17,7 +17,7 @@ _UA_BEGIN_DECLS
  * \param logger The logger to be used by the networkManager
  * \param networkManager pointer to an empty networkManager struct, that will be initialized.
  */
-UA_StatusCode
+UA_EXPORT UA_StatusCode
 UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager *networkManager);
 
 _UA_END_DECLS
