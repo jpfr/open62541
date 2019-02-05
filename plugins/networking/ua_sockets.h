@@ -34,13 +34,13 @@ UA_TCP_ListenerSockets(UA_SocketConfig *socketConfig, UA_SocketHook creationHook
  * \param listenerSocket
  * \param p_sock
  * \param creationHook
- * \param deletionHook
+ * \param freeHook
  * \param logger
  */
 UA_StatusCode
 UA_TCP_DataSocket_AcceptFrom(UA_Socket *listenerSocket, UA_Logger *logger, UA_UInt32 sendBufferSize,
-                             UA_UInt32 recvBufferSize, UA_SocketHook creationHook, UA_SocketHook deletionHook,
-                             UA_Socket_DataCallback dataCallback);
+                             UA_UInt32 recvBufferSize, UA_SocketHook creationHook, UA_SocketHook openHook,
+                             UA_SocketHook freeHook, UA_Socket_DataCallback dataCallback);
 
 /**
  * Connects to the supplied endpoint Url.

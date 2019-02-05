@@ -17,11 +17,13 @@ typedef enum {
 } SocketState;
 
 typedef struct {
+    UA_Socket socket;
+
     SocketState state;
     UA_UInt32 recvBufferSize;
     UA_UInt32 sendBufferSize;
     UA_String customHostname;
-} TcpSocketData;
+} UA_Socket_tcpListener;
 
 static UA_StatusCode
 tcp_sock_setDiscoveryUrl(UA_Socket *sock, UA_UInt16 port, UA_ByteString *customHostname) {
@@ -55,9 +57,9 @@ tcp_sock_setDiscoveryUrl(UA_Socket *sock, UA_UInt16 port, UA_ByteString *customH
 
 static UA_StatusCode
 tcp_sock_open(UA_Socket *sock) {
-    TcpSocketData *const socketData = (TcpSocketData *const)sock->internalData;
+    UA_Socket_tcpListener *const internalSock = (UA_Socket_tcpListener *const)sock;
 
-    if(socketData->state != UA_SOCKSTATE_NEW) {
+    if(internalSock->state != UA_SOCKSTATE_NEW) {
         UA_LOG_ERROR(sock->logger, UA_LOGCATEGORY_NETWORK,
                      "Calling open on already open socket not supported");
         return UA_STATUSCODE_BADINTERNALERROR;
@@ -70,53 +72,50 @@ tcp_sock_open(UA_Socket *sock) {
         return UA_STATUSCODE_BADINTERNALERROR;
     }
 
-    socketData->state = UA_SOCKSTATE_OPEN;
+    internalSock->state = UA_SOCKSTATE_OPEN;
 
     struct sockaddr_in returned_addr;
-    bzero(&returned_addr, sizeof(returned_addr));
+    memset(&returned_addr, 0, sizeof(returned_addr));
     socklen_t len = sizeof(returned_addr);
     getsockname((UA_SOCKET)sock->id, (struct sockaddr *)&returned_addr, &len);
     UA_UInt16 port = ntohs(returned_addr.sin_port);
 
-    tcp_sock_setDiscoveryUrl(sock, port, &socketData->customHostname);
+    tcp_sock_setDiscoveryUrl(sock, port, &internalSock->customHostname);
 
-    return UA_STATUSCODE_GOOD;
+    return UA_SocketHook_call(sock->openHook, sock);
 }
 
 static UA_StatusCode
 tcp_sock_close(UA_Socket *sock) {
-    TcpSocketData *const socketData = (TcpSocketData *const)sock->internalData;
+    UA_Socket_tcpListener *const internalSock = (UA_Socket_tcpListener *const)sock;
 
-    if(socketData->state == UA_SOCKSTATE_CLOSED)
+    if(internalSock->state == UA_SOCKSTATE_CLOSED)
         return UA_STATUSCODE_GOOD;
 
     UA_shutdown((UA_SOCKET)sock->id, UA_SHUT_RDWR);
-    socketData->state = UA_SOCKSTATE_CLOSED;
+    internalSock->state = UA_SOCKSTATE_CLOSED;
     return UA_STATUSCODE_GOOD;
 }
 
 static UA_Boolean
 tcp_sock_mayDelete(UA_Socket *sock) {
-    TcpSocketData *const socketData = (TcpSocketData *const)sock->internalData;
-
-    return socketData->state == UA_SOCKSTATE_CLOSED;
-
+    UA_Socket_tcpListener *const internalSock = (UA_Socket_tcpListener *const)sock;
+    return internalSock->state == UA_SOCKSTATE_CLOSED;
 }
 
 static UA_StatusCode
 tcp_sock_free(UA_Socket *sock) {
     if(sock == NULL)
         return UA_STATUSCODE_BADINTERNALERROR;
-    TcpSocketData *const socketData = (TcpSocketData *const)sock->internalData;
+    UA_Socket_tcpListener *const internalSock = (UA_Socket_tcpListener *const)sock;
 
-    UA_SocketHook_call(sock->deletionHook, sock);
+    UA_SocketHook_call(sock->freeHook, sock);
 
-    UA_String_deleteMembers(&socketData->customHostname);
+    UA_String_deleteMembers(&internalSock->customHostname);
     UA_ByteString_deleteMembers(&sock->discoveryUrl);
     UA_SocketFactory_deleteMembers(sock->socketFactory);
     UA_close((int)sock->id);
     UA_free(sock->socketFactory);
-    UA_free(socketData);
     UA_free(sock);
 
     return UA_STATUSCODE_GOOD;
@@ -143,11 +142,11 @@ tcp_sock_activity(UA_Socket *sock) {
 static UA_StatusCode
 tcp_sock_buildSocket(UA_SocketFactory *factory, UA_Socket *listenerSocket, void *additionalData) {
     (void)additionalData;
-    TcpSocketData *const socketData = (TcpSocketData *const)listenerSocket->internalData;
+    UA_Socket_tcpListener *const internalSock = (UA_Socket_tcpListener *const)listenerSocket;
     return UA_TCP_DataSocket_AcceptFrom(listenerSocket, factory->logger,
-                                        socketData->sendBufferSize,
-                                        socketData->recvBufferSize,
-                                        factory->creationHook, factory->deletionHook,
+                                        internalSock->sendBufferSize,
+                                        internalSock->recvBufferSize,
+                                        factory->creationHook, factory->openHook, factory->freeHook,
                                         factory->socketDataCallback);
 }
 
@@ -196,35 +195,28 @@ UA_TCP_ListenerSocketFromAddrinfo(struct addrinfo *addrinfo, UA_SocketConfig *so
         return UA_STATUSCODE_BADINTERNALERROR;
     }
 
-    UA_Socket *sock = (UA_Socket *)UA_malloc(sizeof(UA_Socket));
+    UA_Socket_tcpListener *sock = (UA_Socket_tcpListener *)UA_malloc(sizeof(UA_Socket_tcpListener));
     if(sock == NULL) {
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
-    memset(sock, 0, sizeof(UA_Socket));
+    memset(sock, 0, sizeof(UA_Socket_tcpListener));
 
-    sock->isListener = true;
-    sock->id = (UA_UInt64)socket_fd;
-    sock->internalData = (TcpSocketData *)UA_malloc(sizeof(TcpSocketData));
-    if(sock->internalData == NULL) {
-        UA_free(sock);
-        return UA_STATUSCODE_BADOUTOFMEMORY;
-    }
-    sock->socketFactory = (UA_SocketFactory *)UA_malloc(sizeof(UA_SocketFactory));
-    if(sock->socketFactory == NULL) {
-        UA_free(sock->internalData);
+    sock->socket.isListener = true;
+    sock->socket.id = (UA_UInt64)socket_fd;
+
+    sock->socket.socketFactory = (UA_SocketFactory *)UA_malloc(sizeof(UA_SocketFactory));
+    if(sock->socket.socketFactory == NULL) {
         UA_free(sock);
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
 
-    TcpSocketData *const socketData = (TcpSocketData *const)sock->internalData;
-    memset(socketData, 0, sizeof(TcpSocketData));
-    sock->logger = socketConfig->logger;
-    socketData->state = UA_SOCKSTATE_NEW;
-    socketData->recvBufferSize = socketConfig->recvBufferSize;
-    socketData->sendBufferSize = socketConfig->sendBufferSize;
-    UA_String_copy(&socketConfig->customHostname, &socketData->customHostname);
+    sock->socket.logger = socketConfig->logger;
+    sock->state = UA_SOCKSTATE_NEW;
+    sock->recvBufferSize = socketConfig->recvBufferSize;
+    sock->sendBufferSize = socketConfig->sendBufferSize;
+    UA_String_copy(&socketConfig->customHostname, &sock->customHostname);
 
-    retval = UA_SocketFactory_init(sock->socketFactory, socketConfig->logger);
+    retval = UA_SocketFactory_init(sock->socket.socketFactory, socketConfig->logger);
     if(retval != UA_STATUSCODE_GOOD)
         goto error;
 
@@ -258,12 +250,12 @@ UA_TCP_ListenerSocketFromAddrinfo(struct addrinfo *addrinfo, UA_SocketConfig *so
         goto error;
     }
 
-    retval = tcp_sock_set_func_pointers(sock);
+    retval = tcp_sock_set_func_pointers((UA_Socket *)sock);
     if(retval != UA_STATUSCODE_GOOD) {
         goto error;
     }
 
-    *p_socket = sock;
+    *p_socket = (UA_Socket *)sock;
 
     UA_LOG_TRACE(socketConfig->logger, UA_LOGCATEGORY_NETWORK,
                  "Created new listener socket %p", (void *)sock);
@@ -272,7 +264,6 @@ UA_TCP_ListenerSocketFromAddrinfo(struct addrinfo *addrinfo, UA_SocketConfig *so
 error:
     if(socket_fd != UA_INVALID_SOCKET)
         UA_close(socket_fd);
-    UA_free(sock->internalData);
     UA_free(sock);
     return UA_STATUSCODE_BADINTERNALERROR;
 }

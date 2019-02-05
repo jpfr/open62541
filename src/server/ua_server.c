@@ -386,13 +386,22 @@ static UA_StatusCode
 createConnection(void *userData, UA_Socket *sock) {
     UA_Server *const server = (UA_Server *const)userData;
 
-    server->networkManager.registerSocket(&server->networkManager, sock);
+    UA_StatusCode retval = server->networkManager.registerSocket(&server->networkManager, sock);
+    if(retval != UA_STATUSCODE_GOOD) {
+        sock->close(sock);
+        sock->free(sock);
+        return retval;
+    }
+
+    retval = sock->open(sock);
+    if(retval != UA_STATUSCODE_GOOD)
+        return retval;
 
     UA_LOG_DEBUG(&server->config.logger, UA_LOGCATEGORY_SERVER,
                  "New data socket created. Adding corresponding connection");
 
     UA_Connection *connection;
-    UA_StatusCode retval = UA_Connection_new(server->config.connectionConfig, sock, NULL, &connection);
+    retval = UA_Connection_new(server->config.connectionConfig, sock, NULL, &connection);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
     connection->connectionManager = &server->connectionManager;
@@ -402,8 +411,8 @@ createConnection(void *userData, UA_Socket *sock) {
     sock->dataCallback.callbackContext = connection;
     sock->dataCallback.callback = (UA_Socket_dataCallbackFunction)UA_Connection_assembleChunks;
 
-    sock->deletionHook.hookContext = connection;
-    sock->deletionHook.hook = removeConnection;
+    sock->freeHook.hookContext = connection;
+    sock->freeHook.hook = removeConnection;
 
     return UA_STATUSCODE_GOOD;
 }

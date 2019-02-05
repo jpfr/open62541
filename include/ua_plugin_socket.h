@@ -60,12 +60,26 @@ struct UA_Socket {
      */
     UA_UInt64 id;
 
-    /**
-     * These hooks are called when the socket is deleted.
-     */
-    UA_SocketHook deletionHook;
-
     UA_Logger *logger;
+
+    /**
+     * This hook is called when the socket->open function successfully returns.
+     */
+    UA_SocketHook openHook;
+
+    /**
+     * This hook is called when the socket is freed with the socket->free function.
+     */
+    UA_SocketHook freeHook;
+
+    /**
+     * The dataCallback is called by the socket once it has sufficient data
+     * that it can pass on to be processed.
+     * The data ByteString will be reused or deallocated once the callback returns.
+     * If the data is needed beyond the call, it needs to be copied, otherwise
+     * it will be lost.
+     */
+    UA_Socket_DataCallback dataCallback;
 
     /**
      * The discovery url that can be used to connect to the server on this socket.
@@ -144,15 +158,6 @@ struct UA_Socket {
     UA_StatusCode (*activity)(UA_Socket *socket);
 
     /**
-     * The dataCallback is called by the socket once it has sufficient data
-     * that it can pass on to be processed.
-     * The data ByteString will be reused or deallocated once the callback returns.
-     * If the data is needed beyond the call, it needs to be copied, otherwise
-     * it will be lost.
-     */
-    UA_Socket_DataCallback dataCallback;
-
-    /**
      * Sends the data contained in the send buffer. The data in the buffer is lost
      * after calling send.
      * Always call getSendBuffer to get a buffer and write the data to that buffer.
@@ -173,13 +178,6 @@ struct UA_Socket {
      * \return
      */
     UA_StatusCode (*getSendBuffer)(UA_Socket *socket, size_t bufferSize, UA_ByteString **p_buffer);
-
-    /**
-     * This opaque pointer points to implementation specific internal data.
-     * It is initialized and allocated when a new socket is created and deallocated
-     * when the socket is deleted.
-     */
-    void *internalData;
 };
 
 
@@ -206,12 +204,16 @@ struct UA_SocketConfig {
 /**
  * Convenience wrapper for calling socket hooks.
  * Does a sanity check before calling the hook.
+ * Returns good if both hook data and function are null,
+ * which means no hook was configured.
  *
  * \param hook the hook to call
  * \param sock the socket parameter of the hook.
  */
 static UA_INLINE UA_StatusCode
 UA_SocketHook_call(UA_SocketHook hook, UA_Socket *sock) {
+    if(hook.hook == NULL && hook.hookContext == NULL)
+        return UA_STATUSCODE_GOOD;
     if(hook.hook == NULL || sock == NULL)
         return UA_STATUSCODE_BADINTERNALERROR;
     return hook.hook(hook.hookContext, sock);
@@ -219,7 +221,8 @@ UA_SocketHook_call(UA_SocketHook hook, UA_Socket *sock) {
 
 struct UA_SocketFactory {
     UA_SocketHook creationHook;
-    UA_SocketHook deletionHook;
+    UA_SocketHook openHook;
+    UA_SocketHook freeHook;
 
     UA_Logger *logger;
 

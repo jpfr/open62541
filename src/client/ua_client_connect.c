@@ -741,8 +741,8 @@ UA_Client_createConnection(UA_Client *client, UA_Socket *sock) {
     sock->dataCallback.callbackContext = connection;
     sock->dataCallback.callback = (UA_Socket_dataCallbackFunction)UA_Connection_assembleChunks;
 
-    sock->deletionHook.hookContext = client;
-    sock->deletionHook.hook = (UA_SocketHookFunction)UA_Client_removeConnection;
+    sock->freeHook.hookContext = client;
+    sock->freeHook.hook = (UA_SocketHookFunction)UA_Client_removeConnection;
 
     client->networkManager->registerSocket(client->networkManager, sock);
 
