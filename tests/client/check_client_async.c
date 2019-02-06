@@ -72,10 +72,10 @@ START_TEST(Client_highlevel_async_readValue) {
         UA_ClientConfig_setDefault(clientConfig);
         clientConfig->outStandingPublishRequests = 0;
 
-        UA_NetworkManager networkManager;
+        UA_NetworkManager *networkManager;
         UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
         ck_assert(retval == UA_STATUSCODE_GOOD);
-        UA_Client_setNetworkManager(client, &networkManager);
+        UA_Client_setNetworkManager(client, networkManager);
 
         retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
@@ -107,8 +107,8 @@ START_TEST(Client_highlevel_async_readValue) {
         UA_Client_disconnect(client);
         UA_Client_delete(client);
 
-        networkManager.shutdown(&networkManager);
-        networkManager.deleteMembers(&networkManager);
+        networkManager->shutdown(networkManager);
+        networkManager->free(networkManager);
     }
 }
 
@@ -119,10 +119,10 @@ START_TEST(Client_read_async) {
         UA_ClientConfig *clientConfig = UA_Client_getConfig(client);
         UA_ClientConfig_setDefault(clientConfig);
 
-        UA_NetworkManager networkManager;
+        UA_NetworkManager *networkManager;
         UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
         ck_assert(retval == UA_STATUSCODE_GOOD);
-        UA_Client_setNetworkManager(client, &networkManager);
+        UA_Client_setNetworkManager(client, networkManager);
 
         retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
@@ -165,8 +165,8 @@ START_TEST(Client_read_async) {
         UA_Client_disconnect(client);
         UA_Client_delete(client);
 
-        networkManager.shutdown(&networkManager);
-        networkManager.deleteMembers(&networkManager);
+        networkManager->shutdown(networkManager);
+        networkManager->free(networkManager);
     }END_TEST
 
 START_TEST(Client_read_async_timed) {
@@ -175,10 +175,10 @@ START_TEST(Client_read_async_timed) {
         UA_ClientConfig_setDefault(clientConfig);
         clientConfig->outStandingPublishRequests = 0;
 
-        UA_NetworkManager networkManager;
+        UA_NetworkManager *networkManager;
         UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
         ck_assert(retval == UA_STATUSCODE_GOOD);
-        UA_Client_setNetworkManager(client, &networkManager);
+        UA_Client_setNetworkManager(client, networkManager);
 
         retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
@@ -232,8 +232,8 @@ START_TEST(Client_read_async_timed) {
         UA_Client_disconnect(client);
         UA_Client_delete(client);
 
-        networkManager.shutdown(&networkManager);
-        networkManager.deleteMembers(&networkManager);
+        networkManager->shutdown(networkManager);
+        networkManager->free(networkManager);
     }END_TEST
 
 static UA_Boolean inactivityCallbackTriggered = false;
@@ -250,10 +250,10 @@ START_TEST(Client_connectivity_check) {
         clientConfig->inactivityCallback = inactivityCallback;
         clientConfig->connectivityCheckInterval = 1000;
 
-        UA_NetworkManager networkManager;
+        UA_NetworkManager *networkManager;
         UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
         ck_assert(retval == UA_STATUSCODE_GOOD);
-        UA_Client_setNetworkManager(client, &networkManager);
+        UA_Client_setNetworkManager(client, networkManager);
 
         retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
@@ -282,8 +282,8 @@ START_TEST(Client_connectivity_check) {
         UA_Client_disconnect(client);
         UA_Client_delete(client);
 
-        networkManager.shutdown(&networkManager);
-        networkManager.deleteMembers(&networkManager);
+        networkManager->shutdown(networkManager);
+        networkManager->free(networkManager);
     }END_TEST
 
 static Suite* testSuite_Client(void) {

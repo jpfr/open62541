@@ -159,7 +159,7 @@ void UA_Server_delete(UA_Server *server) {
     UA_DiscoveryManager_deleteMembers(&server->discoveryManager, server);
 #endif
 
-    server->networkManager.deleteMembers(&server->networkManager);
+    server->networkManager->free(server->networkManager);
 
     /* Clean up the Admin Session */
     UA_Session_deleteMembersCleanup(&server->adminSession, server);
@@ -386,7 +386,7 @@ static UA_StatusCode
 createConnection(void *userData, UA_Socket *sock) {
     UA_Server *const server = (UA_Server *const)userData;
 
-    UA_StatusCode retval = server->networkManager.registerSocket(&server->networkManager, sock);
+    UA_StatusCode retval = server->networkManager->registerSocket(server->networkManager, sock);
     if(retval != UA_STATUSCODE_GOOD) {
         sock->close(sock);
         sock->free(sock);
@@ -420,7 +420,7 @@ createConnection(void *userData, UA_Socket *sock) {
 UA_StatusCode
 UA_Server_addListenerSocket(UA_Server *server, UA_Socket *sock) {
 
-    UA_StatusCode retval = server->networkManager.registerSocket(&server->networkManager, sock);
+    UA_StatusCode retval = server->networkManager->registerSocket(server->networkManager, sock);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
@@ -512,7 +512,7 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
         timeout = (UA_UInt16)(((nextRepeated - now) + (UA_DATETIME_MSEC - 1)) / UA_DATETIME_MSEC);
 
     /* Listen for network activity */
-    server->networkManager.process(&server->networkManager, timeout);
+    server->networkManager->process(server->networkManager, timeout);
 
 #if defined(UA_ENABLE_DISCOVERY_MULTICAST) && !defined(UA_ENABLE_MULTITHREADING)
     if(server->config.applicationDescription.applicationType ==
@@ -542,7 +542,7 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
 
 UA_StatusCode
 UA_Server_run_shutdown(UA_Server *server) {
-    server->networkManager.shutdown(&server->networkManager);
+    server->networkManager->shutdown(server->networkManager);
 
 #ifdef UA_ENABLE_MULTITHREADING
     /* Shut down the workers */

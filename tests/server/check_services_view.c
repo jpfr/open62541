@@ -129,10 +129,10 @@ START_TEST(Service_TranslateBrowsePathsToNodeIds) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager networkManager;
+    UA_NetworkManager *networkManager;
     UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
     ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, &networkManager);
+    UA_Client_setNetworkManager(client, networkManager);
 
     UA_StatusCode retVal = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_int_eq(retVal, UA_STATUSCODE_GOOD);
@@ -177,8 +177,8 @@ START_TEST(Service_TranslateBrowsePathsToNodeIds) {
     ck_assert_int_eq(retVal, UA_STATUSCODE_GOOD);
     UA_Client_delete(client);
 
-    networkManager.shutdown(&networkManager);
-    networkManager.deleteMembers(&networkManager);
+    networkManager->shutdown(networkManager);
+    networkManager->free(networkManager);
 }
 END_TEST
 

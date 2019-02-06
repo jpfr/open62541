@@ -52,7 +52,7 @@ struct UA_Server {
     UA_DateTime startTime;
 
     /* Networking */
-    UA_NetworkManager networkManager;
+    UA_NetworkManager *networkManager;
     UA_ConnectionManager connectionManager;
 
     /* Security */

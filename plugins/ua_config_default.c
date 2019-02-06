@@ -235,11 +235,11 @@ createDefaultConfig(void) {
  * It suffices to just initialize it.
  */
 static UA_StatusCode
-configureNetworkManager_default(const UA_ServerConfig *config, UA_NetworkManager *networkManager) {
+configureNetworkManager_default(const UA_ServerConfig *config, UA_NetworkManager **p_networkManager) {
     /* Instead of calling this function here, you could also directly pass the pointer.
      * This just illustrates, that additional configuration steps may be performed by user code.
      */
-    return UA_SelectBasedNetworkManager(&config->logger, networkManager);
+    return UA_SelectBasedNetworkManager(&config->logger, p_networkManager);
 }
 
 /**

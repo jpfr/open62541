@@ -156,7 +156,7 @@ mdns_is_self_announce(UA_Server *server, struct serverOnNetwork_list_entry *entr
     UA_String *discoveryUrls;
     size_t discoveryUrlsSize;
     UA_StatusCode retval =
-        server->networkManager.getDiscoveryUrls(&server->networkManager, &discoveryUrls, &discoveryUrlsSize);
+        server->networkManager->getDiscoveryUrls(server->networkManager, &discoveryUrls, &discoveryUrlsSize);
     if(retval != UA_STATUSCODE_GOOD)
         return false;
 

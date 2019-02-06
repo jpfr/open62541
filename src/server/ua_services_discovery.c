@@ -101,7 +101,7 @@ setApplicationDescriptionFromServer(UA_ApplicationDescription *target, const UA_
     UA_String *discoveryUrls;
     size_t discoveryUrlsSize;
     result =
-        server->networkManager.getDiscoveryUrls(&server->networkManager, &discoveryUrls, &discoveryUrlsSize);
+        server->networkManager->getDiscoveryUrls(server->networkManager, &discoveryUrls, &discoveryUrlsSize);
     if(result != UA_STATUSCODE_GOOD)
         return result;
     size_t discSize = sizeof(UA_String) * (target->discoveryUrlsSize + discoveryUrlsSize);
@@ -263,7 +263,7 @@ Service_GetEndpoints(UA_Server *server, UA_Session *session,
     UA_String *discoveryUrls;
     size_t discoveryUrlsSize;
     UA_StatusCode retval =
-        server->networkManager.getDiscoveryUrls(&server->networkManager, &discoveryUrls, &discoveryUrlsSize);
+        server->networkManager->getDiscoveryUrls(server->networkManager, &discoveryUrls, &discoveryUrlsSize);
     if(retval != UA_STATUSCODE_GOOD)
         return;
 

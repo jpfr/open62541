@@ -18,6 +18,7 @@ UA_Boolean running = true;
 
 static void
 stopHandler(int sign) {
+    (void)sign;
     UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "Received Ctrl-C");
     running = 0;
 }
@@ -47,7 +48,7 @@ int main(void) {
     const UA_NodeId nodeId = UA_NODEID_BYTESTRING(0, testString);
 
     while(running) {
-        retval = UA_Client_readValueAttribute(client, nodeId, &value);
+        UA_Client_readValueAttribute(client, nodeId, &value);
         UA_Variant_clear(&value);
     }
 

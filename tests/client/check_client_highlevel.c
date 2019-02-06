@@ -11,13 +11,12 @@
 #include "check.h"
 #include "thread_wrapper.h"
 
-UA_Server *server;
-UA_ServerConfig *config;
-UA_Boolean running;
-THREAD_HANDLE server_thread;
-
-UA_Client *client;
-UA_NetworkManager g_networkManager;
+static UA_Server *server;
+static UA_ServerConfig *config;
+static UA_Boolean running;
+static THREAD_HANDLE server_thread;
+static UA_Client *client;
+static UA_NetworkManager *g_networkManager;
 
 #define CUSTOM_NS "http://open62541.org/ns/test"
 #define CUSTOM_NS_UPPER "http://open62541.org/ns/Test"
@@ -42,7 +41,7 @@ static void setup(void) {
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
     UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &g_networkManager);
     ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, &g_networkManager);
+    UA_Client_setNetworkManager(client, g_networkManager);
     retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 }
@@ -55,8 +54,8 @@ static void teardown(void) {
     UA_Server_run_shutdown(server);
     UA_Server_delete(server);
     UA_ServerConfig_delete(config);
-    g_networkManager.shutdown(&g_networkManager);
-    g_networkManager.deleteMembers(&g_networkManager);
+    g_networkManager->shutdown(g_networkManager);
+    g_networkManager->free(g_networkManager);
 }
 
 START_TEST(Misc_State) {

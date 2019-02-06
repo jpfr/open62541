@@ -34,12 +34,12 @@ int main(int argc, char *argv[]) {
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
     /* Configure NetworkManager */
-    UA_NetworkManager networkManager;
+    UA_NetworkManager *networkManager;
     UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
     if(retval != UA_STATUSCODE_GOOD)
         return (int)retval;
 
-    UA_Client_setNetworkManager(client, &networkManager);
+    UA_Client_setNetworkManager(client, networkManager);
 
     /* Listing endpoints */
     UA_EndpointDescription* endpointArray = NULL;
@@ -267,7 +267,7 @@ int main(int argc, char *argv[]) {
     UA_Client_disconnect(client);
     UA_Client_delete(client);
 
-    networkManager.shutdown(&networkManager);
-    networkManager.deleteMembers(&networkManager);
+    networkManager->shutdown(networkManager);
+    networkManager->free(networkManager);
     return EXIT_SUCCESS;
 }

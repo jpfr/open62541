@@ -155,9 +155,9 @@ START_TEST(Server_set_customHostname) {
     UA_String *discoveryUrls;
     size_t discoveryUrlsSize;
 
-    retval = server->networkManager.getDiscoveryUrls(&server->networkManager,
-                                                     &discoveryUrls,
-                                                     &discoveryUrlsSize);
+    retval = server->networkManager->getDiscoveryUrls(server->networkManager,
+                                                      &discoveryUrls,
+                                                      &discoveryUrlsSize);
 
     ck_assert(retval == UA_STATUSCODE_GOOD);
     for(size_t i = 0; i < discoveryUrlsSize; i++) {

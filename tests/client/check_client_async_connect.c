@@ -68,10 +68,10 @@ START_TEST(Client_connect_async){
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager networkManager;
+    UA_NetworkManager *networkManager;
     retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
     ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, &networkManager);
+    UA_Client_setNetworkManager(client, networkManager);
 
     UA_Boolean connected = false;
     UA_Client_connect_async(client, "opc.tcp://localhost:4840", onConnect, &connected);
@@ -110,8 +110,8 @@ START_TEST(Client_connect_async){
     UA_Client_disconnect(client);
     UA_Client_delete (client);
 
-    networkManager.shutdown(&networkManager);
-    networkManager.deleteMembers(&networkManager);
+    networkManager->shutdown(networkManager);
+    networkManager->free(networkManager);
 }
 END_TEST
 
@@ -120,10 +120,10 @@ START_TEST(Client_connect_async_memleak)
     {
         UA_Client *client = UA_Client_new();
         UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-        UA_NetworkManager networkManager;
+        UA_NetworkManager *networkManager;
         UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
         ck_assert(retval == UA_STATUSCODE_GOOD);
-        UA_Client_setNetworkManager(client, &networkManager);
+        UA_Client_setNetworkManager(client, networkManager);
         const char* uri = "opc.tcp://localhost:4840";
         const int iterations = 20;
 
@@ -138,8 +138,8 @@ START_TEST(Client_connect_async_memleak)
         ck_assert(connected);
 
         UA_Client_delete(client);
-        networkManager.shutdown(&networkManager);
-        networkManager.deleteMembers(&networkManager);
+        networkManager->shutdown(networkManager);
+        networkManager->free(networkManager);
     }
 END_TEST
 
@@ -147,10 +147,10 @@ START_TEST(Client_no_connection) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager networkManager;
+    UA_NetworkManager *networkManager;
     UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
     ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, &networkManager);
+    UA_Client_setNetworkManager(client, networkManager);
 
     UA_Boolean connected = false;
     retval = UA_Client_connect_async(client, "opc.tcp://localhost:4840", onConnect, &connected);
@@ -175,23 +175,23 @@ START_TEST(Client_no_connection) {
     UA_Client_disconnect(client);
     UA_Client_delete(client);
 
-    networkManager.shutdown(&networkManager);
-    networkManager.deleteMembers(&networkManager);
+    networkManager->shutdown(networkManager);
+    networkManager->free(networkManager);
 }
 END_TEST
 
 START_TEST(Client_without_run_iterate) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_NetworkManager networkManager;
+    UA_NetworkManager *networkManager;
     UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
     ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, &networkManager);
+    UA_Client_setNetworkManager(client, networkManager);
     UA_Boolean connected = false;
     UA_Client_connect_async(client, "opc.tcp://localhost:4840", onConnect, &connected);
     UA_Client_delete(client);
-    networkManager.shutdown(&networkManager);
-    networkManager.deleteMembers(&networkManager);
+    networkManager->shutdown(networkManager);
+    networkManager->free(networkManager);
 }
 END_TEST
 

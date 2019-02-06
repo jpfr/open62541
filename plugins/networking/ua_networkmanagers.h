@@ -15,10 +15,12 @@ _UA_BEGIN_DECLS
  * Initializes a network manager that uses select for processing.
  *
  * \param logger The logger to be used by the networkManager
- * \param networkManager pointer to an empty networkManager struct, that will be initialized.
+ * \param p_networkManager pointer to a NetworkManager pointer.
+ *                         The pointer will be filled with a pointer to
+ *                         the newly allocated NetworkManager.
  */
 UA_EXPORT UA_StatusCode
-UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager *networkManager);
+UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager **p_networkManager);
 
 _UA_END_DECLS
 

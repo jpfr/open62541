@@ -100,9 +100,10 @@ struct UA_ServerConfig {
      * server startup. Also, only the server will have ownership of the NetworkManager.
      *
      * @param config The configuration.
-     * @param networkManager The networkManager to initialize.
+     * @param networkManager The pointer to a NetworkManager pointer where the pointer to
+     *                       the newly allocated manager is stored.
      */
-    UA_StatusCode (*configureNetworkManager)(const UA_ServerConfig *config, UA_NetworkManager *networkManager);
+    UA_StatusCode (*configureNetworkManager)(const UA_ServerConfig *config, UA_NetworkManager **p_networkManager);
 
     /**
      * One ore more sockets will be created for each socket config depending on the

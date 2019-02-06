@@ -21,7 +21,7 @@
 
 static UA_Server *server;
 static UA_ServerConfig *config;
-static UA_NetworkManager g_networkManager;
+static UA_NetworkManager *g_networkManager;
 static UA_Boolean running;
 static THREAD_HANDLE server_thread;
 
@@ -92,7 +92,7 @@ static void setup(void) {
 
     UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &g_networkManager);
     ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, &g_networkManager);
+    UA_Client_setNetworkManager(client, g_networkManager);
 
     retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
@@ -129,8 +129,8 @@ static void teardown(void) {
     UA_ServerConfig_delete(config);
     UA_DataValue_deleteMembers(&lastValue);
 
-    g_networkManager.shutdown(&g_networkManager);
-    g_networkManager.deleteMembers(&g_networkManager);
+    g_networkManager->shutdown(g_networkManager);
+    g_networkManager->free(g_networkManager);
 }
 
 #ifdef UA_ENABLE_SUBSCRIPTIONS
