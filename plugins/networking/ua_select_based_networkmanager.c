@@ -259,7 +259,7 @@ UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager **p_netw
             "Could not allocate NetworkManager: Out of memory");
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
-    memset(networkManager, 0, sizeof(UA_NetworkManager));
+    memset(networkManager, 0, sizeof(UA_NetworkManager_selectBased));
     UA_LOG_DEBUG(logger, UA_LOGCATEGORY_NETWORK, "Setting up select based network manager");
 
     networkManager->baseManager.registerSocket = select_nm_registerSocket;
@@ -273,6 +273,8 @@ UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager **p_netw
     networkManager->logger = logger;
     networkManager->numListenerSockets = 0;
 
+    *p_networkManager = (UA_NetworkManager *)networkManager;
+    UA_initialize_architecture_network();
     return UA_STATUSCODE_GOOD;
 }
 

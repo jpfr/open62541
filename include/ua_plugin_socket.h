@@ -25,7 +25,7 @@ typedef struct UA_SocketFactory UA_SocketFactory;
      * \param callbackContext The context set by the callback owner.
      * \param data the data buffer the socket received the data to.
      *             Data in this buffer will be lost after the call returns.
-     * \param socket the socket that the data was received on. TODO: do we need this param?
+     * \param socket the socket that the data was received on.
      */
 typedef UA_StatusCode (*UA_Socket_dataCallbackFunction)(void *callbackContext,
                                                         UA_ByteString *data,
@@ -46,6 +46,10 @@ typedef struct {
     void *callbackContext;
 } UA_Socket_DataCallback;
 
+/**
+ * This is a convenience typedef to easily cast functions to a socketHook.
+ * The first argument then doesn't need to be cast in the function itself.
+ */
 typedef UA_StatusCode (*UA_SocketHookFunction)(void *, UA_Socket *);
 
 struct UA_SocketHook {

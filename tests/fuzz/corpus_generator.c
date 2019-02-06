@@ -26,6 +26,8 @@
 #include <ua_client_highlevel.h>
 #include <ua_client_subscriptions.h>
 #include <client/ua_client_internal.h>
+#include <networking/ua_networkmanagers.h>
+#include <ua_log_stdout.h>
 
 #include "ua_config_default.h"
 
@@ -140,9 +142,9 @@ initUaRegisterServer(UA_RegisteredServer *requestServer) {
     requestServer->serverNames = &server->config.applicationDescription.applicationName;
     requestServer->serverNamesSize = 1;
 
-    server->networkManager.getDiscoveryUrls(&server->networkManager,
-                                            &requestServer->discoveryUrls,
-                                            &requestServer->discoveryUrlsSize);
+    server->networkManager->getDiscoveryUrls(server->networkManager,
+                                             &requestServer->discoveryUrls,
+                                             &requestServer->discoveryUrlsSize);
 }
 
 static UA_StatusCode
@@ -559,8 +561,12 @@ int main(void) {
     emptyCorpusDir();
     start_server();
 
+    UA_NetworkManager *networkManager = NULL;
+    UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
+
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+    UA_Client_setNetworkManager(client, networkManager);
 
     // this will also call getEndpointsRequest
     UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
@@ -573,6 +579,7 @@ int main(void) {
         // now also connect with user/pass so that fuzzer also knows how to do that
         client = UA_Client_new();
         UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+        UA_Client_setNetworkManager(client, networkManager);
         retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user", "password");
         retval = retval == UA_STATUSCODE_BADUSERACCESSDENIED ? UA_STATUSCODE_GOOD : retval;
         UA_Client_disconnect(client);
@@ -587,5 +594,8 @@ int main(void) {
     } else {
         printf("\n--------- SUCCESS -------\nThe corpus is stored in %s", UA_CORPUS_OUTPUT_DIR);
     }
+
+    networkManager->shutdown(networkManager);
+    networkManager->free(networkManager);
     return 0;
 }

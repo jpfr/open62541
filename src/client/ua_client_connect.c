@@ -779,7 +779,7 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     client->channel.sendSequenceNumber = 0;
     client->requestId = 0;
 
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
+    UA_StatusCode retval;
     UA_SocketHook openHook;
     openHook.hookContext = client;
     openHook.hook = (UA_SocketHookFunction)UA_Client_createConnection;
@@ -811,7 +811,6 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
         client->channel.securityMode = UA_MESSAGESECURITYMODE_NONE;
 
     /* Initialized the SecureChannel */
-    retval = UA_STATUSCODE_GOOD;
     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                  "Initialize the SecurityPolicy context");
     if(!client->channel.securityPolicy) {

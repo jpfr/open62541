@@ -228,7 +228,6 @@ UA_TCP_DataSocket_init(UA_UInt64 sockFd, UA_UInt32 sendBufferSize,
     if(sock == NULL || logger == NULL) {
         return UA_STATUSCODE_BADINVALIDARGUMENT;
     }
-    memset(sock, 0, sizeof(UA_Socket_tcpDataSocket));
 
     if(dataCallback != NULL)
         sock->socket.dataCallback = *dataCallback;
@@ -268,7 +267,6 @@ UA_TCP_DataSocket_init(UA_UInt64 sockFd, UA_UInt32 sendBufferSize,
 error:
     UA_ByteString_deleteMembers(&sock->receiveBuffer);
     UA_ByteString_deleteMembers(&sock->sendBuffer);
-    UA_free(sock);
     return retval;
 }
 
@@ -300,6 +298,8 @@ UA_TCP_DataSocket_AcceptFrom(UA_Socket *listenerSocket, UA_Logger *logger, UA_UI
         UA_close(newSockFd);
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
+    memset(sock, 0, sizeof(UA_Socket_tcpDataSocket));
+
     retval = UA_TCP_DataSocket_init((UA_UInt64)newSockFd, sendBufferSize, recvBufferSize,
                                     &freeHook, &dataCallback, logger, sock);
     if(retval != UA_STATUSCODE_GOOD) {
@@ -307,6 +307,7 @@ UA_TCP_DataSocket_AcceptFrom(UA_Socket *listenerSocket, UA_Logger *logger, UA_UI
                      "Failed to allocate socket resources with error %s",
                      UA_StatusCode_name(retval));
         UA_close(newSockFd);
+        UA_free(sock);
         return retval;
     }
 
@@ -580,6 +581,7 @@ UA_TCP_ClientDataSocket(UA_String endpointUrl,
                      "Failed to allocate data socket internal data. Out of memory");
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
+    memset(sock, 0, sizeof(UA_Socket_tcpClientDataSocket));
 
     UA_StatusCode retval = UA_TCP_DataSocket_init(0, sendBufferSize, recvBufferSize,
                                                   NULL, NULL, logger, (UA_Socket_tcpDataSocket *)sock);
