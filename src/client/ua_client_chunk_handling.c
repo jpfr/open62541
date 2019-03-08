@@ -131,11 +131,11 @@ process:
                     "Could not decode the response with id %u due to %s",
                     requestId, UA_StatusCode_name(retval));
         ((UA_ResponseHeader *)response)->serviceResult = retval;
-    } else if(((UA_ResponseHeader*)response)->serviceResult != UA_STATUSCODE_GOOD) {
+    } else if(((UA_ResponseHeader *)response)->serviceResult != UA_STATUSCODE_GOOD) {
         /* Decode as a ServiceFault, i.e. only the response header */
         UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                     "The ServiceResult has the StatusCode %s",
-                    UA_StatusCode_name(((UA_ResponseHeader*)response)->serviceResult));
+                    UA_StatusCode_name(((UA_ResponseHeader *)response)->serviceResult));
     }
 
     /* Call the callback */
@@ -196,10 +196,10 @@ processServiceResponse(void *application, UA_SecureChannel *channel,
             retval = UA_decodeBinary(message, &offset, rd->response,
                                      &UA_TYPES[UA_TYPES_SERVICEFAULT], NULL);
             if(retval != UA_STATUSCODE_GOOD)
-                ((UA_ResponseHeader*)rd->response)->serviceResult = retval;
+                ((UA_ResponseHeader *)rd->response)->serviceResult = retval;
             UA_LOG_INFO(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
                         "Received a ServiceFault response with StatusCode %s",
-                        UA_StatusCode_name(((UA_ResponseHeader*)rd->response)->serviceResult));
+                        UA_StatusCode_name(((UA_ResponseHeader *)rd->response)->serviceResult));
         } else {
             /* Close the connection */
             UA_LOG_ERROR(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
@@ -264,14 +264,14 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
 
         if(rd.requestId != 0) {
             do {
-                if(client->networkManager == NULL) {
+                if(client->config.networkManager == NULL) {
                     UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                                  "No NetworkManager configured");
                     return UA_STATUSCODE_BADCONFIGURATIONERROR;
                 }
-                retval = client->networkManager->processSocket(client->networkManager,
-                                                               timeout,
-                                                               UA_Connection_getSocket(client->connection));
+                retval = client->config.networkManager->processSocket(client->config.networkManager,
+                                                                      timeout,
+                                                                      UA_Connection_getSocket(client->connection));
                 if(retval != UA_STATUSCODE_GOOD)
                     return retval;
             } while(!UA_SecureChannel_isMessageComplete(&client->channel, rd.requestId));

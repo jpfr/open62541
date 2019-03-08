@@ -3,9 +3,7 @@
 
 #include <ua_config_default.h>
 #include <ua_client_subscriptions.h>
-#include <ua_log_stdout.h>
 #include <ua_client_highlevel_async.h>
-#include <ua_networkmanagers.h>
 
 #include <stdlib.h>
 
@@ -112,13 +110,6 @@ main(int argc, char *argv[]) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    if(retval != UA_STATUSCODE_GOOD)
-        return (int)retval;
-
-    UA_Client_setNetworkManager(client, networkManager);
-
     UA_UInt32 reqId = 0;
     UA_String userdata = UA_STRING("userdata");
 
@@ -217,7 +208,5 @@ main(int argc, char *argv[]) {
     // UA_Client_run_iterate (client, &timedOut);
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
     return EXIT_SUCCESS;
 }

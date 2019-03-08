@@ -45,70 +45,45 @@ START_TEST(Client_anonymous) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-
-    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
 
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 } END_TEST
 
 START_TEST(Client_user_pass_ok) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-    retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user1", "password");
+    UA_StatusCode retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user1", "password");
 
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 } END_TEST
 
 START_TEST(Client_user_fail) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-    retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user0", "password");
+    UA_StatusCode retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user0", "password");
 
     ck_assert_uint_eq(retval, UA_STATUSCODE_BADUSERACCESSDENIED);
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 } END_TEST
 
 START_TEST(Client_pass_fail) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-    retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user1", "secret");
+    UA_StatusCode retval = UA_Client_connect_username(client, "opc.tcp://localhost:4840", "user1", "secret");
 
     ck_assert_uint_eq(retval, UA_STATUSCODE_BADUSERACCESSDENIED);
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 } END_TEST
 
 

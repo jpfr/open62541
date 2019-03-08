@@ -73,6 +73,11 @@ UA_ClientConfig_deleteMembers(UA_ClientConfig *config) {
         config->securityPolicies[i].deleteMembers(&config->securityPolicies[i]);
     UA_free(config->securityPolicies);
     config->securityPolicies = 0;
+
+    if(config->internallyAllocatedNetworkManager) {
+        config->networkManager->shutdown(config->networkManager);
+        config->networkManager->free(config->networkManager);
+    }
 }
 
 static void
@@ -138,14 +143,6 @@ UA_Client_getConfig(UA_Client *client) {
     if(!client)
         return NULL;
     return &client->config;
-}
-
-UA_StatusCode
-UA_Client_setNetworkManager(UA_Client *client, UA_NetworkManager *networkManager) {
-    if(client == NULL || networkManager == NULL)
-        return UA_STATUSCODE_BADINVALIDARGUMENT;
-    client->networkManager = networkManager;
-    return UA_STATUSCODE_GOOD;
 }
 
 /****************/

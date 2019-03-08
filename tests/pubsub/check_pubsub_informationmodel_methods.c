@@ -148,10 +148,6 @@ START_TEST(AddNewPubSubConnectionUsingTheInformationModelMethod){
     UA_StatusCode retVal;
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
     retVal = UA_Client_connect(client, "opc.tcp://localhost:4840");
     if(retVal != UA_STATUSCODE_GOOD) {
         UA_Client_delete(client);
@@ -179,18 +175,12 @@ START_TEST(AddNewPubSubConnectionUsingTheInformationModelMethod){
     UA_Client_disconnect(client);
     UA_Client_delete(client);
     UA_LocalizedText_deleteMembers(&connectionDisplayName);
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 } END_TEST
 
 START_TEST(AddAndRemovePublishedDataSetFolders){
         UA_StatusCode retVal;
         UA_Client *client = UA_Client_new();
         UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-        UA_NetworkManager *networkManager;
-        UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-        ck_assert(retval == UA_STATUSCODE_GOOD);
-        UA_Client_setNetworkManager(client, networkManager);
         retVal = UA_Client_connect(client, "opc.tcp://localhost:4840");
         if(retVal != UA_STATUSCODE_GOOD) {
             UA_Client_delete(client);
@@ -274,18 +264,12 @@ START_TEST(AddAndRemovePublishedDataSetFolders){
         UA_Client_disconnect(client);
         UA_Client_delete(client);
         UA_LocalizedText_deleteMembers(&connectionDisplayName);
-        networkManager->shutdown(networkManager);
-        networkManager->free(networkManager);
 } END_TEST
 
 START_TEST(AddAndRemovePublishedDataSetItems){
         UA_StatusCode retVal;
         UA_Client *client = UA_Client_new();
         UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-        UA_NetworkManager *networkManager;
-        UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-        ck_assert(retval == UA_STATUSCODE_GOOD);
-        UA_Client_setNetworkManager(client, networkManager);
         retVal = UA_Client_connect(client, "opc.tcp://localhost:4840");
         if(retVal != UA_STATUSCODE_GOOD) {
             UA_Client_delete(client);
@@ -335,18 +319,12 @@ START_TEST(AddAndRemovePublishedDataSetItems){
         UA_free(variablesToAdd);
         UA_Client_disconnect(client);
         UA_Client_delete(client);
-        networkManager->shutdown(networkManager);
-        networkManager->free(networkManager);
 } END_TEST
 
 START_TEST(AddAndRemoveWriterGroups){
         UA_StatusCode retVal;
         UA_Client *client = UA_Client_new();
         UA_ClientConfig_setDefault(UA_Client_getConfig(client));
-        UA_NetworkManager *networkManager;
-        UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-        ck_assert(retval == UA_STATUSCODE_GOOD);
-        UA_Client_setNetworkManager(client, networkManager);
         retVal = UA_Client_connect(client, "opc.tcp://localhost:4840");
         if(retVal != UA_STATUSCODE_GOOD) {
             UA_Client_delete(client);
@@ -390,8 +368,6 @@ START_TEST(AddAndRemoveWriterGroups){
         UA_Client_disconnect(client);
         UA_Client_delete(client);
         UA_LocalizedText_deleteMembers(&writerGroupDisplayName);
-        networkManager->shutdown(networkManager);
-        networkManager->free(networkManager);
 } END_TEST
 
 int main(void) {

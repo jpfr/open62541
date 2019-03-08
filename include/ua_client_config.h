@@ -116,6 +116,8 @@ struct UA_ClientConfig {
 
     /* Networking */
     UA_ClientSocketConfig clientSocketConfig;
+    UA_NetworkManager *networkManager;
+    UA_Boolean internallyAllocatedNetworkManager; /* If true, NM will be deleted on client delete */
 
     /* Callback for state changes */
     void (*stateCallback)(UA_Client *client, UA_ClientState clientState);

@@ -45,7 +45,7 @@ setClientState(UA_Client *client, UA_ClientState state) {
 UA_StatusCode
 processACKResponse(void *application, UA_Connection *connection,
                    UA_ByteString *chunk, size_t *offset) {
-    UA_Client *client = (UA_Client*)application;
+    UA_Client *client = (UA_Client *)application;
 
     /* Decode the message */
     UA_StatusCode retval;
@@ -113,14 +113,14 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                  "Sent HEL message");
 
-    if(client->networkManager == NULL) {
+    if(client->config.networkManager == NULL) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                      "No NetworkManager configured");
         return UA_STATUSCODE_BADCONFIGURATIONERROR;
     }
-    retval = client->networkManager->processSocket(client->networkManager,
-                                                   client->config.timeout,
-                                                   UA_Connection_getSocket(client->connection));
+    retval = client->config.networkManager->processSocket(client->config.networkManager,
+                                                          client->config.timeout,
+                                                          UA_Connection_getSocket(client->connection));
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                      "Receiving ACK message failed with %s", UA_StatusCode_name(retval));
@@ -221,7 +221,7 @@ openSecureChannel(UA_Client *client, UA_Boolean renew) {
     /* Increase nextChannelRenewal to avoid that we re-start renewal when
      * publish responses are received before the OPN response arrives. */
     client->nextChannelRenewal = UA_DateTime_nowMonotonic() +
-        (2 * ((UA_DateTime)client->config.timeout * UA_DATETIME_MSEC));
+                                 (2 * ((UA_DateTime)client->config.timeout * UA_DATETIME_MSEC));
 
     /* Receive / decrypt / decode the OPN response. Process async services in
      * the background until the OPN response arrives. */
@@ -276,6 +276,7 @@ checkClientSignature(const UA_SecureChannel *channel,
 
 /* Function to create a signature using remote certificate and nonce */
 #ifdef UA_ENABLE_ENCRYPTION
+
 UA_StatusCode
 signActivateSessionRequest(UA_SecureChannel *channel,
                            UA_ActivateSessionRequest *request) {
@@ -328,10 +329,10 @@ encryptUserIdentityToken(UA_Client *client, const UA_String *userTokenSecurityPo
     UA_UserNameIdentityToken *unit = NULL;
     UA_ByteString *tokenData;
     if(userIdentityToken->content.decoded.type == &UA_TYPES[UA_TYPES_ISSUEDIDENTITYTOKEN]) {
-        iit = (UA_IssuedIdentityToken*)userIdentityToken->content.decoded.data;
+        iit = (UA_IssuedIdentityToken *)userIdentityToken->content.decoded.data;
         tokenData = &iit->tokenData;
     } else if(userIdentityToken->content.decoded.type == &UA_TYPES[UA_TYPES_USERNAMEIDENTITYTOKEN]) {
-        unit = (UA_UserNameIdentityToken*)userIdentityToken->content.decoded.data;
+        unit = (UA_UserNameIdentityToken *)userIdentityToken->content.decoded.data;
         tokenData = &unit->password;
     } else {
         return UA_STATUSCODE_GOOD;
@@ -368,7 +369,7 @@ encryptUserIdentityToken(UA_Client *client, const UA_String *userTokenSecurityPo
     UA_UInt32 length = (UA_UInt32)(tokenData->length + client->channel.remoteNonce.length);
     UA_UInt32 totalLength = length + 4; /* Including the length field */
     size_t blocks = totalLength / plainTextBlockSize;
-    if(totalLength  % plainTextBlockSize != 0)
+    if(totalLength % plainTextBlockSize != 0)
         blocks++;
     size_t overHead =
         UA_SecurityPolicy_getRemoteAsymEncryptionBufferLengthOverhead(sp, channelContext,
@@ -420,6 +421,7 @@ encryptUserIdentityToken(UA_Client *client, const UA_String *userTokenSecurityPo
 
     return retval;
 }
+
 #endif
 
 static UA_StatusCode
@@ -449,7 +451,7 @@ activateSession(UA_Client *client) {
     /* Set the policy-Id from the endpoint. Every IdentityToken starts with a
      * string. */
     retval = UA_String_copy(&client->config.userTokenPolicy.policyId,
-                            (UA_String*)request.userIdentityToken.content.decoded.data);
+                            (UA_String *)request.userIdentityToken.content.decoded.data);
 
 #ifdef UA_ENABLE_ENCRYPTION
     /* Encrypt the UserIdentityToken */
@@ -517,7 +519,7 @@ UA_Client_getEndpointsInternal(UA_Client *client, const UA_String endpointUrl,
 
 static UA_StatusCode
 selectEndpoint(UA_Client *client, const UA_String endpointUrl) {
-    UA_EndpointDescription* endpointArray = NULL;
+    UA_EndpointDescription *endpointArray = NULL;
     size_t endpointArraySize = 0;
     UA_StatusCode retval =
         UA_Client_getEndpointsInternal(client, endpointUrl,
@@ -531,7 +533,7 @@ selectEndpoint(UA_Client *client, const UA_String endpointUrl) {
                                           "Transport/uatcp-uasc-uabinary");
 
     for(size_t i = 0; i < endpointArraySize; ++i) {
-        UA_EndpointDescription* endpoint = &endpointArray[i];
+        UA_EndpointDescription *endpoint = &endpointArray[i];
         /* Match Binary TransportProfile?
          * Note: Siemens returns empty ProfileUrl, we will accept it as binary */
         if(endpoint->transportProfileUri.length != 0 &&
@@ -561,7 +563,7 @@ selectEndpoint(UA_Client *client, const UA_String endpointUrl) {
 
         /* Select a matching UserTokenPolicy inside the endpoint */
         for(size_t j = 0; j < endpoint->userIdentityTokensSize; ++j) {
-            UA_UserTokenPolicy* userToken = &endpoint->userIdentityTokens[j];
+            UA_UserTokenPolicy *userToken = &endpoint->userIdentityTokens[j];
 
             /* Usertokens also have a security policy... */
             if(userToken->securityPolicyUri.length > 0 &&
@@ -658,15 +660,15 @@ createSession(UA_Client *client) {
     if(client->channel.securityMode == UA_MESSAGESECURITYMODE_SIGN ||
        client->channel.securityMode == UA_MESSAGESECURITYMODE_SIGNANDENCRYPT) {
         if(client->channel.localNonce.length != UA_SESSION_LOCALNONCELENGTH) {
-           UA_ByteString_deleteMembers(&client->channel.localNonce);
+            UA_ByteString_deleteMembers(&client->channel.localNonce);
             retval = UA_ByteString_allocBuffer(&client->channel.localNonce,
                                                UA_SESSION_LOCALNONCELENGTH);
             if(retval != UA_STATUSCODE_GOOD)
-               return retval;
+                return retval;
         }
 
         retval = client->channel.securityPolicy->symmetricModule.
-                 generateNonce(client->channel.securityPolicy, &client->channel.localNonce);
+            generateNonce(client->channel.securityPolicy, &client->channel.localNonce);
         if(retval != UA_STATUSCODE_GOOD)
             return retval;
     }
@@ -718,7 +720,7 @@ createSession(UA_Client *client) {
 
     retval |= response.responseHeader.serviceResult;
 
- cleanup:
+cleanup:
     UA_CreateSessionRequest_deleteMembers(&request);
     UA_CreateSessionResponse_deleteMembers(&response);
     return retval;
@@ -728,7 +730,7 @@ UA_StatusCode
 UA_Client_createConnection(UA_Client *client, UA_Socket *sock) {
     if(client == NULL || sock == NULL)
         return UA_STATUSCODE_BADINVALIDARGUMENT;
-    if(client->networkManager == NULL) {
+    if(client->config.networkManager == NULL) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                      "No NetworkManager configured");
         return UA_STATUSCODE_BADCONFIGURATIONERROR;
@@ -744,7 +746,7 @@ UA_Client_createConnection(UA_Client *client, UA_Socket *sock) {
     sock->freeHook.hookContext = client;
     sock->freeHook.hook = (UA_SocketHookFunction)UA_Client_removeConnection;
 
-    client->networkManager->registerSocket(client->networkManager, sock);
+    client->config.networkManager->registerSocket(client->config.networkManager, sock);
 
     connection->chunkCallback.callbackContext = client;
     connection->chunkCallback.function = (UA_ProcessChunkCallbackFunction)UA_Client_processChunk;
@@ -921,10 +923,10 @@ UA_Client_connectInternal(UA_Client *client, const UA_String endpointUrl) {
     /* Get endpoints only if the description has not been touched (memset to
      * zero) */
     UA_Byte test = 0;
-    UA_Byte *pos = (UA_Byte*)&client->config.endpoint;
+    UA_Byte *pos = (UA_Byte *)&client->config.endpoint;
     for(size_t i = 0; i < sizeof(UA_EndpointDescription); i++)
         test = test | pos[i];
-    pos = (UA_Byte*)&client->config.userTokenPolicy;
+    pos = (UA_Byte *)&client->config.userTokenPolicy;
     for(size_t i = 0; i < sizeof(UA_UserTokenPolicy); i++)
         test = test | pos[i];
     UA_Boolean getEndpoints = (test == 0);
@@ -966,18 +968,18 @@ cleanup:
 
 UA_StatusCode
 UA_Client_connect(UA_Client *client, const char *endpointUrl) {
-    return UA_Client_connectInternal(client, UA_STRING((char*)(uintptr_t)endpointUrl));
+    return UA_Client_connectInternal(client, UA_STRING((char *)(uintptr_t)endpointUrl));
 }
 
 UA_StatusCode
 UA_Client_connect_noSession(UA_Client *client, const char *endpointUrl) {
-    return UA_Client_connectTCPSecureChannel(client, UA_STRING((char*)(uintptr_t)endpointUrl));
+    return UA_Client_connectTCPSecureChannel(client, UA_STRING((char *)(uintptr_t)endpointUrl));
 }
 
 UA_StatusCode
 UA_Client_connect_username(UA_Client *client, const char *endpointUrl,
                            const char *username, const char *password) {
-    UA_UserNameIdentityToken* identityToken = UA_UserNameIdentityToken_new();
+    UA_UserNameIdentityToken *identityToken = UA_UserNameIdentityToken_new();
     if(!identityToken)
         return UA_STATUSCODE_BADOUTOFMEMORY;
     identityToken->userName = UA_STRING_ALLOC(username);
@@ -1046,7 +1048,7 @@ UA_Client_disconnect(UA_Client *client) {
         if(client->connection->state != UA_CONNECTION_CLOSED) {
             UA_Connection_close(client->connection);
             UA_Socket *const sock = UA_Connection_getSocket(client->connection);
-            client->networkManager->unregisterSocket(client->networkManager, sock);
+            client->config.networkManager->unregisterSocket(client->config.networkManager, sock);
             sock->close(sock);
             sock->free(sock);
         }
@@ -1061,8 +1063,8 @@ UA_Client_disconnect(UA_Client *client) {
     UA_SecureChannel_deleteMembers(&client->channel);
 
     // process one last time to clean up closed sockets
-    if(client->networkManager != NULL)
-        client->networkManager->process(client->networkManager, 1);
+    if(client->config.networkManager != NULL)
+        client->config.networkManager->process(client->config.networkManager, 1);
 
     setClientState(client, UA_CLIENTSTATE_DISCONNECTED);
     return UA_STATUSCODE_GOOD;

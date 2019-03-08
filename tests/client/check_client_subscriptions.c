@@ -63,12 +63,7 @@ START_TEST(Client_subscription) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-
-    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
@@ -122,9 +117,6 @@ START_TEST(Client_subscription) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 }
 END_TEST
 
@@ -132,19 +124,14 @@ START_TEST(Client_subscription_createDataChanges) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-
-    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
     UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
 
-    UA_NetworkManager_process = client->networkManager->process;
-    client->networkManager->process = UA_NetworkManager_processTesting;
+    UA_NetworkManager_process = client->config.networkManager->process;
+    client->config.networkManager->process = UA_NetworkManager_processTesting;
 
     UA_CreateSubscriptionRequest request = UA_CreateSubscriptionRequest_default();
     UA_CreateSubscriptionResponse response = UA_Client_Subscriptions_create(client, request,
@@ -237,9 +224,6 @@ START_TEST(Client_subscription_createDataChanges) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 }
 END_TEST
 
@@ -247,12 +231,7 @@ START_TEST(Client_subscription_keepAlive) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-
-    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_CreateSubscriptionRequest request = UA_CreateSubscriptionRequest_default();
@@ -310,9 +289,6 @@ START_TEST(Client_subscription_keepAlive) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 }
 END_TEST
 
@@ -320,19 +296,14 @@ START_TEST(Client_subscription_connectionClose) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-
-    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
     UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
 
-    UA_NetworkManager_process = client->networkManager->process;
-    client->networkManager->process = UA_NetworkManager_processTesting;
+    UA_NetworkManager_process = client->config.networkManager->process;
+    client->config.networkManager->process = UA_NetworkManager_processTesting;
 
     UA_CreateSubscriptionRequest request = UA_CreateSubscriptionRequest_default();
     UA_CreateSubscriptionResponse response = UA_Client_Subscriptions_create(client, request,
@@ -363,9 +334,6 @@ START_TEST(Client_subscription_connectionClose) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 }
 END_TEST
 
@@ -373,12 +341,7 @@ START_TEST(Client_subscription_without_notification) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-
-    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
@@ -423,9 +386,6 @@ START_TEST(Client_subscription_without_notification) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 }
 END_TEST
 
@@ -448,7 +408,7 @@ stateCallback (UA_Client *client, UA_ClientState clientState){
         /* Add a MonitoredItem */
         UA_MonitoredItemCreateRequest monRequest =
             UA_MonitoredItemCreateRequest_default(UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_SERVERSTATUS_CURRENTTIME));
-    
+
         UA_MonitoredItemCreateResult monResponse =
             UA_Client_MonitoredItems_createDataChange(client, response.subscriptionId,
                                                       UA_TIMESTAMPSTORETURN_BOTH,
@@ -471,11 +431,6 @@ START_TEST(Client_subscription_async_sub) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-
     /* Set stateCallback */
     UA_ClientConfig *cc = UA_Client_getConfig(client);
     cc->stateCallback = stateCallback;
@@ -487,12 +442,12 @@ START_TEST(Client_subscription_async_sub) {
 
     ck_assert_uint_eq(callbackClientState, UA_CLIENTSTATE_DISCONNECTED);
 
-    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     ck_assert_uint_eq(callbackClientState, UA_CLIENTSTATE_SESSION);
 
-    UA_NetworkManager_process = client->networkManager->process;
-    client->networkManager->process = UA_NetworkManager_processTesting;
+    UA_NetworkManager_process = client->config.networkManager->process;
+    client->config.networkManager->process = UA_NetworkManager_processTesting;
     UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
     UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
 
@@ -543,9 +498,6 @@ START_TEST(Client_subscription_async_sub) {
     ck_assert_uint_eq(callbackClientState, UA_CLIENTSTATE_SESSION);
 
     UA_Client_delete(client);
-
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 }
 END_TEST
 
@@ -554,12 +506,7 @@ START_TEST(Client_methodcall) {
     UA_Client *client = UA_Client_new();
     UA_ClientConfig_setDefault(UA_Client_getConfig(client));
 
-    UA_NetworkManager *networkManager;
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &networkManager);
-    ck_assert(retval == UA_STATUSCODE_GOOD);
-    UA_Client_setNetworkManager(client, networkManager);
-
-    retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
+    UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     UA_CreateSubscriptionRequest request = UA_CreateSubscriptionRequest_default();
@@ -604,7 +551,8 @@ START_TEST(Client_methodcall) {
     subId = 0;
     UA_Variant_setScalarCopy(&input, &subId, &UA_TYPES[UA_TYPES_UINT32]);
     retval = UA_Client_call(client, UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER),
-                UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_GETMONITOREDITEMS), 1, &input, &outputSize, &output);
+                            UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_GETMONITOREDITEMS), 1, &input, &outputSize,
+                            &output);
 
     ck_assert_uint_eq(retval, UA_STATUSCODE_BADSUBSCRIPTIONIDINVALID);
 
@@ -612,9 +560,6 @@ START_TEST(Client_methodcall) {
 
     UA_Client_disconnect(client);
     UA_Client_delete(client);
-
-    networkManager->shutdown(networkManager);
-    networkManager->free(networkManager);
 }
 END_TEST
 #endif /* UA_ENABLE_METHODCALLS */

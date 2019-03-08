@@ -811,7 +811,8 @@ UA_ClientConfig_setDefault(UA_ClientConfig *config) {
     UA_StatusCode retval = UA_SecurityPolicy_None(config->securityPolicies, NULL,
                                                   UA_BYTESTRING_NULL, &config->logger);
     if(retval != UA_STATUSCODE_GOOD) {
-        free(config->securityPolicies);
+        UA_free(config->securityPolicies);
+        config->securityPolicies[0].deleteMembers(&config->securityPolicies[0]);
         config->securityPolicies = NULL;
         return retval;
     }
@@ -825,6 +826,15 @@ UA_ClientConfig_setDefault(UA_ClientConfig *config) {
     config->clientSocketConfig.socketConfig.createSocket = createDefaultClientSocket;
     config->clientSocketConfig.endpointUrl = UA_STRING_NULL;
     config->clientSocketConfig.timeout = 5000;
+
+    retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &config->networkManager);
+    if(retval != UA_STATUSCODE_GOOD) {
+        UA_free(config->securityPolicies);
+        config->securityPolicies[0].deleteMembers(&config->securityPolicies[0]);
+        config->securityPolicies = NULL;
+        return retval;
+    }
+    config->internallyAllocatedNetworkManager = true;
 
     config->customDataTypes = NULL;
     config->stateCallback = NULL;
