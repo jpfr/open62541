@@ -39,7 +39,8 @@ UA_TCP_DataSocket_close(UA_Socket *sock) {
     if(internalSocket->flaggedForDeletion)
         return UA_STATUSCODE_GOOD;
 
-    UA_LOG_DEBUG(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK, "Shutting down socket %i", (int)sock->id);
+    UA_LOG_DEBUG(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
+                 "Shutting down socket %i", (int)sock->id);
     UA_shutdown((UA_SOCKET)sock->id, 2);
     internalSocket->flaggedForDeletion = true;
     return UA_STATUSCODE_GOOD;
@@ -346,8 +347,10 @@ UA_TCP_ClientDataSocket_open(UA_Socket *sock) {
     UA_snprintf(portStr, 6, "%d", port);
     int error = UA_getaddrinfo(hostname, portStr, &hints, &server);
     if(error != 0 || !server) {
-        UA_LOG_SOCKET_ERRNO_GAI_WRAP(UA_LOG_WARNING(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                                                    "DNS lookup of %s failed with error %s", hostname, errno_str));
+        UA_LOG_SOCKET_ERRNO_GAI_WRAP(UA_LOG_WARNING(sock->networkManager->logger,
+                                                    UA_LOGCATEGORY_NETWORK,
+                                                    "DNS lookup of %s failed with error %s",
+                                                    hostname, errno_str));
         return UA_STATUSCODE_BADINTERNALERROR;
     }
 

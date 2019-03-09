@@ -117,9 +117,9 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
                      "No NetworkManager configured");
         return UA_STATUSCODE_BADCONFIGURATIONERROR;
     }
-    retval = client->config.networkManager->processSocket(client->config.networkManager,
-                                                          client->config.timeout,
-                                                          UA_Connection_getSocket(client->connection));
+
+    retval = client->config.networkManager->process(client->config.networkManager,
+                                                    client->config.timeout);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                      "Receiving ACK message failed with %s", UA_StatusCode_name(retval));

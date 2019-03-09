@@ -269,9 +269,8 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
                                  "No NetworkManager configured");
                     return UA_STATUSCODE_BADCONFIGURATIONERROR;
                 }
-                retval = client->config.networkManager->processSocket(client->config.networkManager,
-                                                                      timeout,
-                                                                      UA_Connection_getSocket(client->connection));
+                retval = client->config.networkManager->process(client->config.networkManager,
+                                                                timeout);
                 if(retval != UA_STATUSCODE_GOOD)
                     return retval;
             } while(!UA_SecureChannel_isMessageComplete(&client->channel, rd.requestId));

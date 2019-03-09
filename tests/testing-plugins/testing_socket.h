@@ -33,10 +33,10 @@ UA_Socket_activityTesting(UA_Socket *sock);
 extern UA_StatusCode UA_NetworkManager_processTesting_result;
 
 extern UA_StatusCode
-(*UA_NetworkManager_process)(UA_NetworkManager *networkManager, UA_UInt16 timeout);
+(*UA_NetworkManager_process)(UA_NetworkManager *networkManager, UA_Double timeout);
 
 UA_StatusCode
-UA_NetworkManager_processTesting(UA_NetworkManager *networkManager, UA_UInt16 timeout);
+UA_NetworkManager_processTesting(UA_NetworkManager *networkManager, UA_Double timeout);
 
 #ifdef __cplusplus
 }

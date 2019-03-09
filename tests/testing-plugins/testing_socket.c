@@ -91,17 +91,17 @@ UA_Socket_activityTesting(UA_Socket *sock) {
 UA_StatusCode UA_NetworkManager_processTesting_result = UA_STATUSCODE_GOOD;
 
 UA_StatusCode
-(*UA_NetworkManager_process)(UA_NetworkManager *networkManager, UA_UInt16 timeout);
+(*UA_NetworkManager_process)(UA_NetworkManager *networkManager, UA_Double timeout);
 
 UA_StatusCode
-UA_NetworkManager_processTesting(UA_NetworkManager *networkManager, UA_UInt16 timeout) {
+UA_NetworkManager_processTesting(UA_NetworkManager *networkManager, UA_Double timeout) {
     if(UA_NetworkManager_processTesting_result != UA_STATUSCODE_GOOD) {
         UA_StatusCode temp = UA_NetworkManager_processTesting_result;
         UA_NetworkManager_processTesting_result = UA_STATUSCODE_GOOD;
-        UA_fakeSleep(timeout);
+        UA_fakeSleep((UA_UInt16)timeout);
         return temp;
     }
     UA_StatusCode retval = UA_NetworkManager_process(networkManager, timeout);
-    UA_fakeSleep(timeout);
+    UA_fakeSleep((UA_UInt16)timeout);
     return retval;
 }

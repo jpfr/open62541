@@ -94,7 +94,7 @@ setFDSet(UA_NetworkManager_selectBased *networkManager, fd_set *fdset) {
 }
 
 static UA_StatusCode
-select_nm_process(UA_NetworkManager *networkManager, UA_UInt16 timeout) {
+select_nm_process(UA_NetworkManager *networkManager, UA_Double timeout) {
     if(networkManager == NULL)
         return UA_STATUSCODE_BADINTERNALERROR;
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
@@ -105,7 +105,7 @@ select_nm_process(UA_NetworkManager *networkManager, UA_UInt16 timeout) {
 
     fd_set fdset;
     UA_Int32 highestfd = setFDSet(internalManager, &fdset);
-    struct timeval tmptv = {0, timeout * 1000 /* milli to nano */};
+    struct timeval tmptv = {0, (long int)(timeout * 1000) /* milli to nano */};
     if(UA_select(highestfd + 1, &fdset, NULL, NULL, &tmptv) < 0) {
         UA_LOG_SOCKET_ERRNO_WRAP(
             UA_LOG_DEBUG(internalManager->logger, UA_LOGCATEGORY_NETWORK,
@@ -143,33 +143,6 @@ select_nm_process(UA_NetworkManager *networkManager, UA_UInt16 timeout) {
             socket->free(socket);
             LIST_REMOVE(socketListEntry, pointers);
             UA_free(socketListEntry);
-        }
-    }
-    return retval;
-}
-
-static UA_StatusCode
-select_nm_processSocket(UA_NetworkManager *networkManager, UA_UInt32 timeout,
-                        UA_Socket *sock) {
-    if(networkManager == NULL || sock == NULL)
-        return UA_STATUSCODE_BADINVALIDARGUMENT;
-    fd_set fdset;
-    FD_ZERO(&fdset);
-    UA_fd_set((UA_SOCKET)sock->id, &fdset);
-    struct timeval tmptv = {0, (long int)(timeout * 1000)};
-
-    int resultsize = UA_select((UA_Int32)(sock->id + 1), NULL, &fdset, NULL, &tmptv);
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    if(resultsize == 1) {
-        if(sock->mayDelete(sock)) {
-            networkManager->unregisterSocket(networkManager, sock);
-            sock->free(sock);
-            return UA_STATUSCODE_BADCONNECTIONCLOSED;
-        }
-        retval = sock->activity(sock);
-        if (retval != UA_STATUSCODE_GOOD) {
-            sock->close(sock);
-            return retval;
         }
     }
     return retval;
@@ -276,7 +249,6 @@ UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager **p_netw
     networkManager->baseManager.registerSocket = select_nm_registerSocket;
     networkManager->baseManager.unregisterSocket = select_nm_unregisterSocket;
     networkManager->baseManager.process = select_nm_process;
-    networkManager->baseManager.processSocket = select_nm_processSocket;
     networkManager->baseManager.getDiscoveryUrls = select_nm_getDiscoveryUrls;
     networkManager->baseManager.shutdown = select_nm_shutdown;
     networkManager->baseManager.free = select_nm_free;

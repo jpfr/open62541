@@ -52,18 +52,7 @@ struct UA_NetworkManager {
      * \param timeout The process function will wait for timeout milliseconds or until
      *                one of the registered sockets is active.
      */
-    UA_StatusCode (*process)(UA_NetworkManager *networkManager, UA_UInt16 timeout);
-
-    /**
-     * Checks if the supplied socket has pending activity and calls the activity callback chain
-     * if so.
-     *
-     * \param networkManager The NetworkManager to perform the operation on.
-     * \param timeout The processSocket function will wait for timeout milliseconds or
-     *                until the socket is active.
-     * \return
-     */
-    UA_StatusCode (*processSocket)(UA_NetworkManager *networkManager, UA_UInt32 timeout, UA_Socket *sock);
+    UA_StatusCode (*process)(UA_NetworkManager *networkManager, UA_Double timeout);
 
     /**
      * Gets all known discovery urls of listener sockets registered with the network manager.
@@ -73,7 +62,8 @@ struct UA_NetworkManager {
      * \param discoveryUrls the newly allocated array of discoveryUrls.
      * \param discoveryUrlsSize the size of the discoveryUrls array.
      */
-    UA_StatusCode (*getDiscoveryUrls)(const UA_NetworkManager *networkManager, UA_String *discoveryUrls[],
+    UA_StatusCode (*getDiscoveryUrls)(const UA_NetworkManager *networkManager,
+                                      UA_String *discoveryUrls[],
                                       size_t *discoveryUrlsSize);
 
     /**
