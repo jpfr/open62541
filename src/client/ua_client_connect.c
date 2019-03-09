@@ -70,15 +70,15 @@ processACKResponse(void *application, UA_Connection *connection,
 static UA_StatusCode
 HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     /* Get a buffer */
-    UA_ByteString *message = NULL;
     UA_Connection *conn = client->connection;
     if(conn == NULL)
         return UA_STATUSCODE_BADINTERNALERROR;
 
     UA_Socket *sock = UA_Connection_getSocket(conn);
-    UA_StatusCode retval = sock->getSendBuffer(sock, UA_MINMESSAGESIZE, &message);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+    UA_ByteString message = sock->networkManager->
+        getSendBuffer(sock->networkManager, UA_MINMESSAGESIZE);
+    if(message.length == 0)
+        return UA_STATUSCODE_BADOUTOFMEMORY;
 
     /* Prepare the HEL message and encode at offset 8 */
     UA_TcpHelloMessage hello;
@@ -86,32 +86,31 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     memcpy(&hello, &client->config.localConnectionConfig,
            sizeof(UA_ConnectionConfig)); /* same struct layout */
 
-    UA_Byte *bufPos = &message->data[8]; /* skip the header */
-    const UA_Byte *bufEnd = &message->data[message->length];
-    retval = UA_TcpHelloMessage_encodeBinary(&hello, &bufPos, bufEnd);
+    UA_Byte *bufPos = &message.data[8]; /* skip the header */
+    const UA_Byte *bufEnd = &message.data[message.length];
+    UA_StatusCode retval = UA_TcpHelloMessage_encodeBinary(&hello, &bufPos, bufEnd);
     UA_TcpHelloMessage_deleteMembers(&hello);
     if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+        goto error;
 
     /* Encode the message header at offset 0 */
     UA_TcpMessageHeader messageHeader;
     messageHeader.messageTypeAndChunkType = UA_CHUNKTYPE_FINAL + UA_MESSAGETYPE_HEL;
-    messageHeader.messageSize = (UA_UInt32)((uintptr_t)bufPos - (uintptr_t)message->data);
-    bufPos = message->data;
+    messageHeader.messageSize = (UA_UInt32)((uintptr_t)bufPos - (uintptr_t)message.data);
+    bufPos = message.data;
     retval = UA_TcpMessageHeader_encodeBinary(&messageHeader, &bufPos, bufEnd);
     if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+        goto error;
 
     /* Send the HEL message */
-    message->length = messageHeader.messageSize;
-    retval = sock->send(sock);
+    message.length = messageHeader.messageSize;
+    retval = sock->send(sock, &message);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                      "Sending HEL failed: %s", UA_StatusCode_name(retval));
         return retval;
     }
-    UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                 "Sent HEL message");
+    UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Sent HEL message");
 
     if(client->config.networkManager == NULL) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
@@ -128,6 +127,10 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
             client->state = UA_CLIENTSTATE_DISCONNECTED;
         UA_Client_disconnect(client);
     }
+    return retval;
+
+ error:
+    sock->networkManager->deleteSendBuffer(sock->networkManager, &message);
     return retval;
 }
 

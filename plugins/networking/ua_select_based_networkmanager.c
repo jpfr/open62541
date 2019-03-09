@@ -29,6 +29,17 @@ typedef struct {
     size_t numListenerSockets;
 } UA_NetworkManager_selectBased;
 
+static UA_ByteString
+nm_getSendBuffer(UA_NetworkManager *nm, size_t bufferSize) {
+    UA_ByteString buf = UA_BYTESTRING_NULL;
+    UA_ByteString_allocBuffer(&buf, bufferSize);
+    return buf;
+}
+
+static void
+nm_deleteSendBuffer(UA_NetworkManager *nm, UA_ByteString *buf) {
+    UA_ByteString_deleteMembers(buf);
+}
 
 static UA_StatusCode
 select_nm_registerSocket(UA_NetworkManager *networkManager, UA_Socket *socket) {
@@ -269,6 +280,8 @@ UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager **p_netw
     networkManager->baseManager.getDiscoveryUrls = select_nm_getDiscoveryUrls;
     networkManager->baseManager.shutdown = select_nm_shutdown;
     networkManager->baseManager.free = select_nm_free;
+    networkManager->baseManager.getSendBuffer = nm_getSendBuffer;
+    networkManager->baseManager.deleteSendBuffer = nm_deleteSendBuffer;
 
     networkManager->logger = logger;
     networkManager->numListenerSockets = 0;

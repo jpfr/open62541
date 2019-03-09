@@ -22,13 +22,6 @@ typedef struct {
      * This is the same buffer as the receiveBuffer, but the length is the actual received length.
      */
     UA_ByteString receiveBufferOut;
-
-    UA_ByteString sendBuffer;
-    /**
-     * This is the same buffer as the sendBuffer, but the length is set by external code to
-     * the amount of data that is to be sent.
-     */
-    UA_ByteString sendBufferOut;
 } UA_Socket_tcpDataSocket;
 
 typedef struct {
@@ -72,7 +65,6 @@ UA_TCP_DataSocket_free(UA_Socket *sock) {
     UA_close((int)sock->id);
     UA_String_deleteMembers(&sock->discoveryUrl);
     UA_ByteString_deleteMembers(&internalSocket->receiveBuffer);
-    UA_ByteString_deleteMembers(&internalSocket->sendBuffer);
     UA_free(sock);
     return UA_STATUSCODE_GOOD;
 }
@@ -116,40 +108,35 @@ UA_TCP_DataSocket_activity(UA_Socket *sock) {
 }
 
 static UA_StatusCode
-UA_TCP_DataSocket_send(UA_Socket *sock) {
+UA_TCP_DataSocket_send(UA_Socket *sock, UA_ByteString *buffer) {
     if(sock == NULL) {
         return UA_STATUSCODE_BADINVALIDARGUMENT;
     }
     UA_Socket_tcpDataSocket *const internalSocket = (UA_Socket_tcpDataSocket *const)sock;
-    if(internalSocket->sendBufferOut.length > internalSocket->sendBuffer.length ||
-       internalSocket->sendBufferOut.data != internalSocket->sendBuffer.data) {
-        UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                     "sendBuffer length exceeds originally allocated length, "
-                     "or the data pointer was modified.");
-        return UA_STATUSCODE_BADINTERNALERROR;
-    }
-    if(internalSocket->flaggedForDeletion)
+    if(internalSocket->flaggedForDeletion) {
+        UA_ByteString_deleteMembers(buffer);
         return UA_STATUSCODE_BADCONNECTIONCLOSED;
+    }
 
     int flags = MSG_NOSIGNAL;
-
     size_t totalBytesSent = 0;
-
     do {
         ssize_t bytesSent = 0;
         do {
             bytesSent = UA_send((int)sock->id,
-                                (const char *)internalSocket->sendBufferOut.data + totalBytesSent,
-                                internalSocket->sendBufferOut.length - totalBytesSent, flags);
+                                (const char *)buffer->data + totalBytesSent,
+                                buffer->length - totalBytesSent, flags);
             if(bytesSent < 0 && UA_ERRNO != UA_EAGAIN && UA_ERRNO != UA_INTERRUPTED) {
                 UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
                              "Error while sending data over socket");
+                UA_ByteString_deleteMembers(buffer);
                 return UA_STATUSCODE_BADCOMMUNICATIONERROR;
             }
         } while(bytesSent < 0);
         totalBytesSent += (size_t)bytesSent;
-    } while(totalBytesSent < internalSocket->sendBufferOut.length);
+    } while(totalBytesSent < buffer->length);
 
+    UA_ByteString_deleteMembers(buffer);
     return UA_STATUSCODE_GOOD;
 }
 
@@ -160,24 +147,6 @@ UA_TCP_DataSocket_open(UA_Socket *sock) {
         return UA_STATUSCODE_BADINVALIDARGUMENT;
     }
     return UA_SocketHook_call(sock->openHook, sock);
-}
-
-static UA_StatusCode
-UA_TCP_DataSocket_getSendBuffer(UA_Socket *sock, size_t bufferSize, UA_ByteString **p_buffer) {
-    if(sock == NULL || p_buffer == NULL) {
-        return UA_STATUSCODE_BADINVALIDARGUMENT;
-    }
-    UA_Socket_tcpDataSocket *const internalSocket = (UA_Socket_tcpDataSocket *const)sock;
-
-    if(bufferSize > internalSocket->sendBuffer.length)
-        return UA_STATUSCODE_BADINTERNALERROR;
-
-    internalSocket->sendBufferOut = internalSocket->sendBuffer;
-    if(bufferSize > 0)
-        internalSocket->sendBufferOut.length = bufferSize;
-    *p_buffer = &internalSocket->sendBufferOut;
-
-    return UA_STATUSCODE_GOOD;
 }
 
 static UA_StatusCode
@@ -238,7 +207,6 @@ UA_TCP_DataSocket_init(UA_UInt64 sockFd, UA_UInt32 sendBufferSize,
     sock->socket.activity = UA_TCP_DataSocket_activity;
     sock->socket.send = UA_TCP_DataSocket_send;
     sock->socket.open = UA_TCP_DataSocket_open;
-    sock->socket.getSendBuffer = UA_TCP_DataSocket_getSendBuffer;
     sock->socket.networkManager = networkManager;
     sock->flaggedForDeletion = false;
 
@@ -247,24 +215,12 @@ UA_TCP_DataSocket_init(UA_UInt64 sockFd, UA_UInt32 sendBufferSize,
         UA_LOG_ERROR(networkManager->logger, UA_LOGCATEGORY_NETWORK,
                      "Failed to allocate receive buffer for socket with error %s",
                      UA_StatusCode_name(retval));
-        goto error;
+        UA_ByteString_deleteMembers(&sock->receiveBuffer);
+        return retval;
     }
+
     sock->receiveBufferOut = sock->receiveBuffer;
-
-    retval = UA_ByteString_allocBuffer(&sock->sendBuffer, sendBufferSize);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                     "Failed to allocate receive buffer for socket with error %s",
-                     UA_StatusCode_name(retval));
-        goto error;
-    }
-    sock->sendBufferOut = sock->sendBuffer;
-
-    return retval;
-error:
-    UA_ByteString_deleteMembers(&sock->receiveBuffer);
-    UA_ByteString_deleteMembers(&sock->sendBuffer);
-    return retval;
+    return UA_STATUSCODE_GOOD;
 }
 
 UA_StatusCode

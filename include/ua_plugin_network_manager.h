@@ -89,6 +89,19 @@ struct UA_NetworkManager {
      * \param networkManager The NetworkManager to perform the operation on.
      */
     UA_StatusCode (*free)(UA_NetworkManager *networkManager);
+
+    /**
+     * This function can be used to get a send buffer from the socket implementation.
+     * To send data, directly write to this buffer. Calling send, will send the
+     * contained data. The length of the buffer determines the bytes sent.
+     *
+     * \param socket the socket to perform the operation on.
+     * \param buffer the pointer the the allocated buffer
+     * \return
+     */
+    UA_ByteString (*getSendBuffer)(UA_NetworkManager *nm, size_t bufferSize);
+
+    void (*deleteSendBuffer)(UA_NetworkManager *nm, UA_ByteString *buffer);
 };
 
 _UA_END_DECLS

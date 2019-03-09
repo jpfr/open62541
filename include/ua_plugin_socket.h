@@ -173,20 +173,8 @@ struct UA_Socket {
      * \param socket the socket to perform the operation on.
      * \return
      */
-    UA_StatusCode (*send)(UA_Socket *socket);
-
-    /**
-     * This function can be used to get a send buffer from the socket implementation.
-     * To send data, directly write to this buffer. Calling send, will send the
-     * contained data. The length of the buffer determines the bytes sent.
-     *
-     * \param socket the socket to perform the operation on.
-     * \param buffer the pointer the the allocated buffer
-     * \return
-     */
-    UA_StatusCode (*getSendBuffer)(UA_Socket *socket, size_t bufferSize, UA_ByteString **p_buffer);
+    UA_StatusCode (*send)(UA_Socket *socket, UA_ByteString *buf);
 };
-
 
 /**
  * Configuration parameters for sockets created at startup.

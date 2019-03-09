@@ -158,19 +158,10 @@ tcp_sock_buildSocket(UA_SocketFactory *factory, UA_Socket *listenerSocket, void 
 }
 
 static UA_StatusCode
-tcp_sock_send(UA_Socket *sock) {
+tcp_sock_send(UA_Socket *sock, UA_ByteString *buf) {
     UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
                  "Sending is not supported on listener sockets");
     // TODO: Can we support sending here? does it make sense at all?
-    return UA_STATUSCODE_BADNOTIMPLEMENTED;
-}
-
-static UA_StatusCode
-tcp_sock_getSendBuffer(UA_Socket *sock, size_t bufferSize, UA_ByteString **p_buffer) {
-    (void)bufferSize, (void)p_buffer;
-    UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                 "Getting a send buffer is not supported on listener sockets");
-    // TODO: see above
     return UA_STATUSCODE_BADNOTIMPLEMENTED;
 }
 
@@ -182,7 +173,6 @@ tcp_sock_set_func_pointers(UA_Socket *sock) {
     sock->free = tcp_sock_free;
     sock->activity = tcp_sock_activity;
     sock->send = tcp_sock_send;
-    sock->getSendBuffer = tcp_sock_getSendBuffer;
     sock->socketFactory->buildSocket = tcp_sock_buildSocket;
 
     return UA_STATUSCODE_GOOD;

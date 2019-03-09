@@ -23,16 +23,7 @@ dummyMayDelete(UA_Socket *sock) {
 }
 
 static UA_StatusCode
-dummyGetSendBuffer(UA_Socket *sock, size_t length, UA_ByteString **p_buf) {
-    if(length > sendBufferLength)
-        return UA_STATUSCODE_BADCOMMUNICATIONERROR;
-    *p_buf = &sendBuffer;
-    sendBuffer.length = length;
-    return UA_STATUSCODE_GOOD;
-}
-
-static UA_StatusCode
-dummySend(UA_Socket *sock) {
+dummySend(UA_Socket *sock, UA_ByteString *buf) {
     assert(sock != NULL);
 
     if(vBuffer) {
@@ -69,7 +60,6 @@ createDummySocket(UA_NetworkManager *nm, UA_ByteString *verificationBuffer) {
     sock.isListener = false;
     sock.id = 42;
     sock.send = dummySend;
-    sock.getSendBuffer = dummyGetSendBuffer;
     sock.activity = dummyActivity;
     sock.close = dummyClose;
     sock.free = dummyFree;

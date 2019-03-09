@@ -49,14 +49,15 @@ requestGetEndpoints(UA_Client *client, UA_UInt32 *requestId);
 static UA_StatusCode
 sendHELMessage(UA_Client *client) {
     /* Get a buffer */
-    UA_ByteString *message = NULL;
     UA_Connection *conn = client->connection;
     UA_Socket *sock = UA_Connection_getSocket(conn);
     if(sock == NULL)
         return UA_STATUSCODE_BADINTERNALERROR;
-    UA_StatusCode retval = sock->getSendBuffer(sock, UA_MINMESSAGESIZE, &message);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+
+    UA_ByteString message = sock->networkManager->
+        getSendBuffer(sock->networkManager, UA_MINMESSAGESIZE);
+    if(message.length == 0)
+        return UA_STATUSCODE_BADOUTOFMEMORY;
 
     /* Prepare the HEL message and encode at offset 8 */
     UA_TcpHelloMessage hello;
@@ -64,23 +65,25 @@ sendHELMessage(UA_Client *client) {
     memcpy(&hello, &client->config.localConnectionConfig,
            sizeof(UA_ConnectionConfig)); /* same struct layout */
 
-    UA_Byte *bufPos = &message->data[8]; /* skip the header */
-    const UA_Byte *bufEnd = &message->data[message->length];
+    UA_Byte *bufPos = &message.data[8]; /* skip the header */
+    const UA_Byte *bufEnd = &message.data[message.length];
     client->connectStatus = UA_TcpHelloMessage_encodeBinary(&hello, &bufPos, bufEnd);
     UA_TcpHelloMessage_deleteMembers (&hello);
 
     /* Encode the message header at offset 0 */
     UA_TcpMessageHeader messageHeader;
     messageHeader.messageTypeAndChunkType = UA_CHUNKTYPE_FINAL + UA_MESSAGETYPE_HEL;
-    messageHeader.messageSize = (UA_UInt32) ((uintptr_t)bufPos - (uintptr_t)message->data);
-    bufPos = message->data;
-    retval = UA_TcpMessageHeader_encodeBinary(&messageHeader, &bufPos, bufEnd);
-    if(retval != UA_STATUSCODE_GOOD)
+    messageHeader.messageSize = (UA_UInt32) ((uintptr_t)bufPos - (uintptr_t)message.data);
+    bufPos = message.data;
+    UA_StatusCode retval = UA_TcpMessageHeader_encodeBinary(&messageHeader, &bufPos, bufEnd);
+    if(retval != UA_STATUSCODE_GOOD) {
+        sock->networkManager->deleteSendBuffer(sock->networkManager, &message);
         return retval;
+    }
 
     /* Send the HEL message */
-    message->length = messageHeader.messageSize;
-    retval = sock->send(sock);
+    message.length = messageHeader.messageSize;
+    retval = sock->send(sock, &message);
 
     if(retval == UA_STATUSCODE_GOOD) {
         UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Sent HEL message");
