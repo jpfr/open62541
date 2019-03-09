@@ -55,7 +55,7 @@ sendHELMessage(UA_Client *client) {
         return UA_STATUSCODE_BADINTERNALERROR;
 
     UA_ByteString message = sock->networkManager->
-        getSendBuffer(sock->networkManager, UA_MINMESSAGESIZE);
+        getBuffer(sock->networkManager, UA_MINMESSAGESIZE);
     if(message.length == 0)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
@@ -77,7 +77,7 @@ sendHELMessage(UA_Client *client) {
     bufPos = message.data;
     UA_StatusCode retval = UA_TcpMessageHeader_encodeBinary(&messageHeader, &bufPos, bufEnd);
     if(retval != UA_STATUSCODE_GOOD) {
-        sock->networkManager->deleteSendBuffer(sock->networkManager, &message);
+        sock->networkManager->deleteBuffer(sock->networkManager, &message);
         return retval;
     }
 

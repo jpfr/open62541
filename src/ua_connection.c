@@ -80,8 +80,8 @@ UA_Connection_sendError(UA_Connection *connection, UA_TcpErrorMessage *error) {
 
     /* Get the send buffer from the network layer */
     UA_ByteString sendBuffer =
-        sock->networkManager->getSendBuffer(sock->networkManager,
-                                            header.messageSize);
+        sock->networkManager->getBuffer(sock->networkManager,
+                                        header.messageSize);
     if(sendBuffer.length == 0)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 

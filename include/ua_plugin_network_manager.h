@@ -89,9 +89,9 @@ struct UA_NetworkManager {
      * \param buffer the pointer the the allocated buffer
      * \return
      */
-    UA_ByteString (*getSendBuffer)(UA_NetworkManager *nm, size_t bufferSize);
+    UA_ByteString (*getBuffer)(UA_NetworkManager *nm, size_t bufferSize);
 
-    void (*deleteSendBuffer)(UA_NetworkManager *nm, UA_ByteString *buffer);
+    void (*deleteBuffer)(UA_NetworkManager *nm, UA_ByteString *buffer);
 };
 
 _UA_END_DECLS

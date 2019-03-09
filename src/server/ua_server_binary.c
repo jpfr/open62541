@@ -315,7 +315,7 @@ processHEL(UA_Server *server, UA_Connection *connection,
 
     /* Get the send buffer from the network layer */
     UA_ByteString ackBuffer = sock->networkManager->
-        getSendBuffer(sock->networkManager, connection->config.sendBufferSize);
+        getBuffer(sock->networkManager, connection->config.sendBufferSize);
     if(ackBuffer.length == 0)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
@@ -335,7 +335,7 @@ processHEL(UA_Server *server, UA_Connection *connection,
     return sock->send(sock, &ackBuffer);
 
  error:
-    sock->networkManager->deleteSendBuffer(sock->networkManager, &ackBuffer);
+    sock->networkManager->deleteBuffer(sock->networkManager, &ackBuffer);
     return retval;
 }
 

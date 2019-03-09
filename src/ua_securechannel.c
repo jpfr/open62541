@@ -512,8 +512,8 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
         return UA_STATUSCODE_BADINTERNALERROR;
 
     /* Allocate the message buffer */
-    UA_ByteString buf = sock->networkManager->getSendBuffer(sock->networkManager,
-                                                            connection->config.sendBufferSize);
+    UA_ByteString buf = sock->networkManager->
+        getBuffer(sock->networkManager, connection->config.sendBufferSize);
     if(buf.length == 0)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
@@ -529,7 +529,7 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
     retval |= UA_encodeBinary(content, contentType,
                               &buf_pos, &buf_end, NULL, NULL);
     if(retval != UA_STATUSCODE_GOOD) {
-        sock->networkManager->deleteSendBuffer(sock->networkManager, &buf);
+        sock->networkManager->deleteBuffer(sock->networkManager, &buf);
         return retval;
     }
 
@@ -572,7 +572,7 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
     return retval;
 
 error:
-    sock->networkManager->deleteSendBuffer(sock->networkManager, &buf);
+    sock->networkManager->deleteBuffer(sock->networkManager, &buf);
     return retval;
 }
 
@@ -819,7 +819,7 @@ sendSymmetricChunk(UA_MessageContext *messageContext) {
     return sock->send(sock, &messageContext->messageBuffer);
 
 error:
-    sock->networkManager->deleteSendBuffer(sock->networkManager, &messageContext->messageBuffer);
+    sock->networkManager->deleteBuffer(sock->networkManager, &messageContext->messageBuffer);
     return res;
 }
 
@@ -846,7 +846,7 @@ sendSymmetricEncodingCallback(void *data, UA_Byte **buf_pos, const UA_Byte **buf
         return UA_STATUSCODE_BADINTERNALERROR;
 
     mc->messageBuffer = sock->networkManager->
-        getSendBuffer(sock->networkManager, connection->config.sendBufferSize);
+        getBuffer(sock->networkManager, connection->config.sendBufferSize);
     if(mc->messageBuffer.length == 0)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
@@ -882,7 +882,7 @@ UA_MessageContext_begin(UA_MessageContext *mc, UA_SecureChannel *channel,
 
     /* Allocate the message buffer */
     mc->messageBuffer = sock->networkManager->
-        getSendBuffer(sock->networkManager, connection->config.sendBufferSize);
+        getBuffer(sock->networkManager, connection->config.sendBufferSize);
     if(mc->messageBuffer.length == 0)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 

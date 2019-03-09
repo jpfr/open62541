@@ -76,7 +76,7 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
 
     UA_Socket *sock = UA_Connection_getSocket(conn);
     UA_ByteString message = sock->networkManager->
-        getSendBuffer(sock->networkManager, UA_MINMESSAGESIZE);
+        getBuffer(sock->networkManager, UA_MINMESSAGESIZE);
     if(message.length == 0)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
@@ -130,7 +130,7 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     return retval;
 
  error:
-    sock->networkManager->deleteSendBuffer(sock->networkManager, &message);
+    sock->networkManager->deleteBuffer(sock->networkManager, &message);
     return retval;
 }
 
