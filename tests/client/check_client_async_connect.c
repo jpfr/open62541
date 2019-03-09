@@ -15,7 +15,6 @@
 #include "testing_clock.h"
 #include "testing_socket.h"
 #include "thread_wrapper.h"
-#include "ua_networkmanagers.h"
 #include "ua_log_stdout.h"
 
 UA_Server *server;

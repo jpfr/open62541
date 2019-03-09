@@ -17,6 +17,7 @@
 #include "ua_transport_generated_encoding_binary.h"
 #include "ua_securechannel.h"
 #include "ua_connection.h"
+#include "ua_plugin_network_manager.h"
 
 #define UA_BITMASK_MESSAGETYPE 0x00ffffff
 #define UA_BITMASK_CHUNKTYPE 0xff000000
@@ -433,7 +434,7 @@ UA_Connection_new(UA_ConnectionConfig config, UA_Socket *sock,
     connection->config = config;
     connection->state = UA_CONNECTION_OPENING;
     connection->creationDate = UA_DateTime_nowMonotonic();
-    connection->logger = sock->logger;
+    connection->logger = sock->networkManager->logger;
 
     connection->internalData = UA_malloc(sizeof(UA_Connection_internalData));
     UA_Connection_internalData *const internalData = (UA_Connection_internalData *const)connection->internalData;
@@ -446,7 +447,7 @@ UA_Connection_new(UA_ConnectionConfig config, UA_Socket *sock,
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     if(connection->config.recvBufferSize < 8) {
         retval = UA_STATUSCODE_BADCONFIGURATIONERROR;
-        UA_LOG_ERROR(sock->logger, UA_LOGCATEGORY_NETWORK,
+        UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
                      "Receive buffer has to be at least 8 bytes large.");
         goto error;
     }

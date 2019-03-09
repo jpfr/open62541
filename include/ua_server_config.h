@@ -104,6 +104,7 @@ struct UA_ServerConfig {
      *                       the newly allocated manager is stored.
      */
     UA_StatusCode (*configureNetworkManager)(const UA_ServerConfig *config, UA_NetworkManager **p_networkManager);
+    UA_NetworkManager *networkManager;
 
     /**
      * One ore more sockets will be created for each socket config depending on the

@@ -247,11 +247,12 @@ configureNetworkManager_default(const UA_ServerConfig *config, UA_NetworkManager
  * Different socket configs can have different createSocket functions.
  */
 static UA_StatusCode
-createSocket_default(UA_SocketConfig *config, UA_SocketHook creationHook) {
+createSocket_default(UA_SocketConfig *config, UA_NetworkManager *nm,
+                     UA_SocketHook creationHook) {
     /* Instead of calling this function here, you could also directly pass the pointer.
      * This just illustrates, that additional configuration steps may be performed by user code.
      */
-    return UA_TCP_ListenerSockets(config, creationHook);
+    return UA_TCP_ListenerSockets(config, nm, creationHook);
 }
 
 static UA_StatusCode
@@ -263,7 +264,6 @@ configureNetworking_default(UA_ServerConfig *conf, UA_UInt16 portNumber, UA_UInt
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
     conf->socketConfigsSize = 1;
-    conf->socketConfigs[0].logger = &conf->logger;
     conf->socketConfigs[0].sendBufferSize = sendBufferSize;
     if(conf->socketConfigs[0].sendBufferSize <= 0)
         conf->socketConfigs[0].sendBufferSize = 65535;
@@ -732,6 +732,10 @@ UA_ServerConfig_delete(UA_ServerConfig *config) {
         config->historyDatabase.deleteMembers(&config->historyDatabase);
 #endif
 
+    /* NetworkManager. Remove only if the manager was created by the config. */
+    if(config->configureNetworkManager)
+        config->networkManager->free(config->networkManager);
+
     /* Logger */
     if(config->logger.clear)
         config->logger.clear(config->logger.context);
@@ -775,10 +779,11 @@ UA_ServerConfig_addPubSubTransportLayer(UA_ServerConfig *config,
 /***************************/
 
 static UA_StatusCode
-createDefaultClientSocket(UA_SocketConfig *config, UA_SocketHook socketHook) {
+createDefaultClientSocket(UA_SocketConfig *config, UA_NetworkManager *nm,
+                          UA_SocketHook socketHook) {
     UA_ClientSocketConfig *clientSocketConfig = (UA_ClientSocketConfig *)config;
     return UA_TCP_ClientDataSocket(clientSocketConfig->endpointUrl, clientSocketConfig->timeout,
-                                   clientSocketConfig->socketConfig.logger,
+                                   nm,
                                    clientSocketConfig->socketConfig.sendBufferSize,
                                    clientSocketConfig->socketConfig.recvBufferSize, socketHook,
                                    clientSocketConfig->openHook);
@@ -821,7 +826,6 @@ UA_ClientConfig_setDefault(UA_ClientConfig *config) {
     config->clientSocketConfig.socketConfig.sendBufferSize = 65535;
     config->clientSocketConfig.socketConfig.recvBufferSize = 65535;
     config->clientSocketConfig.socketConfig.port = 4840;
-    config->clientSocketConfig.socketConfig.logger = NULL;
     config->clientSocketConfig.socketConfig.customHostname = UA_STRING_NULL;
     config->clientSocketConfig.socketConfig.createSocket = createDefaultClientSocket;
     config->clientSocketConfig.endpointUrl = UA_STRING_NULL;

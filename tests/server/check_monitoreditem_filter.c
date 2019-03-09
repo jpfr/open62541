@@ -5,7 +5,6 @@
  *    Copyright 2018 (c) basysKom GmbH <opensource@basyskom.com> (Author: Peter Rustler)
  */
 
-#include "ua_networkmanagers.h"
 #include "ua_log_stdout.h"
 #include "ua_types.h"
 #include "ua_server.h"

@@ -12,9 +12,9 @@
 
 _UA_BEGIN_DECLS
 
-typedef struct UA_NetworkManager UA_NetworkManager;
-
 struct UA_NetworkManager {
+    UA_Logger *logger;
+    
     /**
      * Registers the supplied socket in the NetworkManager
      * The NetworkManager gains ownership over the pointer and will free the socket

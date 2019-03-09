@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <ua_pubsub_ns0.h>
+#include "ua_server_internal.h"
 
 #include "ua_types.h"
 #include "ua_config_default.h"
@@ -155,9 +155,9 @@ START_TEST(Server_set_customHostname) {
     UA_String *discoveryUrls;
     size_t discoveryUrlsSize;
 
-    retval = server->networkManager->getDiscoveryUrls(server->networkManager,
-                                                      &discoveryUrls,
-                                                      &discoveryUrlsSize);
+    retval = server->config.networkManager->getDiscoveryUrls(server->config.networkManager,
+                                                             &discoveryUrls,
+                                                             &discoveryUrlsSize);
 
     ck_assert(retval == UA_STATUSCODE_GOOD);
     for(size_t i = 0; i < discoveryUrlsSize; i++) {

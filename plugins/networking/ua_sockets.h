@@ -13,7 +13,7 @@ _UA_BEGIN_DECLS
 
 UA_StatusCode
 UA_TCP_ListenerSocketFromAddrinfo(struct addrinfo *addrinfo, UA_SocketConfig *socketConfig,
-                                  UA_Socket **p_socket);
+                                  UA_NetworkManager *nm, UA_Socket **p_socket);
 
 /**
  * Creates all listener sockets that can be created for the specified port.
@@ -26,7 +26,8 @@ UA_TCP_ListenerSocketFromAddrinfo(struct addrinfo *addrinfo, UA_SocketConfig *so
  *                     resource leaks.
  */
 UA_StatusCode
-UA_TCP_ListenerSockets(UA_SocketConfig *socketConfig, UA_SocketHook creationHook);
+UA_TCP_ListenerSockets(UA_SocketConfig *socketConfig, UA_NetworkManager *nm,
+                       UA_SocketHook creationHook);
 
 /**
  * Creates a data socket by accepting an incoming connection from the listenerSocket.
@@ -56,7 +57,7 @@ UA_TCP_DataSocket_AcceptFrom(UA_Socket *listenerSocket, UA_Logger *logger, UA_UI
  */
 UA_StatusCode
 UA_TCP_ClientDataSocket(UA_String endpointUrl,
-                        UA_UInt32 timeout, UA_Logger *logger,
+                        UA_UInt32 timeout, UA_NetworkManager *networkManager,
                         UA_UInt32 sendBufferSize, UA_UInt32 recvBufferSize,
                         UA_SocketHook creationHook, UA_SocketHook openHook);
 

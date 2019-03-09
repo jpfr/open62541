@@ -159,8 +159,6 @@ void UA_Server_delete(UA_Server *server) {
     UA_DiscoveryManager_deleteMembers(&server->discoveryManager, server);
 #endif
 
-    server->networkManager->free(server->networkManager);
-
     /* Clean up the Admin Session */
     UA_Session_deleteMembersCleanup(&server->adminSession, server);
 
@@ -191,7 +189,7 @@ UA_Server_cleanup(UA_Server *server, void *_) {
 /********************/
 
 UA_Server *
-UA_Server_new(const UA_ServerConfig *config) {
+UA_Server_new(UA_ServerConfig *config) {
     /* A config is required */
     if(!config)
         return NULL;
@@ -231,8 +229,9 @@ UA_Server_new(const UA_ServerConfig *config) {
     server->namespacesSize = 2;
 
     /* Initialize networking */
-    config->configureNetworkManager(config, &server->networkManager);
     /* Sockets are created during server run_startup */
+    if(!server->config.networkManager && server->config.configureNetworkManager)
+        server->config.configureNetworkManager(&server->config, &server->config.networkManager);
 
     /* Initialized SecureChannel and Session managers */
     UA_ConnectionManager_init(&server->connectionManager, &server->config.logger);
@@ -386,7 +385,7 @@ static UA_StatusCode
 createConnection(void *userData, UA_Socket *sock) {
     UA_Server *const server = (UA_Server *const)userData;
 
-    UA_StatusCode retval = server->networkManager->registerSocket(server->networkManager, sock);
+    UA_StatusCode retval = server->config.networkManager->registerSocket(server->config.networkManager, sock);
     if(retval != UA_STATUSCODE_GOOD) {
         sock->close(sock);
         sock->free(sock);
@@ -420,7 +419,7 @@ createConnection(void *userData, UA_Socket *sock) {
 UA_StatusCode
 UA_Server_addListenerSocket(UA_Server *server, UA_Socket *sock) {
 
-    UA_StatusCode retval = server->networkManager->registerSocket(server->networkManager, sock);
+    UA_StatusCode retval = server->config.networkManager->registerSocket(server->config.networkManager, sock);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
@@ -464,7 +463,9 @@ UA_Server_run_startup(UA_Server *server) {
     creationHook.hook = (UA_SocketHookFunction)UA_Server_addListenerSocket;
     creationHook.hookContext = server;
     for(size_t i = 0; i < server->config.socketConfigsSize; ++i) {
-        server->config.socketConfigs[i].createSocket(&server->config.socketConfigs[i], creationHook);
+        server->config.socketConfigs[i].createSocket(&server->config.socketConfigs[i],
+                                                     server->config.networkManager,
+                                                     creationHook);
     }
 
     /* Spin up the worker threads */
@@ -512,7 +513,7 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
         timeout = (UA_UInt16)(((nextRepeated - now) + (UA_DATETIME_MSEC - 1)) / UA_DATETIME_MSEC);
 
     /* Listen for network activity */
-    server->networkManager->process(server->networkManager, timeout);
+    server->config.networkManager->process(server->config.networkManager, timeout);
 
 #if defined(UA_ENABLE_DISCOVERY_MULTICAST) && !defined(UA_ENABLE_MULTITHREADING)
     if(server->config.applicationDescription.applicationType ==
@@ -542,7 +543,7 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
 
 UA_StatusCode
 UA_Server_run_shutdown(UA_Server *server) {
-    server->networkManager->shutdown(server->networkManager);
+    server->config.networkManager->shutdown(server->config.networkManager);
 
 #ifdef UA_ENABLE_MULTITHREADING
     /* Shut down the workers */

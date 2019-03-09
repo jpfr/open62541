@@ -48,7 +48,7 @@ register_server_with_discovery_server(UA_Server *server,
     UA_String *discoveryUrls;
     size_t discoveryUrlsSize;
     UA_StatusCode retval =
-        server->networkManager->getDiscoveryUrls(server->networkManager, &discoveryUrls, &discoveryUrlsSize);
+        server->config.networkManager->getDiscoveryUrls(server->config.networkManager, &discoveryUrls, &discoveryUrlsSize);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
     size_t total_discurls = config_discurls + discoveryUrlsSize;

@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <stdlib.h>
-#include "ua_networkmanagers.h"
 #include "ua_log_stdout.h"
 
 #include "ua_types.h"

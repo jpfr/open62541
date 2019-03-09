@@ -2,7 +2,6 @@
 *  License, v. 2.0. If a copy of the MPL was not distributed with this
 *  file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ua_networkmanagers.h"
 #include "ua_log_stdout.h"
 #include "ua_server_internal.h"
 #include "ua_client.h"

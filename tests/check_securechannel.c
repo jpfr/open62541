@@ -36,7 +36,7 @@ UA_SecurityPolicy dummyPolicy;
 UA_Connection *testingConnection;
 UA_ByteString sentData;
 UA_Socket dummySocket;
-
+UA_NetworkManager networkManager;
 
 static funcs_called fCalled;
 static key_sizes keySizes;
@@ -47,7 +47,7 @@ setup_secureChannel(void) {
     UA_SecureChannel_init(&testChannel);
     UA_SecureChannel_setSecurityPolicy(&testChannel, &dummyPolicy, &dummyCertificate);
 
-    dummySocket = createDummySocket(&sentData);
+    dummySocket = createDummySocket(&networkManager, &sentData);
     UA_Connection_new(UA_ConnectionConfig_default, &dummySocket, NULL, &testingConnection);
     UA_Connection_attachSecureChannel(testingConnection, &testChannel);
     testChannel.connection = testingConnection;

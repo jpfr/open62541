@@ -14,6 +14,9 @@
 
 _UA_BEGIN_DECLS
 
+struct UA_NetworkManager;
+typedef struct UA_NetworkManager UA_NetworkManager;
+
 typedef struct UA_Socket UA_Socket;
 typedef struct UA_SocketHook UA_SocketHook;
 typedef struct UA_SocketConfig UA_SocketConfig;
@@ -64,7 +67,7 @@ struct UA_Socket {
      */
     UA_UInt64 id;
 
-    UA_Logger *logger;
+    UA_NetworkManager *networkManager;
 
     /**
      * This hook is called when the socket->open function successfully returns.
@@ -192,7 +195,6 @@ struct UA_SocketConfig {
     UA_UInt32 recvBufferSize;
     UA_UInt32 sendBufferSize;
     UA_UInt16 port;
-    UA_Logger *logger;
     UA_ByteString customHostname;
 
     /**
@@ -202,7 +204,9 @@ struct UA_SocketConfig {
      * \param config
      * \param socketHook The socketHook is called once for each socket that is created.
      */
-    UA_StatusCode (*createSocket)(UA_SocketConfig *config, UA_SocketHook socketHook);
+    UA_StatusCode (*createSocket)(UA_SocketConfig *config,
+                                  UA_NetworkManager *nm,
+                                  UA_SocketHook socketHook);
 };
 
 /**

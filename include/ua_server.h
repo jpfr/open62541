@@ -46,7 +46,7 @@ struct UA_Client;
  * Server Lifecycle
  * ---------------- */
 
-UA_Server UA_EXPORT * UA_Server_new(const UA_ServerConfig *config);
+UA_Server UA_EXPORT * UA_Server_new(UA_ServerConfig *config);
 void UA_EXPORT UA_Server_delete(UA_Server *server);
 
 /**

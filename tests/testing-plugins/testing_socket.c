@@ -57,7 +57,7 @@ dummyFree(UA_Socket *sock) {
 }
 
 UA_Socket
-createDummySocket(UA_ByteString *verificationBuffer) {
+createDummySocket(UA_NetworkManager *nm, UA_ByteString *verificationBuffer) {
     vBuffer = verificationBuffer;
     UA_ByteString_allocBuffer(&sendBuffer, 65536);
     sendBufferLength = 65536;
@@ -73,6 +73,7 @@ createDummySocket(UA_ByteString *verificationBuffer) {
     sock.activity = dummyActivity;
     sock.close = dummyClose;
     sock.free = dummyFree;
+    sock.networkManager = nm;
 
     return sock;
 }

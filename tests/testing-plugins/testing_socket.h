@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 UA_Socket
-createDummySocket(UA_ByteString *verificationBuffer);
+createDummySocket(UA_NetworkManager *nm, UA_ByteString *verificationBuffer);
 
 /**
  * Simulate network timing conditions

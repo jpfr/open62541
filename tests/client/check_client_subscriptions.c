@@ -4,7 +4,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "ua_networkmanagers.h"
 #include "ua_log_stdout.h"
 #include "ua_types.h"
 #include "ua_server.h"

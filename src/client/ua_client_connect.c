@@ -791,14 +791,14 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     if(client->config.clientSocketConfig.openHook.hook == NULL &&
        client->config.clientSocketConfig.openHook.hookContext == NULL)
         client->config.clientSocketConfig.openHook = openHook;
-    if(client->config.clientSocketConfig.socketConfig.logger == NULL)
-        client->config.clientSocketConfig.socketConfig.logger = &client->config.logger;
 
     UA_SocketHook creationHook;
     creationHook.hookContext = client;
     creationHook.hook = (UA_SocketHookFunction)UA_Client_openSocket;
     retval = client->config.clientSocketConfig.
-        socketConfig.createSocket((UA_SocketConfig *)&client->config.clientSocketConfig, creationHook);
+        socketConfig.createSocket((UA_SocketConfig *)&client->config.clientSocketConfig,
+                                  client->config.networkManager,
+                                  creationHook);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
