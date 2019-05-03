@@ -18,10 +18,208 @@
 
 #include "ua_server_internal.h"
 #include "ua_services.h"
+#include "ziptree.h"
 
 /**********/
 /* Browse */
 /**********/
+
+/* References are browsed with a minimum number of copy operations. For this,
+ * the tree-structure with the results (to detect duplicates) points into the
+ * target array. Actually, the tree-structure is situated at the end of the
+ * pre-allocated results array. So a single realloc operation (with some pointer
+ * repairing) can be used to increase the capacity. */
+
+#define REFTREE_INITIAL_SIZE 20
+ 
+struct RefEntry;
+typedef struct RefEntry RefEntry;
+
+struct RefEntry {
+    ZIP_ENTRY(RefEntry) zipfields;
+    UA_ReferenceDescription *rd;
+    UA_UInt32 targetHash; /* Hash of the target nodeid */
+};
+
+static enum ZIP_CMP
+cmpTarget(const void *a, const void *b) {
+    const RefEntry *aa = (const RefEntry*)a;
+    const RefEntry *bb = (const RefEntry*)b;
+
+    if(aa->targetHash < bb->targetHash)
+        return ZIP_CMP_LESS;
+    if(aa->targetHash > bb->targetHash)
+        return ZIP_CMP_MORE;
+
+    const UA_ExpandedNodeId *aaa = &aa->rd->nodeId;
+    const UA_ExpandedNodeId *bbb = &bb->rd->nodeId;
+
+    if(aaa->serverIndex < bbb->serverIndex)
+        return ZIP_CMP_LESS;
+    if(aaa->serverIndex > bbb->serverIndex)
+        return ZIP_CMP_MORE;
+
+    if(aaa->namespaceUri.length < bbb->namespaceUri.length)
+        return ZIP_CMP_LESS;
+    if(aaa->namespaceUri.length > bbb->namespaceUri.length)
+        return ZIP_CMP_MORE;
+    int cmp = strncmp((const char*)aaa->namespaceUri.data,
+                      (const char*)bbb->namespaceUri.data,
+                      aaa->namespaceUri.length);
+    if(cmp < 0)
+        return ZIP_CMP_LESS;
+    if(cmp > 0)
+        return ZIP_CMP_MORE;
+
+    if(UA_NodeId_equal(&aaa->nodeId, &bbb->nodeId))
+        return ZIP_CMP_EQ;
+
+    /* Compare namespaceIndex */
+    if(aaa->nodeId.namespaceIndex < bbb->nodeId.namespaceIndex)
+        return ZIP_CMP_LESS;
+    if(aaa->nodeId.namespaceIndex > bbb->nodeId.namespaceIndex)
+        return ZIP_CMP_MORE;
+
+    /* Compare identifierType */
+    if(aaa->nodeId.identifierType < bbb->nodeId.identifierType)
+        return ZIP_CMP_LESS;
+    if(aaa->nodeId.identifierType > bbb->nodeId.identifierType)
+        return ZIP_CMP_MORE;
+
+    /* Compare the identifier */
+    switch(aaa->nodeId.identifierType) {
+    case UA_NODEIDTYPE_NUMERIC:
+        if(aaa->nodeId.identifier.numeric < bbb->nodeId.identifier.numeric)
+            return ZIP_CMP_LESS;
+        if(aaa->nodeId.identifier.numeric > bbb->nodeId.identifier.numeric)
+            return ZIP_CMP_MORE;
+        break;
+    case UA_NODEIDTYPE_GUID:
+        if(aaa->nodeId.identifier.guid.data1 < bbb->nodeId.identifier.guid.data1 ||
+           aaa->nodeId.identifier.guid.data2 < bbb->nodeId.identifier.guid.data2 ||
+           aaa->nodeId.identifier.guid.data3 < bbb->nodeId.identifier.guid.data3 ||
+           strncmp((const char*)aaa->nodeId.identifier.guid.data4,
+                   (const char*)bbb->nodeId.identifier.guid.data4, 8) < 0)
+            return ZIP_CMP_LESS;
+        if(aaa->nodeId.identifier.guid.data1 > bbb->nodeId.identifier.guid.data1 ||
+           aaa->nodeId.identifier.guid.data2 > bbb->nodeId.identifier.guid.data2 ||
+           aaa->nodeId.identifier.guid.data3 > bbb->nodeId.identifier.guid.data3 ||
+           strncmp((const char*)aaa->nodeId.identifier.guid.data4,
+                   (const char*)bbb->nodeId.identifier.guid.data4, 8) > 0)
+            return ZIP_CMP_MORE;
+        break;
+    case UA_NODEIDTYPE_STRING:
+    case UA_NODEIDTYPE_BYTESTRING: {
+        if(aaa->nodeId.identifier.string.length < bbb->nodeId.identifier.string.length)
+            return ZIP_CMP_LESS;
+        if(aaa->nodeId.identifier.string.length > bbb->nodeId.identifier.string.length)
+            return ZIP_CMP_MORE;
+        int cmp2 = strncmp((const char*)aaa->nodeId.identifier.string.data,
+                          (const char*)bbb->nodeId.identifier.string.data,
+                          aaa->nodeId.identifier.string.length);
+        if(cmp2 < 0)
+            return ZIP_CMP_LESS;
+        if(cmp2 > 0)
+            return ZIP_CMP_MORE;
+        break;
+    }
+    default:
+        break;
+    }
+
+    return ZIP_CMP_EQ;
+}
+
+/* The layout of the results array is as follows. The RefEntry part is simply
+ * ignored when we return the results.
+ *
+ * | ReferenceDescription array | RefEntry array |
+ *
+ */
+
+ZIP_HEAD(RefHead, RefEntry);
+typedef struct RefHead RefHead;
+ZIP_PROTTYPE(RefHead, RefEntry, RefEntry)
+ZIP_IMPL(RefHead, RefEntry, zipfields, RefEntry, zipfields, cmpTarget)
+
+typedef struct {
+    UA_ReferenceDescription *rd;
+    RefHead head;
+    size_t capacity;
+    size_t size;
+} RefTree;
+
+static UA_StatusCode
+RefTree_init(RefTree *rt) {
+    size_t space = (sizeof(UA_ReferenceDescription) + sizeof(RefEntry)) * REFTREE_INITIAL_SIZE;
+    rt->rd = (UA_ReferenceDescription*)UA_malloc(space);
+    if(!rt->rd)
+        return UA_STATUSCODE_BADOUTOFMEMORY;
+    rt->capacity = REFTREE_INITIAL_SIZE;
+    rt->size = 0;
+    return UA_STATUSCODE_GOOD;
+}
+
+/* Double the capacity of the reftree */
+static UA_StatusCode
+RefTree_double(RefTree *rt) {
+    size_t capacity = rt->capacity * 2;
+    size_t space = (sizeof(UA_ReferenceDescription) + sizeof(RefEntry)) * capacity;
+    UA_ReferenceDescription *newRd = (UA_ReferenceDescription*)realloc(rt->rd, space);
+    if(!newRd)
+        return UA_STATUSCODE_BADOUTOFMEMORY;
+
+    /* Repair the pointers for the realloced array+tree  */
+    uintptr_t ptrdiff = (uintptr_t)newRd - (uintptr_t)rt->rd;
+    RefEntry *oldReArray = (RefEntry*)((uintptr_t)newRd + (rt->capacity * sizeof(RefEntry)));
+    RefEntry *reArray = (RefEntry*)((uintptr_t)newRd + (capacity * sizeof(RefEntry)));
+    memmove(reArray, oldReArray, rt->size * sizeof(RefEntry));
+    for(size_t i = 0; i < rt->size; i++) {
+        reArray[i].zipfields.zip_left =
+            (RefEntry*)((uintptr_t)reArray[i].zipfields.zip_left + ptrdiff);
+        reArray[i].zipfields.zip_right =
+            (RefEntry*)((uintptr_t)reArray[i].zipfields.zip_right + ptrdiff);
+    }
+
+    rt->head.zip_root = (RefEntry*)((uintptr_t)rt->head.zip_root + ptrdiff);
+    rt->capacity = capacity;
+    rt->rd = newRd;
+    return UA_STATUSCODE_GOOD;
+}
+
+static UA_ReferenceDescription *
+RefTree_getSlot(RefTree *rt, const UA_NodeId *target) {
+    /* Is the target already in the tree? */
+    UA_ReferenceDescription rd;
+    UA_ExpandedNodeId_init(&rd.nodeId);
+    rd.nodeId.nodeId = *target;
+    RefEntry re;
+    re.rd = &rd;
+    re.targetHash = UA_NodeId_hash(target);
+    if(ZIP_FIND(RefHead, &rt->head, &re))
+        return NULL;
+
+    /* Increase the capacity if required */
+    if(rt->capacity <= rt->size) {
+        UA_StatusCode retval = RefTree_double(rt);
+        if(retval != UA_STATUSCODE_GOOD)
+            return NULL;
+    }
+
+    /* Return the pointer */
+    return &rt->rd[rt->size];
+}
+
+static void
+RefTree_add(RefTree *rt, UA_ReferenceDescription *rd) {
+    RefEntry *re = (RefEntry*)((uintptr_t)rt +
+                               (sizeof(UA_ReferenceDescription) * rt->capacity) +
+                               (sizeof(RefEntry) + rt->size));
+    re->rd = rd;
+    re->targetHash = UA_NodeId_hash(&rd->nodeId.nodeId);
+    ZIP_INSERT(RefHead, &rt->head, re, ZIP_FFS32(UA_UInt32_random()));
+    rt->size++;
+}
 
 /* Target node on top of the stack */
 static UA_StatusCode
@@ -82,7 +280,7 @@ matchClassMask(const UA_Node *node, UA_UInt32 nodeClassMask) {
 
 /* Returns whether the node / continuationpoint is done */
 static UA_Boolean
-browseReferences(UA_Server *server, const UA_Node *node,
+browseReferences(UA_Server *server, RefTree *rt, const UA_Node *node,
                  ContinuationPointEntry *cp, UA_BrowseResult *result) {
     UA_assert(cp != NULL);
     const UA_BrowseDescription *descr = &cp->browseDescription;
@@ -160,33 +358,20 @@ browseReferences(UA_Server *server, const UA_Node *node,
                 return false;
             }
 
-            /* Make enough space in the array */
-            if(result->referencesSize >= refs_size) {
-                refs_size *= 2;
-                if(refs_size > maxrefs)
-                    refs_size = maxrefs;
-                UA_ReferenceDescription *rd = (UA_ReferenceDescription*)
-                    UA_realloc(result->references, sizeof(UA_ReferenceDescription) * refs_size);
-                if(!rd) {
-                    result->statusCode = UA_STATUSCODE_BADOUTOFMEMORY;
-                    UA_Nodestore_releaseNode(server->nsCtx, target);
-                    goto error_recovery;
-                }
-                result->references = rd;
+            /* Add the reference to the tree */
+            UA_ReferenceDescription *rd = RefTree_getSlot(rt, &target->nodeId);
+            if(!rd) {
+                result->statusCode = UA_STATUSCODE_BADOUTOFMEMORY;
+                goto error_recovery;
             }
-
-            /* Copy the node description. Target is on top of the stack */
-            result->statusCode =
-                fillReferenceDescription(server, target, rk, descr->resultMask,
-                                         &result->references[result->referencesSize]);
+            result->statusCode = fillReferenceDescription(server, target, rk,
+                                                          descr->resultMask, rd);
 
             UA_Nodestore_releaseNode(server->nsCtx, target);
-
             if(result->statusCode != UA_STATUSCODE_GOOD)
                 goto error_recovery;
 
-            /* Increase the counter */
-            result->referencesSize++;
+            RefTree_add(rt, rd);
         }
 
         targetIndex = 0; /* Start at index 0 for the next reference kind */
@@ -252,8 +437,15 @@ browseWithContinuation(UA_Server *server, UA_Session *session,
         return true;
     }
 
+    RefTree rt;
+    result->statusCode = RefTree_init(&rt);
+    if(result->statusCode != UA_STATUSCODE_GOOD) {
+        UA_Nodestore_releaseNode(server->nsCtx, node);
+        return true;
+    }
+
     /* Browse the references */
-    UA_Boolean done = browseReferences(server, node, cp, result);
+    UA_Boolean done = browseReferences(server, &rt, node, cp, result);
     UA_Nodestore_releaseNode(server->nsCtx, node);
     return done;
 }
