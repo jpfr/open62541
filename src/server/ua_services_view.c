@@ -324,6 +324,7 @@ void Service_Browse(UA_Server *server, UA_Session *session,
                     const UA_BrowseRequest *request, UA_BrowseResponse *response) {
     UA_LOG_DEBUG_SESSION(&server->config.logger, session, "Processing BrowseRequest");
 
+    /* Test the number of operations in the request */
     if(server->config.maxNodesPerBrowse != 0 &&
        request->nodesToBrowseSize > server->config.maxNodesPerBrowse) {
         response->responseHeader.serviceResult = UA_STATUSCODE_BADTOOMANYOPERATIONS;
@@ -733,6 +734,7 @@ Service_TranslateBrowsePathsToNodeIds(UA_Server *server, UA_Session *session,
     UA_LOG_DEBUG_SESSION(&server->config.logger, session,
                          "Processing TranslateBrowsePathsToNodeIdsRequest");
 
+    /* Test the number of operations in the request */
     if(server->config.maxNodesPerTranslateBrowsePathsToNodeIds != 0 &&
        request->browsePathsSize > server->config.maxNodesPerTranslateBrowsePathsToNodeIds) {
         response->responseHeader.serviceResult = UA_STATUSCODE_BADTOOMANYOPERATIONS;
@@ -789,6 +791,7 @@ void Service_RegisterNodes(UA_Server *server, UA_Session *session,
         return;
     }
 
+    /* Test the number of operations in the request */
     if(server->config.maxNodesPerRegisterNodes != 0 &&
        request->nodesToRegisterSize > server->config.maxNodesPerRegisterNodes) {
         response->responseHeader.serviceResult = UA_STATUSCODE_BADTOOMANYOPERATIONS;
@@ -812,6 +815,7 @@ void Service_UnregisterNodes(UA_Server *server, UA_Session *session,
     if(request->nodesToUnregisterSize == 0)
         response->responseHeader.serviceResult = UA_STATUSCODE_BADNOTHINGTODO;
 
+    /* Test the number of operations in the request */
     if(server->config.maxNodesPerRegisterNodes != 0 &&
        request->nodesToUnregisterSize > server->config.maxNodesPerRegisterNodes) {
         response->responseHeader.serviceResult = UA_STATUSCODE_BADTOOMANYOPERATIONS;
