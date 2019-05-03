@@ -345,10 +345,11 @@ void Service_Browse(UA_Server *server, UA_Session *session,
 }
 
 UA_BrowseResult
-UA_Server_browse(UA_Server *server, UA_UInt32 maxrefs, const UA_BrowseDescription *descr) {
+UA_Server_browse(UA_Server *server, UA_UInt32 maxReferences,
+                 const UA_BrowseDescription *bd) {
     UA_BrowseResult result;
     UA_BrowseResult_init(&result);
-    Operation_Browse(server, &server->adminSession, &maxrefs, descr, &result);
+    Operation_Browse(server, &server->adminSession, &maxReferences, bd, &result);
     return result;
 }
 
