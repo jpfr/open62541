@@ -453,6 +453,13 @@ UA_BrowseResult UA_EXPORT
 UA_Server_browse(UA_Server *server, UA_UInt32 maxReferences,
                  const UA_BrowseDescription *bd);
 
+/* Nonstandard version of the browse service that recurses into child nodes.
+ * Possible loops (that can occur for non-hierarchical references) are handled
+ * by adding every target node at most once to the result array. */
+UA_BrowseResult UA_EXPORT
+UA_Server_browseRecursive(UA_Server *server, UA_UInt32 maxReferences,
+                          const UA_BrowseDescription *bd);
+
 UA_BrowseResult UA_EXPORT
 UA_Server_browseNext(UA_Server *server, UA_Boolean releaseContinuationPoint,
                      const UA_ByteString *continuationPoint);
