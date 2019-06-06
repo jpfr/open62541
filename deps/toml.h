@@ -25,10 +25,7 @@ SOFTWARE.
 #ifndef TOML_H
 #define TOML_H
 
-
-#include <stdio.h>
 #include <stdint.h>
-
 
 #ifdef __cplusplus
 #define TOML_EXTERN extern "C"
@@ -39,18 +36,11 @@ SOFTWARE.
 typedef struct toml_table_t toml_table_t;
 typedef struct toml_array_t toml_array_t;
 
-/* Parse a file. Return a table on success, or 0 otherwise. 
- * Caller must toml_free(the-return-value) after use.
- */
-TOML_EXTERN toml_table_t* toml_parse_file(FILE* fp, 
-                                          char* errbuf,
-                                          int errbufsz);
-
 /* Parse a string containing the full config. 
  * Return a table on success, or 0 otherwise.
  * Caller must toml_free(the-return-value) after use.
  */
-TOML_EXTERN toml_table_t* toml_parse(char* conf, /* NUL terminated, please. */
+TOML_EXTERN toml_table_t* toml_parse(const char* conf, /* NUL terminated, please. */
                                      char* errbuf,
                                      int errbufsz);
 
