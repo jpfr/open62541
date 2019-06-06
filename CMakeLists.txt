@@ -130,6 +130,7 @@ option(BUILD_SHARED_LIBS "Enable building of shared libraries (dll/so)" OFF)
 set(UA_LOGLEVEL 300 CACHE STRING "Level at which logs shall be reported")
 set(UA_MULTITHREADING 0 CACHE STRING "Level of multithreading (0-99: No Multithreading, 100-199: Thread-Safe API, >=200: Internal Threads")
 option(UA_ENABLE_HISTORIZING "Enable server and client to provide historical access." OFF)
+option(UA_ENABLE_CONFIG_PARSER "Parse the client/server config from a config file. (EXPERIMENTAL)" ON)
 option(UA_ENABLE_METHODCALLS "Enable the Method service set" ON)
 option(UA_ENABLE_NODEMANAGEMENT "Enable dynamic addition and removal of nodes at runtime" ON)
 option(UA_ENABLE_SUBSCRIPTIONS "Enable subscriptions support." ON)
@@ -847,6 +848,12 @@ if(UA_ENABLE_HISTORIZING)
          ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_data_gathering_default.c
          ${PROJECT_SOURCE_DIR}/plugins/historydata/ua_history_database_default.c
          )
+endif()
+
+if(UA_ENABLE_CONFIG_PARSER)
+    list(APPEND default_plugin_headers ${PROJECT_SOURCE_DIR}/plugins/include/open62541/server_config_parse.h)
+    list(APPEND default_plugin_sources ${PROJECT_SOURCE_DIR}/deps/toml.c
+                                       ${PROJECT_SOURCE_DIR}/plugins/ua_config_parse.c)
 endif()
 
 if(UA_ENABLE_DISCOVERY)
