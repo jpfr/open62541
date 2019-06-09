@@ -172,6 +172,10 @@ if(UA_ENABLE_ENCRYPTION)
     target_include_directories(client_encryption PRIVATE "${PROJECT_SOURCE_DIR}/examples")
 endif()
 
+if(UA_ENABLE_CONFIG_PARSER)
+    add_example(server_config_parse server_config_parse.c)
+endif()
+
 add_example(custom_datatype_client custom_datatype/client_types_custom.c)
 add_example(custom_datatype_server custom_datatype/server_types_custom.c)
 

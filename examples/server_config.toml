@@ -1,0 +1,26 @@
+# Attention! Parsing the server config is still an experimental feature.
+# The config format is still incomplete and will change in the future.
+
+Logger = "StdOut" # Default is "StdOut" for a console logger
+
+# List of UABinary server ports
+[[UABinary]]
+    Port = 4840
+    # Interface = "eth0"
+    Encryption = true
+
+[Security]
+    Certificate    = "./server_config.pem" # Public server certificate
+    PrivateKey     = "./server_key.pem"    # Private key matching the certificate
+    TrustList      = []                    # Array of trustlist files
+    RevocationList = []                    # Array of revocationlist files
+
+# Self-description of the server, exposed via GetEndpoints
+[ApplicationDescription]
+    ApplicationUri = "urn:unconfigured:application"
+    ProductUri     = "urn:unconfigured:product"
+    DiscoveryUrls  = ["opc.tcp://localhost:4840"]
+    # GateWayServerUri = ""
+    [ApplicationDescription.ApplicationName]
+        # locale = ""
+        text = "open62541-based OPC UA Application"
