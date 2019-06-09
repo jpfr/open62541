@@ -254,7 +254,7 @@ setDefaultConfig(UA_ServerConfig *conf) {
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_setBasics(UA_ServerConfig* conf) {
     UA_StatusCode res = setDefaultConfig(conf);
     UA_LOG_WARNING(&conf->logger, UA_LOGCATEGORY_USERLAND,
@@ -323,7 +323,7 @@ UA_ServerConfig_addNetworkLayerTCP(UA_ServerConfig *conf, UA_UInt16 portNumber,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_addSecurityPolicyNone(UA_ServerConfig *config, 
                                       const UA_ByteString *certificate) {
     /* Allocate the SecurityPolicies */
@@ -353,7 +353,7 @@ UA_ServerConfig_addSecurityPolicyNone(UA_ServerConfig *config,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_addEndpoint(UA_ServerConfig *config, const UA_String securityPolicyUri, 
                             UA_MessageSecurityMode securityMode) {
     /* Allocate the endpoint */
@@ -387,7 +387,7 @@ UA_ServerConfig_addEndpoint(UA_ServerConfig *config, const UA_String securityPol
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_addAllEndpoints(UA_ServerConfig *config) {
     /* Allocate the endpoints */
     UA_EndpointDescription * tmp = (UA_EndpointDescription *)
@@ -428,7 +428,7 @@ UA_ServerConfig_addAllEndpoints(UA_ServerConfig *config) {
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_setMinimalCustomBuffer(UA_ServerConfig *config, UA_UInt16 portNumber,
                                        const UA_ByteString *certificate,
                                        UA_UInt32 sendBufferSize,
@@ -481,7 +481,7 @@ UA_ServerConfig_setMinimalCustomBuffer(UA_ServerConfig *config, UA_UInt16 portNu
 
 #ifdef UA_ENABLE_ENCRYPTION
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_addSecurityPolicyBasic128Rsa15(UA_ServerConfig *config, 
                                                const UA_ByteString *certificate,
                                                const UA_ByteString *privateKey) {
@@ -515,7 +515,7 @@ UA_ServerConfig_addSecurityPolicyBasic128Rsa15(UA_ServerConfig *config,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_addSecurityPolicyBasic256(UA_ServerConfig *config, 
                                           const UA_ByteString *certificate,
                                           const UA_ByteString *privateKey) {
@@ -549,7 +549,7 @@ UA_ServerConfig_addSecurityPolicyBasic256(UA_ServerConfig *config,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_addSecurityPolicyBasic256Sha256(UA_ServerConfig *config, 
                                                 const UA_ByteString *certificate,
                                                 const UA_ByteString *privateKey) {
@@ -668,7 +668,7 @@ UA_ServerConfig_addAllSecurityPolicies(UA_ServerConfig *config,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_setDefaultWithSecurityPolicies(UA_ServerConfig *conf,
                                                UA_UInt16 portNumber,
                                                const UA_ByteString *certificate,
