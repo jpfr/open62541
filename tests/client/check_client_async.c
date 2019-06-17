@@ -15,13 +15,12 @@
 #include <stdlib.h>
 
 #include "testing_clock.h"
-#include "testing_networklayers.h"
+#include "testing_socket.h"
 #include "thread_wrapper.h"
 
 UA_Server *server;
 UA_ServerConfig *config;
 UA_Boolean running;
-UA_ServerNetworkLayer nl;
 THREAD_HANDLE server_thread;
 
 THREAD_CALLBACK(serverloop) {
@@ -31,6 +30,8 @@ THREAD_CALLBACK(serverloop) {
 }
 
 static void setup(void) {
+    UA_Socket_activityTesting_result = UA_STATUSCODE_GOOD;
+    UA_NetworkManager_processTesting_result = UA_STATUSCODE_GOOD;
     running = true;
     server = UA_Server_new();
     UA_ServerConfig_setDefault(UA_Server_getConfig(server));
@@ -74,8 +75,10 @@ START_TEST(Client_highlevel_async_readValue) {
         UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
-        UA_Client_recv = client->connection.recv;
-        client->connection.recv = UA_Client_recvTesting;
+        UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
+        UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
+        UA_NetworkManager_process = client->config.networkManager->process;
+        client->config.networkManager->process = UA_NetworkManager_processTesting;
 
         UA_UInt16 asyncCounter = 0;
 
@@ -94,7 +97,7 @@ START_TEST(Client_highlevel_async_readValue) {
         ck_assert_uint_eq(asyncCounter, 1);
 
         /* Simulate network cable unplugged (no response from server) */
-        UA_Client_recvTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
+        UA_Socket_activityTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
 
         UA_Client_disconnect(client);
         UA_Client_delete(client);
@@ -107,6 +110,11 @@ START_TEST(Client_read_async) {
 
         UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+
+        UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
+        UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
+        UA_NetworkManager_process = client->config.networkManager->process;
+        client->config.networkManager->process = UA_NetworkManager_processTesting;
 
         UA_UInt16 asyncCounter = 0;
 
@@ -132,7 +140,9 @@ START_TEST(Client_read_async) {
         }
 
         /* Process async responses during 1s */
-        retval = UA_Client_run_iterate(client, 999);
+        /* Wait a bit for the messages to pass over the network */
+        UA_realSleep(50);
+        retval = UA_Client_run_iterate(client, 1);
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
         ck_assert_uint_eq(asyncCounter, 100);
 
@@ -149,8 +159,10 @@ START_TEST(Client_read_async_timed) {
         UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
-        UA_Client_recv = client->connection.recv;
-        client->connection.recv = UA_Client_recvTesting;
+        UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
+        UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
+        UA_NetworkManager_process = client->config.networkManager->process;
+        client->config.networkManager->process = UA_NetworkManager_processTesting;
 
         UA_UInt16 asyncCounter = 0;
 
@@ -178,8 +190,9 @@ START_TEST(Client_read_async_timed) {
         ck_assert_uint_eq(asyncCounter, 1);
 
         /* Simulate network cable unplugged (no response from server) */
-        UA_Client_recvTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
+        UA_Socket_activityTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
 
+        asyncCounter = 0;
         retval = __UA_Client_AsyncServiceEx(client, &rr,
                 &UA_TYPES[UA_TYPES_READREQUEST],
                 (UA_ClientAsyncServiceCallback) asyncReadCallback,
@@ -187,6 +200,9 @@ START_TEST(Client_read_async_timed) {
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
         /* Process async responses during 1s */
         UA_Client_run_iterate(client, 100 + 1);
+        /* Call again to process timed out requests */
+        UA_Socket_activityTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
+        UA_Client_run_iterate(client, 0);
         ck_assert_uint_eq(asyncCounter, 9999);
 
         UA_Client_disconnect(client);
@@ -210,8 +226,10 @@ START_TEST(Client_connectivity_check) {
         UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
-        UA_Client_recv = client->connection.recv;
-        client->connection.recv = UA_Client_recvTesting;
+        UA_Socket_activity = UA_Connection_getSocket(client->connection)->activity;
+        UA_Connection_getSocket(client->connection)->activity = UA_Socket_activityTesting;
+        UA_NetworkManager_process = client->config.networkManager->process;
+        client->config.networkManager->process = UA_NetworkManager_processTesting;
 
         inactivityCallbackTriggered = false;
 
@@ -220,10 +238,12 @@ START_TEST(Client_connectivity_check) {
         ck_assert_uint_eq(inactivityCallbackTriggered, false);
 
         /* Simulate network cable unplugged (no response from server) */
-        UA_Client_recvTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
+        UA_NetworkManager_processTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
 
-        retval = UA_Client_run_iterate(client,
-                (UA_UInt16) (1000 + 1 + clientConfig->timeout));
+        retval = UA_Client_run_iterate(client, (UA_UInt16) (1000 + 1 + clientConfig->timeout));
+        ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+        UA_Socket_activityTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
+        retval = UA_Client_run_iterate(client, (UA_UInt16) (1000 + 1 + clientConfig->timeout));
         ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
         ck_assert_uint_eq(inactivityCallbackTriggered, true);
 

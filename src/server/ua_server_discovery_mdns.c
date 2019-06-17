@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. 
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  *    Copyright 2017 (c) Stefan Profanter, fortiss GmbH
  *    Copyright 2017 (c) Fraunhofer IOSB (Author: Julius Pfrommer)
@@ -152,29 +152,33 @@ getInterfaces(const UA_Server *server) {
 
 static UA_Boolean
 mdns_is_self_announce(const UA_Server *server, const struct serverOnNetwork_list_entry *entry) {
-    for (size_t i=0; i<server->config.networkLayersSize; i++) {
-        UA_ServerNetworkLayer *nl = &server->config.networkLayers[i];
+    UA_String *discoveryUrls;
+    size_t discoveryUrlsSize;
+    UA_StatusCode retval =
+        server->config.networkManager->getDiscoveryUrls(server->config.networkManager,
+                                                        &discoveryUrls, &discoveryUrlsSize);
+    if(retval != UA_STATUSCODE_GOOD)
+        return false;
+
+    for(size_t i = 0; i < discoveryUrlsSize; ++i) {
         if(UA_String_equal(&entry->serverOnNetwork.discoveryUrl,
-                           &nl->discoveryUrl))
-            return true;
-        // check discoveryUrl ignoring tailing slash
-        if (((
-                nl->discoveryUrl.length == entry->serverOnNetwork.discoveryUrl.length +1 &&
-                nl->discoveryUrl.data[nl->discoveryUrl.length-1] == '/'
-              ) || (
-                entry->serverOnNetwork.discoveryUrl.length == nl->discoveryUrl.length +1 &&
-                entry->serverOnNetwork.discoveryUrl.data[entry->serverOnNetwork.discoveryUrl.length-1] == '/'
-              )
-            ) &&
-            memcmp(nl->discoveryUrl.data, entry->serverOnNetwork.discoveryUrl.data,
-                    UA_MIN(nl->discoveryUrl.length, entry->serverOnNetwork.discoveryUrl.length)) == 0
-        ) {
+                           &discoveryUrls[i])) {
+            UA_free(discoveryUrls);
             return true;
         }
-        if (nl->discoveryUrl.length == entry->serverOnNetwork.discoveryUrl.length +1 &&
-            nl->discoveryUrl.data[nl->discoveryUrl.length-1] == '/' &&
-            memcmp(nl->discoveryUrl.data, entry->serverOnNetwork.discoveryUrl.data, nl->discoveryUrl.length-1) == 0
-                ) {
+        // check discoveryUrl ignoring tailing slash
+        bool localLengthMatchesRemotePlusOne =
+            discoveryUrls[i].length == entry->serverOnNetwork.discoveryUrl.length + 1;
+        bool localHasTrailingSlash = discoveryUrls[i].data[discoveryUrls[i].length - 1] == '/';
+        bool remoteLengthMatchesLocalPlusOne =
+            entry->serverOnNetwork.discoveryUrl.length == discoveryUrls[i].length + 1;
+        bool remoteHasTrailingSlash =
+            entry->serverOnNetwork.discoveryUrl.data[entry->serverOnNetwork.discoveryUrl.length - 1] == '/';
+        if(((localLengthMatchesRemotePlusOne && localHasTrailingSlash)
+            || (remoteLengthMatchesLocalPlusOne && remoteHasTrailingSlash))
+           && memcmp(discoveryUrls[i].data, entry->serverOnNetwork.discoveryUrl.data,
+                     UA_MIN(discoveryUrls[i].length, entry->serverOnNetwork.discoveryUrl.length)) == 0) {
+            UA_free(discoveryUrls);
             return true;
         }
     }
@@ -185,11 +189,11 @@ mdns_is_self_announce(const UA_Server *server, const struct serverOnNetwork_list
     UA_String hostnameRemote = UA_STRING_NULL;
     UA_UInt16 portRemote = 4840;
     UA_String pathRemote = UA_STRING_NULL;
-    UA_StatusCode retval =
-        UA_parseEndpointUrl(&entry->serverOnNetwork.discoveryUrl,
-                            &hostnameRemote, &portRemote, &pathRemote);
+    retval = UA_parseEndpointUrl(&entry->serverOnNetwork.discoveryUrl,
+                                 &hostnameRemote, &portRemote, &pathRemote);
     if(retval != UA_STATUSCODE_GOOD) {
         /* skip invalid url */
+        UA_free(discoveryUrls);
         return false;
     }
 
@@ -205,6 +209,7 @@ mdns_is_self_announce(const UA_Server *server, const struct serverOnNetwork_list
     if(getifaddrs(&ifaddr) == -1) {
         UA_LOG_ERROR(&server->config.logger, UA_LOGCATEGORY_SERVER,
                      "getifaddrs returned an unexpected error. Not setting mDNS A records.");
+        UA_free(discoveryUrls);
         return false;
     }
 #endif
@@ -212,14 +217,13 @@ mdns_is_self_announce(const UA_Server *server, const struct serverOnNetwork_list
 
     UA_Boolean isSelf = false;
 
-    for (size_t i=0; i<server->config.networkLayersSize; i++) {
-        UA_ServerNetworkLayer *nl = &server->config.networkLayers[i];
+    for (size_t i=0; i<discoveryUrlsSize; i++) {
 
         UA_String hostnameSelf = UA_STRING_NULL;
         UA_UInt16 portSelf = 4840;
         UA_String pathSelf = UA_STRING_NULL;
 
-        retval = UA_parseEndpointUrl(&nl->discoveryUrl, &hostnameSelf,
+        retval = UA_parseEndpointUrl(&discoveryUrls[i], &hostnameSelf,
                                      &portSelf, &pathSelf);
         if(retval != UA_STATUSCODE_GOOD) {
             /* skip invalid url */
@@ -296,6 +300,7 @@ mdns_is_self_announce(const UA_Server *server, const struct serverOnNetwork_list
     freeifaddrs(ifaddr);
 #endif
 
+    UA_free(discoveryUrls);
     return isSelf;
 }
 

@@ -54,17 +54,25 @@ endif()
 
 
 # Use different plugins for testing
-set(test_plugin_sources ${PROJECT_SOURCE_DIR}/arch/network_tcp.c
-    ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_clock.c
-    ${PROJECT_SOURCE_DIR}/plugins/ua_log_stdout.c
-    ${PROJECT_SOURCE_DIR}/plugins/ua_config_default.c
-    ${PROJECT_SOURCE_DIR}/plugins/ua_accesscontrol_default.c
-    ${PROJECT_SOURCE_DIR}/plugins/ua_pki_default.c
-    ${PROJECT_SOURCE_DIR}/plugins/ua_nodestore_default.c
-    ${PROJECT_SOURCE_DIR}/plugins/securityPolicies/ua_securitypolicy_none.c
-    ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_policy.c
-    ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_networklayers.c
-    )
+set(test_plugin_sources ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_clock.c
+                        ${PROJECT_SOURCE_DIR}/plugins/ua_log_stdout.c
+                        ${PROJECT_SOURCE_DIR}/plugins/ua_config_default.c
+                        ${PROJECT_SOURCE_DIR}/plugins/ua_accesscontrol_default.c
+                        ${PROJECT_SOURCE_DIR}/plugins/ua_pki_default.c
+                        ${PROJECT_SOURCE_DIR}/plugins/ua_nodestore_default.c
+                        ${PROJECT_SOURCE_DIR}/plugins/securityPolicies/ua_securitypolicy_none.c
+                        ${PROJECT_SOURCE_DIR}/plugins/networking/ua_tcp_listener_socket.c
+                        ${PROJECT_SOURCE_DIR}/plugins/networking/ua_tcp_data_socket.c
+                        ${PROJECT_SOURCE_DIR}/plugins/networking/ua_networkmanager_select.c
+                        ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_policy.c
+                        ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_socket.c
+)
+
+if(UA_ENABLE_WEBSOCKET_SERVER)
+    set(test_plugin_sources ${test_plugin_sources}
+        ${PROJECT_SOURCE_DIR}/plugins/networking/ua_wss_listener_socket.c
+        ${PROJECT_SOURCE_DIR}/plugins/networking/ua_wss_data_socket.c)
+endif()
 
 if(UA_ENABLE_HISTORIZING)
     set(test_plugin_sources ${test_plugin_sources}
@@ -237,13 +245,13 @@ add_executable(check_services_subscriptions server/check_services_subscriptions.
 target_link_libraries(check_services_subscriptions ${LIBS})
 add_test_valgrind(services_subscriptions ${TESTS_BINARY_DIR}/check_services_subscriptions)
 
-add_executable(check_monitoreditem_filter server/check_monitoreditem_filter.c $<TARGET_OBJECTS:open62541-object> $<TARGET_OBJECTS:open62541-testplugins>)
-target_link_libraries(check_monitoreditem_filter ${LIBS})
-add_test_valgrind(monitoreditem_filter ${TESTS_BINARY_DIR}/check_monitoreditem_filter)
-
 add_executable(check_subscription_events server/check_subscription_events.c $<TARGET_OBJECTS:open62541-object> $<TARGET_OBJECTS:open62541-testplugins>)
 target_link_libraries(check_subscription_events ${LIBS})
 add_test_valgrind(subscription_events ${TESTS_BINARY_DIR}/check_subscription_events)
+
+add_executable(check_monitoreditem_filter server/check_monitoreditem_filter.c $<TARGET_OBJECTS:open62541-object> $<TARGET_OBJECTS:open62541-testplugins>)
+target_link_libraries(check_monitoreditem_filter ${LIBS})
+add_test_valgrind(monitoreditem_filter ${TESTS_BINARY_DIR}/check_monitoreditem_filter)
 
 add_executable(check_nodestore server/check_nodestore.c $<TARGET_OBJECTS:open62541-object> $<TARGET_OBJECTS:open62541-testplugins>)
 target_link_libraries(check_nodestore ${LIBS})
