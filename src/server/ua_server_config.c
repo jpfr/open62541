@@ -26,7 +26,7 @@ UA_ServerConfig_clean(UA_ServerConfig *config) {
     /* Networking */
     if(config->networkManager != NULL) {
         config->networkManager->shutdown(config->networkManager);
-        config->networkManager->free(config->networkManager);
+        config->networkManager->clear(config->networkManager);
         config->networkManager = NULL;
     }
 

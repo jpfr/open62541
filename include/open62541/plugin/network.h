@@ -369,7 +369,7 @@ struct UA_NetworkManager {
      *
      * \param networkManager The NetworkManager to perform the operation on.
      */
-    UA_StatusCode (*free)(UA_NetworkManager *networkManager);
+    UA_StatusCode (*clear)(UA_NetworkManager *networkManager);
 
     const UA_Logger *logger;
 };

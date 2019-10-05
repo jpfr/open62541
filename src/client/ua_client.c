@@ -77,7 +77,7 @@ UA_ClientConfig_deleteMembers(UA_ClientConfig *config) {
 
     if(config->internallyAllocatedNetworkManager) {
         config->networkManager->shutdown(config->networkManager);
-        config->networkManager->free(config->networkManager);
+        config->networkManager->clear(config->networkManager);
     }
 }
 

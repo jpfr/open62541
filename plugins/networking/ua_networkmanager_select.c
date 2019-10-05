@@ -32,7 +32,8 @@ typedef struct {
 
 static UA_StatusCode
 select_nm_registerSocket(UA_NetworkManager *networkManager, UA_Socket *socket) {
-    UA_NetworkManager_selectBased *const internalManager = (UA_NetworkManager_selectBased *const)networkManager;
+    UA_NetworkManager_selectBased *const internalManager =
+        (UA_NetworkManager_selectBased *const)networkManager;
     if(internalManager->numSockets >= FD_SETSIZE) {
         UA_LOG_ERROR(networkManager->logger, UA_LOGCATEGORY_NETWORK,
                      "The select based network manager cannot handle "
@@ -311,7 +312,7 @@ select_nm_shutdown(UA_NetworkManager *networkManager) {
 }
 
 static UA_StatusCode
-select_nm_free(UA_NetworkManager *networkManager) {
+select_nm_clear(UA_NetworkManager *networkManager) {
     if(networkManager == NULL)
         return UA_STATUSCODE_GOOD;
 
@@ -359,7 +360,7 @@ UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager **p_netw
     networkManager->baseManager.getDiscoveryUrls = select_nm_getDiscoveryUrls;
     networkManager->baseManager.start = select_nm_start;
     networkManager->baseManager.shutdown = select_nm_shutdown;
-    networkManager->baseManager.free = select_nm_free;
+    networkManager->baseManager.clear = select_nm_clear;
     networkManager->baseManager.logger = logger;
 
     networkManager->numListenerSockets = 0;
