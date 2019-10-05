@@ -23,7 +23,6 @@
 #include "ua_timer.h"
 #include "ua_workqueue.h"
 #include "open62541_queue.h"
-#include "open62541/plugin/networkmanager.h"
 
 _UA_BEGIN_DECLS
 

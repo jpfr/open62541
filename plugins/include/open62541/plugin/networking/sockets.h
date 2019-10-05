@@ -7,7 +7,7 @@
 #ifndef OPEN62541_SOCKETS_H
 #define OPEN62541_SOCKETS_H
 
-#include <open62541/plugin/socket.h>
+#include <open62541/plugin/network.h>
 
 _UA_BEGIN_DECLS
 /**

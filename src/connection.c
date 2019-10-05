@@ -14,7 +14,7 @@
 #include <open62541/transport_generated_encoding_binary.h>
 #include <open62541/types_generated_encoding_binary.h>
 #include <open62541/types_generated_handling.h>
-#include <open62541/plugin/networkmanager.h>
+#include <open62541/plugin/network.h>
 #include "ua_securechannel.h"
 #include "ua_util_internal.h"
 #include <open62541/connection.h>

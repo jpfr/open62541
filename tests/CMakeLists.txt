@@ -61,8 +61,7 @@ set(test_plugin_sources ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_cloc
                         ${PROJECT_SOURCE_DIR}/plugins/ua_pki_default.c
                         ${PROJECT_SOURCE_DIR}/plugins/ua_nodestore_default.c
                         ${PROJECT_SOURCE_DIR}/plugins/securityPolicies/ua_securitypolicy_none.c
-                        ${PROJECT_SOURCE_DIR}/plugins/networking/ua_tcp_listener_socket.c
-                        ${PROJECT_SOURCE_DIR}/plugins/networking/ua_tcp_data_socket.c
+                        ${PROJECT_SOURCE_DIR}/plugins/networking/ua_socket_tcp_posix.c
                         ${PROJECT_SOURCE_DIR}/plugins/networking/ua_networkmanager_select.c
                         ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_policy.c
                         ${PROJECT_SOURCE_DIR}/tests/testing-plugins/testing_socket.c

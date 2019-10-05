@@ -17,8 +17,6 @@
  *    Copyright 2019 (c) Kalycito Infotech Private Limited
  */
 
-#include <open62541/plugin/networkmanager.h>
-#include <open62541/plugin/networking/sockets.h>
 #include "ua_server_internal.h"
 
 #if UA_MULTITHREADING >= 100

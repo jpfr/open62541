@@ -572,8 +572,7 @@ set(exported_headers ${exported_headers}
                      ${PROJECT_BINARY_DIR}/src_generated/open62541/types_generated_handling.h
                      ${PROJECT_SOURCE_DIR}/include/open62541/util.h
                      ${PROJECT_SOURCE_DIR}/include/open62541/plugin/log.h
-                     ${PROJECT_SOURCE_DIR}/include/open62541/plugin/socket.h
-                     ${PROJECT_SOURCE_DIR}/include/open62541/plugin/networkmanager.h
+                     ${PROJECT_SOURCE_DIR}/include/open62541/plugin/network.h
                      ${PROJECT_SOURCE_DIR}/include/open62541/server.h
                      ${PROJECT_SOURCE_DIR}/include/open62541/plugin/accesscontrol.h
                      ${PROJECT_SOURCE_DIR}/include/open62541/plugin/pki.h
@@ -686,8 +685,7 @@ set(default_plugin_sources ${PROJECT_SOURCE_DIR}/plugins/ua_log_stdout.c
                            ${PROJECT_SOURCE_DIR}/plugins/ua_nodestore_default.c
                            ${PROJECT_SOURCE_DIR}/plugins/ua_config_default.c
                            ${PROJECT_SOURCE_DIR}/plugins/securityPolicies/ua_securitypolicy_none.c
-                           ${PROJECT_SOURCE_DIR}/plugins/networking/ua_tcp_listener_socket.c
-                           ${PROJECT_SOURCE_DIR}/plugins/networking/ua_tcp_data_socket.c
+                           ${PROJECT_SOURCE_DIR}/plugins/networking/ua_socket_tcp_posix.c
                            ${PROJECT_SOURCE_DIR}/plugins/networking/ua_networkmanager_select.c
 )
 

@@ -8,18 +8,12 @@
 #include <open62541/plugin/log.h>
 #include <open62541/types_generated_handling.h>
 #include <open62541/plugin/networking/networkmanagers.h>
-#include <open62541/plugin/networkmanager.h>
-#include <open62541/plugin/socket.h>
 #include "open62541_queue.h"
 
 typedef struct UA_SocketListEntry {
     UA_Socket *socket;
     LIST_ENTRY(UA_SocketListEntry) pointers;
 } UA_SocketListEntry;
-
-typedef struct UA_SocketList {
-    LIST_HEAD(, UA_SocketListEntry) list;
-} UA_SocketList;
 
 typedef enum {
     UA_NETWORKMANAGER_NEW,
@@ -29,7 +23,7 @@ typedef enum {
 
 typedef struct {
     UA_NetworkManager baseManager;
-    UA_SocketList sockets;
+    LIST_HEAD(, UA_SocketListEntry) sockets;
     size_t numListenerSockets;
     size_t numSockets;
     UA_NetworkManager_State state;
@@ -51,7 +45,7 @@ select_nm_registerSocket(UA_NetworkManager *networkManager, UA_Socket *socket) {
     socketListEntry->socket = socket;
 
 
-    LIST_INSERT_HEAD(&internalManager->sockets.list, socketListEntry, pointers);
+    LIST_INSERT_HEAD(&internalManager->sockets, socketListEntry, pointers);
     UA_LOG_DEBUG(networkManager->logger, UA_LOGCATEGORY_NETWORK,
                  "Registered socket with id %i",
                  (int)socket->id);
@@ -96,7 +90,7 @@ select_nm_removeSocket(UA_NetworkManager *networkManager, UA_Socket *socket) {
     UA_NetworkManager_selectBased *const internalManager = (UA_NetworkManager_selectBased *const)networkManager;
     UA_SocketListEntry *socketListEntry, *tmp;
 
-    LIST_FOREACH_SAFE(socketListEntry, &internalManager->sockets.list, pointers, tmp) {
+    LIST_FOREACH_SAFE(socketListEntry, &internalManager->sockets, pointers, tmp) {
         if(socketListEntry->socket == socket) {
             if(socket->isListener)
                 --internalManager->numListenerSockets;
@@ -118,7 +112,7 @@ setFDSet(UA_NetworkManager_selectBased *networkManager, fd_set *readfdset, fd_se
     UA_Int32 highestfd = -1;
 
     UA_SocketListEntry *socketListEntry;
-    LIST_FOREACH(socketListEntry, &networkManager->sockets.list, pointers) {
+    LIST_FOREACH(socketListEntry, &networkManager->sockets, pointers) {
         if(socketListEntry->socket->waitForWriteActivity)
             UA_fd_set((UA_SOCKET)socketListEntry->socket->id, writefdset);
         if(socketListEntry->socket->waitForReadActivity)
@@ -154,7 +148,7 @@ select_nm_process(UA_NetworkManager *networkManager, UA_UInt16 timeout) {
 
     /* Read from established sockets and check if sockets can be cleaned up */
     UA_SocketListEntry *socketListEntry, *e_tmp;
-    LIST_FOREACH_SAFE(socketListEntry, &internalManager->sockets.list, pointers, e_tmp) {
+    LIST_FOREACH_SAFE(socketListEntry, &internalManager->sockets, pointers, e_tmp) {
         UA_Socket *const socket = socketListEntry->socket;
         UA_Boolean readActivity = UA_fd_isset((UA_SOCKET)socket->id, &readfdset);
         UA_Boolean writeActivity = UA_fd_isset((UA_SOCKET)socket->id, &writefdset);
@@ -252,7 +246,7 @@ select_nm_getDiscoveryUrls(const UA_NetworkManager *networkManager, UA_String *d
 
     size_t position = 0;
     UA_SocketListEntry *socketListEntry, *e_tmp;
-    LIST_FOREACH_SAFE(socketListEntry, &internalManager->sockets.list, pointers, e_tmp) {
+    LIST_FOREACH_SAFE(socketListEntry, &internalManager->sockets, pointers, e_tmp) {
         if(socketListEntry->socket->isListener) {
             if(position >= internalManager->numListenerSockets) {
                 UA_LOG_ERROR(networkManager->logger, UA_LOGCATEGORY_NETWORK,
@@ -303,7 +297,7 @@ select_nm_shutdown(UA_NetworkManager *networkManager) {
     UA_LOG_INFO(networkManager->logger, UA_LOGCATEGORY_NETWORK, "Shutting down network manager");
 
     UA_SocketListEntry *socketListEntry;
-    LIST_FOREACH(socketListEntry, &internalManager->sockets.list, pointers) {
+    LIST_FOREACH(socketListEntry, &internalManager->sockets, pointers) {
         UA_LOG_INFO(networkManager->logger, UA_LOGCATEGORY_NETWORK,
                     "Closing remaining socket with id %i", (int)socketListEntry->socket->id);
         socketListEntry->socket->close(socketListEntry->socket);
@@ -329,7 +323,7 @@ select_nm_free(UA_NetworkManager *networkManager) {
         networkManager->shutdown(networkManager);
 
     UA_SocketListEntry *socketListEntry, *e_tmp;
-    LIST_FOREACH_SAFE(socketListEntry, &internalManager->sockets.list, pointers, e_tmp) {
+    LIST_FOREACH_SAFE(socketListEntry, &internalManager->sockets, pointers, e_tmp) {
         UA_LOG_DEBUG(networkManager->logger, UA_LOGCATEGORY_NETWORK,
                      "Removing remaining socket with id %i", (int)socketListEntry->socket->id);
         socketListEntry->socket->free(socketListEntry->socket);

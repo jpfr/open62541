@@ -12,7 +12,7 @@
 #include <open62541/config.h>
 #include <open62541/plugin/log.h>
 #include <open62541/plugin/securitypolicy.h>
-#include <open62541/plugin/networkmanager.h>
+#include <open62541/plugin/network.h>
 #include "connection.h"
 
 _UA_BEGIN_DECLS
