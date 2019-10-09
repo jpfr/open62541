@@ -65,11 +65,11 @@ processACKResponse(void *application, UA_Connection *connection,
 static UA_StatusCode
 HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     /* Get a buffer */
-    UA_ByteString *message = NULL;
     UA_Connection *conn = client->connection;
     if(conn == NULL)
         return UA_STATUSCODE_BADINTERNALERROR;
 
+    UA_ByteString message = UA_BYTESTRING_NULL;
     UA_Socket *sock = UA_Connection_getSocket(conn);
     UA_StatusCode retval = sock->acquireSendBuffer(sock, UA_MINMESSAGESIZE, &message);
     if(retval != UA_STATUSCODE_GOOD)
@@ -82,8 +82,8 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     memcpy(&hello, &client->config.localConnectionConfig,
            sizeof(UA_ConnectionConfig)); /* same struct layout */
 
-    UA_Byte *bufPos = &message->data[8]; /* skip the header */
-    const UA_Byte *bufEnd = &message->data[message->length];
+    UA_Byte *bufPos = &message.data[8]; /* skip the header */
+    const UA_Byte *bufEnd = &message.data[message.length];
     retval = UA_TcpHelloMessage_encodeBinary(&hello, &bufPos, bufEnd);
     /* avoid deleting reference */
     hello.endpointUrl = UA_STRING_NULL;
@@ -94,15 +94,15 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     /* Encode the message header at offset 0 */
     UA_TcpMessageHeader messageHeader;
     messageHeader.messageTypeAndChunkType = UA_CHUNKTYPE_FINAL + UA_MESSAGETYPE_HEL;
-    messageHeader.messageSize = (UA_UInt32)((uintptr_t)bufPos - (uintptr_t)message->data);
-    bufPos = message->data;
+    messageHeader.messageSize = (UA_UInt32)((uintptr_t)bufPos - (uintptr_t)message.data);
+    bufPos = message.data;
     retval = UA_TcpMessageHeader_encodeBinary(&messageHeader, &bufPos, bufEnd);
     if(retval != UA_STATUSCODE_GOOD)
         goto error_before_send;
 
     /* Send the HEL message */
-    message->length = messageHeader.messageSize;
-    retval = sock->send(sock, message);
+    message.length = messageHeader.messageSize;
+    retval = sock->send(sock, &message);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                      "Sending HEL failed: %s", UA_StatusCode_name(retval));
@@ -128,7 +128,7 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     }
     return retval;
 error_before_send:
-    sock->releaseSendBuffer(sock, message);
+    sock->releaseSendBuffer(sock, &message);
     return retval;
 }
 
@@ -788,8 +788,8 @@ UA_Client_createConnection(UA_Socket *sock) {
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
-    sock->dataCallback = (UA_Socket_DataCallbackFunction)UA_Connection_assembleChunks;
-    sock->freeCallback = UA_Client_removeConnection;
+    //sock->dataCallback = (UA_Socket_DataCallbackFunction)UA_Connection_assembleChunks;
+    //sock->freeCallback = UA_Client_removeConnection;
     sock->context = connection;
 
     connection->chunkCallback.callbackContext = client;
@@ -809,11 +809,11 @@ UA_Client_removeConnection(UA_Socket *sock) {
     return retval;
 }
 
-static UA_StatusCode
-UA_Client_openSocket(UA_Socket *sock) {
-    sock->openCallback = UA_Client_createConnection;
-    return sock->open(sock);
-}
+/* static UA_StatusCode */
+/* UA_Client_openSocket(UA_Socket *sock) { */
+/*     sock->openCallback = UA_Client_createConnection; */
+/*     return sock->open(sock); */
+/* } */
 
 UA_StatusCode
 UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl) {
@@ -825,54 +825,57 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     client->channel.sendSequenceNumber = 0;
     client->requestId = 0;
 
-    // we can autoconfigure in this case. Otherwise the user has to configure the endpoint data
-    // in the config.
-    UA_ClientSocketConfig clientSocketConfig = client->config.clientSocketConfig;
-    if(clientSocketConfig.socketConfig.createSocket != UA_TCP_ClientDataSocket) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                     "Cannot configure endpointUrl when using non default tcp sockets. "
-                     "Please configure the appropriate data in the config.");
-        return UA_STATUSCODE_BADINTERNALERROR;
-    }
+    /* // we can autoconfigure in this case. Otherwise the user has to configure the endpoint data */
+    /* // in the config. */
+    /* UA_ClientSocketConfig clientSocketConfig = client->config.clientSocketConfig; */
+    /* if(clientSocketConfig.socketConfig.createSocket != UA_TCP_ClientDataSocket) { */
+    /*     UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                  "Cannot configure endpointUrl when using non default tcp sockets. " */
+    /*                  "Please configure the appropriate data in the config."); */
+    /*     return UA_STATUSCODE_BADINTERNALERROR; */
+    /* } */
 
-    if(clientSocketConfig.targetEndpointUrl.data == NULL) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                    "No target endpoint configured. Using the supplied endpoint");
-        clientSocketConfig.targetEndpointUrl = endpointUrl;
-        // TODO: dont save this in client config
-        // create separate config in this case that is only valid for the current function call stack
-    }
-    if(clientSocketConfig.socketConfig.networkManager == NULL) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                    "No network manager configured. Using the default client network manager");
-        clientSocketConfig.socketConfig.networkManager = client->config.networkManager;
-    }
+    /* if(clientSocketConfig.targetEndpointUrl.data == NULL) { */
+    /*     UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                 "No target endpoint configured. Using the supplied endpoint"); */
+    /*     clientSocketConfig.targetEndpointUrl = endpointUrl; */
+    /*     // TODO: dont save this in client config */
+    /*     // create separate config in this case that is only valid for the current function call stack */
+    /* } */
+    /* if(clientSocketConfig.socketConfig.networkManager == NULL) { */
+    /*     UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                 "No network manager configured. Using the default client network manager"); */
+    /*     clientSocketConfig.socketConfig.networkManager = client->config.networkManager; */
+    /* } */
 
-    if(clientSocketConfig.socketConfig.application == NULL) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                    "No application configured. Using the client as application");
-        clientSocketConfig.socketConfig.application = client;
-    }
-    UA_StatusCode retval =
-        clientSocketConfig.socketConfig.networkManager->createSocket(client->config.networkManager,
-                                                                     (UA_SocketConfig *)&clientSocketConfig,
-                                                                     UA_Client_openSocket);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+    /* if(clientSocketConfig.socketConfig.application == NULL) { */
+    /*     UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                 "No application configured. Using the client as application"); */
+    /*     clientSocketConfig.socketConfig.application = client; */
+    /* } */
 
-    UA_DateTime connect_timeout = 1000 * UA_DATETIME_MSEC;
-    UA_DateTime connect_start = UA_DateTime_nowMonotonic();
-    do {
-        /* TODO: Where to get timeout value from? */
-        retval = client->config.networkManager->process(client->config.networkManager, 100);
-        if(retval != UA_STATUSCODE_GOOD)
-            return retval;
-    } while((client->connection == NULL || client->connection->state != UA_CONNECTION_OPENING) && (connect_start + connect_timeout < UA_DateTime_nowMonotonic()));
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
 
-    if (client->connection == NULL) {
-        retval = UA_STATUSCODE_BADTIMEOUT;
-        goto cleanup;
-    }
+    /* UA_StatusCode retval = */
+    /*     clientSocketConfig.socketConfig.networkManager->createSocket(client->config.networkManager, */
+    /*                                                                  (UA_SocketConfig *)&clientSocketConfig, */
+    /*                                                                  UA_Client_openSocket); */
+    /* if(retval != UA_STATUSCODE_GOOD) */
+    /*     return retval; */
+
+    /* UA_DateTime connect_timeout = 1000 * UA_DATETIME_MSEC; */
+    /* UA_DateTime connect_start = UA_DateTime_nowMonotonic(); */
+    /* do { */
+    /*     /\* TODO: Where to get timeout value from? *\/ */
+    /*     retval = client->config.networkManager->process(client->config.networkManager, 100); */
+    /*     if(retval != UA_STATUSCODE_GOOD) */
+    /*         return retval; */
+    /* } while((client->connection == NULL || client->connection->state != UA_CONNECTION_OPENING) && (connect_start + connect_timeout < UA_DateTime_nowMonotonic())); */
+
+    /* if (client->connection == NULL) { */
+    /*     retval = UA_STATUSCODE_BADTIMEOUT; */
+    /*     goto cleanup; */
+    /* } */
 
     if(client->connection->state != UA_CONNECTION_OPENING) {
         retval = UA_STATUSCODE_BADCONNECTIONCLOSED;

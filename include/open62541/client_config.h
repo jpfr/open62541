@@ -108,7 +108,7 @@ struct UA_ClientConfig {
     UA_CertificateVerification certificateVerification;
 
     /* Networking */
-    UA_ClientSocketConfig clientSocketConfig;
+    //UA_ClientSocketConfig clientSocketConfig;
     UA_NetworkManager *networkManager;
     UA_Boolean internallyAllocatedNetworkManager; /* If true, NM will be deleted on client delete */
 

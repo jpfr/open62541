@@ -30,11 +30,11 @@ UA_ServerConfig_clean(UA_ServerConfig *config) {
         config->networkManager = NULL;
     }
 
-    for(size_t i = 0; i < config->listenerSocketConfigsSize; ++i) {
-        UA_String_deleteMembers(&config->listenerSocketConfigs[i].socketConfig.customHostname);
-        config->listenerSocketConfigs[i].socketConfig.customHostname = UA_STRING_NULL;
-    }
-    UA_free(config->listenerSocketConfigs);
+    /* for(size_t i = 0; i < config->listenerSocketConfigsSize; ++i) { */
+    /*     UA_String_deleteMembers(&config->listenerSocketConfigs[i].socketConfig.customHostname); */
+    /*     config->listenerSocketConfigs[i].socketConfig.customHostname = UA_STRING_NULL; */
+    /* } */
+    /* UA_free(config->listenerSocketConfigs); */
 
     for(size_t i = 0; i < config->securityPoliciesSize; ++i) {
         UA_SecurityPolicy *policy = &config->securityPolicies[i];
@@ -75,10 +75,10 @@ UA_ServerConfig_setCustomHostname(UA_ServerConfig *config,
                                   const UA_String customHostname) {
     if(!config)
         return;
-    for(size_t i = 0; i < config->listenerSocketConfigsSize; ++i) {
-        UA_String_deleteMembers(&config->listenerSocketConfigs[i].socketConfig.customHostname);
-        UA_String_copy(&customHostname, &config->listenerSocketConfigs[i].socketConfig.customHostname);
-    }
+    /* for(size_t i = 0; i < config->listenerSocketConfigsSize; ++i) { */
+    /*     UA_String_deleteMembers(&config->listenerSocketConfigs[i].socketConfig.customHostname); */
+    /*     UA_String_copy(&customHostname, &config->listenerSocketConfigs[i].socketConfig.customHostname); */
+    /* } */
 }
 
 #ifdef UA_ENABLE_PUBSUB

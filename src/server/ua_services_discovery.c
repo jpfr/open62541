@@ -94,13 +94,13 @@ setApplicationDescriptionFromServer(UA_ApplicationDescription *target, const UA_
 
     /* add the discoveryUrls from the networklayers */
     if(!target->discoveryUrlsSize) {
-        UA_String *discoveryUrls;
-        size_t discoveryUrlsSize;
-        result =
-            server->config.networkManager->getDiscoveryUrls(server->config.networkManager,
-                                                            &discoveryUrls, &discoveryUrlsSize);
-        if(result != UA_STATUSCODE_GOOD)
-            return result;
+        UA_String *discoveryUrls = NULL;
+        size_t discoveryUrlsSize = 0;
+        /* result = */
+        /*     server->config.networkManager->getDiscoveryUrls(server->config.networkManager, */
+        /*                                                     &discoveryUrls, &discoveryUrlsSize); */
+        /* if(result != UA_STATUSCODE_GOOD) */
+        /*     return result; */
         size_t discSize = sizeof(UA_String) * (target->discoveryUrlsSize + discoveryUrlsSize);
         UA_String *disc = (UA_String *)UA_realloc(target->discoveryUrls, discSize);
         if(!disc) {
@@ -259,13 +259,14 @@ Service_GetEndpoints(UA_Server *server, UA_Session *session,
         return;
     }
 
-    UA_String *discoveryUrls;
-    size_t discoveryUrlsSize;
-    UA_StatusCode retval =
-        server->config.networkManager->getDiscoveryUrls(server->config.networkManager,
-                                                        &discoveryUrls, &discoveryUrlsSize);
-    if(retval != UA_STATUSCODE_GOOD)
-        return;
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
+    UA_String *discoveryUrls = NULL;
+    size_t discoveryUrlsSize = 0;
+    /* UA_StatusCode retval = */
+    /*     server->config.networkManager->getDiscoveryUrls(server->config.networkManager, */
+    /*                                                     &discoveryUrls, &discoveryUrlsSize); */
+    /* if(retval != UA_STATUSCODE_GOOD) */
+    /*     return; */
 
     /* Clone the endpoint for each networklayer? */
     size_t clone_times = 1;

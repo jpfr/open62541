@@ -19,7 +19,7 @@ createDummySocket(UA_ByteString *verificationBuffer);
  * ---------------------------------- */
 
 extern UA_UInt32 UA_Socket_activitySleepDuration;
-extern UA_StatusCode
+extern void
 (*UA_Socket_activity)(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActivity);
 
 extern UA_StatusCode UA_Socket_activityTesting_result;
@@ -27,7 +27,7 @@ extern UA_StatusCode UA_Socket_activityTesting_result;
 /* Override the client recv method to increase the simulated clock after the first recv.
  * UA_Socket_activitySleepDuration is set to zero after the first recv.
  * UA_Socket_activityTesting_result can be used to simulate an error */
-UA_StatusCode
+void
 UA_Socket_activityTesting(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActivity);
 
 extern UA_StatusCode UA_NetworkManager_processTesting_result;

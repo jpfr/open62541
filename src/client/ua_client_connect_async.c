@@ -50,7 +50,7 @@ requestGetEndpoints(UA_Client *client, UA_UInt32 *requestId);
 static UA_StatusCode
 sendHELMessage(UA_Client *client) {
     /* Get a buffer */
-    UA_ByteString *message = NULL;
+    UA_ByteString message = UA_BYTESTRING_NULL;
     UA_Connection *conn = client->connection;
     UA_Socket *sock = UA_Connection_getSocket(conn);
     if(sock == NULL)
@@ -65,25 +65,25 @@ sendHELMessage(UA_Client *client) {
     memcpy(&hello, &client->config.localConnectionConfig,
            sizeof(UA_ConnectionConfig)); /* same struct layout */
 
-    UA_Byte *bufPos = &message->data[8]; /* skip the header */
-    const UA_Byte *bufEnd = &message->data[message->length];
+    UA_Byte *bufPos = &message.data[8]; /* skip the header */
+    const UA_Byte *bufEnd = &message.data[message.length];
     client->connectStatus = UA_TcpHelloMessage_encodeBinary(&hello, &bufPos, bufEnd);
     UA_TcpHelloMessage_deleteMembers (&hello);
 
     /* Encode the message header at offset 0 */
     UA_TcpMessageHeader messageHeader;
     messageHeader.messageTypeAndChunkType = UA_CHUNKTYPE_FINAL + UA_MESSAGETYPE_HEL;
-    messageHeader.messageSize = (UA_UInt32) ((uintptr_t)bufPos - (uintptr_t)message->data);
-    bufPos = message->data;
+    messageHeader.messageSize = (UA_UInt32) ((uintptr_t)bufPos - (uintptr_t)message.data);
+    bufPos = message.data;
     retval = UA_TcpMessageHeader_encodeBinary(&messageHeader, &bufPos, bufEnd);
     if(retval != UA_STATUSCODE_GOOD) {
-        sock->releaseSendBuffer(sock, message);
+        sock->releaseSendBuffer(sock, &message);
         return retval;
     }
 
     /* Send the HEL message */
-    message->length = messageHeader.messageSize;
-    retval = sock->send(sock, message);
+    message.length = messageHeader.messageSize;
+    retval = sock->send(sock, &message);
 
     if(retval == UA_STATUSCODE_GOOD) {
         UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Sent HEL message");
@@ -542,33 +542,33 @@ UA_Client_connect_iterate(UA_Client *client) {
     return client->connectStatus;
 }
 
-static UA_StatusCode
-UA_Client_createConnectionAsync(UA_Socket *sock) {
-    UA_Client *const client = (UA_Client *const)sock->application;
-    if(client == NULL || sock == NULL)
-        return UA_STATUSCODE_BADINVALIDARGUMENT;
-    client->asyncOpeningSocket = NULL;
-    return UA_Client_createConnection(sock);
-}
+/* static UA_StatusCode */
+/* UA_Client_createConnectionAsync(UA_Socket *sock) { */
+/*     UA_Client *const client = (UA_Client *const)sock->application; */
+/*     if(client == NULL || sock == NULL) */
+/*         return UA_STATUSCODE_BADINVALIDARGUMENT; */
+/*     client->asyncOpeningSocket = NULL; */
+/*     return UA_Client_createConnection(sock); */
+/* } */
 
-/* We want to clean up the asyncOpeningSocket variable if the socket is closed early in its lifecycle */
-static UA_StatusCode
-async_socket_free_callback(UA_Socket *sock) {
-    UA_Client *const client = (UA_Client *const)sock->application;
-    if(client->asyncOpeningSocket != NULL)
-        client->asyncOpeningSocket = NULL;
-    return UA_STATUSCODE_GOOD;
-}
+/* /\* We want to clean up the asyncOpeningSocket variable if the socket is closed early in its lifecycle *\/ */
+/* static UA_StatusCode */
+/* async_socket_free_callback(UA_Socket *sock) { */
+/*     UA_Client *const client = (UA_Client *const)sock->application; */
+/*     if(client->asyncOpeningSocket != NULL) */
+/*         client->asyncOpeningSocket = NULL; */
+/*     return UA_STATUSCODE_GOOD; */
+/* } */
 
-static UA_StatusCode
-UA_Client_openSocketAsync(UA_Socket *sock) {
-    UA_Client *const client = (UA_Client *const)sock->application;
-    sock->openCallback = UA_Client_createConnectionAsync;
-    sock->freeCallback = async_socket_free_callback;
-    client->asyncOpeningSocket = sock;
+/* static UA_StatusCode */
+/* UA_Client_openSocketAsync(UA_Socket *sock) { */
+/*     UA_Client *const client = (UA_Client *const)sock->application; */
+/*     sock->openCallback = UA_Client_createConnectionAsync; */
+/*     sock->freeCallback = async_socket_free_callback; */
+/*     client->asyncOpeningSocket = sock; */
 
-    return sock->open(sock);
-}
+/*     return sock->open(sock); */
+/* } */
 
 UA_StatusCode
 UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
@@ -596,36 +596,37 @@ UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
 
     // we can autoconfigure in this case. Otherwise the user has to configure the endpoint data
     // in the config.
-    UA_ClientSocketConfig clientSocketConfig = client->config.clientSocketConfig;
-    if(clientSocketConfig.socketConfig.createSocket != UA_TCP_ClientDataSocket) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                     "Cannot configure endpointUrl when using non default tcp sockets. "
-                     "Please configure the appropriate data in the config.");
-        return UA_STATUSCODE_BADINTERNALERROR;
-    }
+    /* UA_ClientSocketConfig clientSocketConfig = client->config.clientSocketConfig; */
+    /* if(clientSocketConfig.socketConfig.createSocket != UA_TCP_ClientDataSocket) { */
+    /*     UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                  "Cannot configure endpointUrl when using non default tcp sockets. " */
+    /*                  "Please configure the appropriate data in the config."); */
+    /*     return UA_STATUSCODE_BADINTERNALERROR; */
+    /* } */
 
-    if(clientSocketConfig.targetEndpointUrl.data == NULL) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                    "No target endpoint configured. Using the supplied endpoint");
-        clientSocketConfig.targetEndpointUrl = client->endpointUrl;
-    }
-    if(clientSocketConfig.socketConfig.networkManager == NULL) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                    "No target endpoint configured. Using the supplied endpoint");
-        clientSocketConfig.socketConfig.networkManager = client->config.networkManager;
-    }
-    if(clientSocketConfig.socketConfig.application == NULL) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                    "No application configured. Using the client as application");
-        clientSocketConfig.socketConfig.application = client;
-    }
+    /* if(clientSocketConfig.targetEndpointUrl.data == NULL) { */
+    /*     UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                 "No target endpoint configured. Using the supplied endpoint"); */
+    /*     clientSocketConfig.targetEndpointUrl = client->endpointUrl; */
+    /* } */
+    /* if(clientSocketConfig.socketConfig.networkManager == NULL) { */
+    /*     UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                 "No target endpoint configured. Using the supplied endpoint"); */
+    /*     clientSocketConfig.socketConfig.networkManager = client->config.networkManager; */
+    /* } */
+    /* if(clientSocketConfig.socketConfig.application == NULL) { */
+    /*     UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                 "No application configured. Using the client as application"); */
+    /*     clientSocketConfig.socketConfig.application = client; */
+    /* } */
 
-    UA_StatusCode retval = clientSocketConfig.socketConfig.networkManager
-                                 ->createSocket(client->config.networkManager,
-                                                (UA_SocketConfig *)&clientSocketConfig,
-                                                UA_Client_openSocketAsync);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+    /* UA_StatusCode retval = clientSocketConfig.socketConfig.networkManager */
+    /*                              ->createSocket(client->config.networkManager, */
+    /*                                             (UA_SocketConfig *)&clientSocketConfig, */
+    /*                                             UA_Client_openSocketAsync); */
+    /* if(retval != UA_STATUSCODE_GOOD) */
+    /*     return retval; */
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
 
     /* Set the channel SecurityMode if not done so far */
     if(client->channel.securityMode == UA_MESSAGESECURITYMODE_INVALID)

@@ -239,58 +239,57 @@ UA_ServerConfig_setBasics(UA_ServerConfig* conf) {
 }
 
 static UA_StatusCode
-configureNetworking_default(UA_ServerConfig *conf, UA_UInt16 portNumber, UA_UInt32 sendBufferSize,
-                            UA_UInt32 recvBufferSize) {
-
-    conf->listenerSocketConfigsSize = 1;
-#ifdef UA_ENABLE_WEBSOCKET_SERVER
-    conf->listenerSocketConfigsSize += 1;
-#endif
-    conf->listenerSocketConfigs = (UA_ListenerSocketConfig *)UA_malloc(
-        conf->listenerSocketConfigsSize * sizeof(UA_ListenerSocketConfig));
-    if(conf->listenerSocketConfigs == NULL) {
-        conf->listenerSocketConfigsSize = 0;
-        return UA_STATUSCODE_BADOUTOFMEMORY;
-    }
+configureNetworking_default(UA_ServerConfig *conf, UA_UInt16 portNumber,
+                            UA_UInt32 sendBufferSize, UA_UInt32 recvBufferSize) {
+/*     conf->listenerSocketConfigsSize = 1; */
+/* #ifdef UA_ENABLE_WEBSOCKET_SERVER */
+/*     conf->listenerSocketConfigsSize += 1; */
+/* #endif */
+/*     conf->listenerSocketConfigs = (UA_ListenerSocketConfig *)UA_malloc( */
+/*         conf->listenerSocketConfigsSize * sizeof(UA_ListenerSocketConfig)); */
+/*     if(conf->listenerSocketConfigs == NULL) { */
+/*         conf->listenerSocketConfigsSize = 0; */
+/*         return UA_STATUSCODE_BADOUTOFMEMORY; */
+/*     } */
 
     UA_StatusCode retval = UA_SelectBasedNetworkManager(&conf->logger, &conf->networkManager);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
     // TCP Listeners
-    conf->listenerSocketConfigs[0].socketConfig.networkManager = conf->networkManager;
-    conf->listenerSocketConfigs[0].socketConfig.sendBufferSize = sendBufferSize;
-    if(conf->listenerSocketConfigs[0].socketConfig.sendBufferSize <= 0)
-        conf->listenerSocketConfigs[0].socketConfig.sendBufferSize = 65535;
-    conf->listenerSocketConfigs[0].socketConfig.recvBufferSize = recvBufferSize;
-    if(conf->listenerSocketConfigs[0].socketConfig.recvBufferSize <= 0)
-        conf->listenerSocketConfigs[0].socketConfig.recvBufferSize = 65535;
-    conf->listenerSocketConfigs[0].socketConfig.port = portNumber;
-    conf->listenerSocketConfigs[0].socketConfig.createSocket = UA_TCP_ListenerSockets;
-    conf->listenerSocketConfigs[0].socketConfig.customHostname = UA_STRING_NULL;
-    conf->listenerSocketConfigs[0].socketConfig.additionalParameters = NULL;
+/*     conf->listenerSocketConfigs[0].socketConfig.networkManager = conf->networkManager; */
+/*     conf->listenerSocketConfigs[0].socketConfig.sendBufferSize = sendBufferSize; */
+/*     if(conf->listenerSocketConfigs[0].socketConfig.sendBufferSize <= 0) */
+/*         conf->listenerSocketConfigs[0].socketConfig.sendBufferSize = 65535; */
+/*     conf->listenerSocketConfigs[0].socketConfig.recvBufferSize = recvBufferSize; */
+/*     if(conf->listenerSocketConfigs[0].socketConfig.recvBufferSize <= 0) */
+/*         conf->listenerSocketConfigs[0].socketConfig.recvBufferSize = 65535; */
+/*     conf->listenerSocketConfigs[0].socketConfig.port = portNumber; */
+/*     conf->listenerSocketConfigs[0].socketConfig.createSocket = UA_TCP_ListenerSockets; */
+/*     conf->listenerSocketConfigs[0].socketConfig.customHostname = UA_STRING_NULL; */
+/*     conf->listenerSocketConfigs[0].socketConfig.additionalParameters = NULL; */
 
-#ifdef UA_ENABLE_WEBSOCKET_SERVER
-    // Websocket Listeners
-    conf->listenerSocketConfigs[1].socketConfig.networkManager = conf->networkManager;
-    conf->listenerSocketConfigs[1].socketConfig.sendBufferSize = sendBufferSize;
-    if(conf->listenerSocketConfigs[1].socketConfig.sendBufferSize <= 0)
-        conf->listenerSocketConfigs[1].socketConfig.sendBufferSize = 65535;
-    conf->listenerSocketConfigs[1].socketConfig.recvBufferSize = recvBufferSize;
-    if(conf->listenerSocketConfigs[1].socketConfig.recvBufferSize <= 0)
-        conf->listenerSocketConfigs[1].socketConfig.recvBufferSize = 65535;
-    conf->listenerSocketConfigs[1].socketConfig.port = 4880;
-    conf->listenerSocketConfigs[1].socketConfig.createSocket = UA_WSS_ListenerSocket;
-    conf->listenerSocketConfigs[1].socketConfig.customHostname = UA_STRING_NULL;
-    conf->listenerSocketConfigs[1].socketConfig.additionalParameters = NULL;
-#endif
+/* #ifdef UA_ENABLE_WEBSOCKET_SERVER */
+/*     // Websocket Listeners */
+/*     conf->listenerSocketConfigs[1].socketConfig.networkManager = conf->networkManager; */
+/*     conf->listenerSocketConfigs[1].socketConfig.sendBufferSize = sendBufferSize; */
+/*     if(conf->listenerSocketConfigs[1].socketConfig.sendBufferSize <= 0) */
+/*         conf->listenerSocketConfigs[1].socketConfig.sendBufferSize = 65535; */
+/*     conf->listenerSocketConfigs[1].socketConfig.recvBufferSize = recvBufferSize; */
+/*     if(conf->listenerSocketConfigs[1].socketConfig.recvBufferSize <= 0) */
+/*         conf->listenerSocketConfigs[1].socketConfig.recvBufferSize = 65535; */
+/*     conf->listenerSocketConfigs[1].socketConfig.port = 4880; */
+/*     conf->listenerSocketConfigs[1].socketConfig.createSocket = UA_WSS_ListenerSocket; */
+/*     conf->listenerSocketConfigs[1].socketConfig.customHostname = UA_STRING_NULL; */
+/*     conf->listenerSocketConfigs[1].socketConfig.additionalParameters = NULL; */
+/* #endif */
 
-    conf->connectionConfig.sendBufferSize = sendBufferSize;
-    if(conf->connectionConfig.sendBufferSize <= 0)
-        conf->connectionConfig.sendBufferSize = 65535;
-    conf->connectionConfig.recvBufferSize = recvBufferSize;
-    if(conf->connectionConfig.recvBufferSize <= 0)
-        conf->connectionConfig.recvBufferSize = 65535;
+/*     conf->connectionConfig.sendBufferSize = sendBufferSize; */
+/*     if(conf->connectionConfig.sendBufferSize <= 0) */
+/*         conf->connectionConfig.sendBufferSize = 65535; */
+/*     conf->connectionConfig.recvBufferSize = recvBufferSize; */
+/*     if(conf->connectionConfig.recvBufferSize <= 0) */
+/*         conf->connectionConfig.recvBufferSize = 65535; */
 
     return retval;
 }
@@ -693,38 +692,38 @@ UA_ClientConfig_setDefault(UA_ClientConfig *config) {
     }
     config->securityPoliciesSize = 1;
 
-    config->clientSocketConfig.socketConfig.sendBufferSize = 65535;
-    config->clientSocketConfig.socketConfig.recvBufferSize = 65535;
-    config->clientSocketConfig.socketConfig.port = 4840;
-    config->clientSocketConfig.socketConfig.networkManager = NULL;
-    config->clientSocketConfig.socketConfig.customHostname = UA_STRING_NULL;
-    config->clientSocketConfig.socketConfig.createSocket = UA_TCP_ClientDataSocket;
-    config->clientSocketConfig.targetEndpointUrl = UA_STRING_NULL;
-    config->clientSocketConfig.timeout = 5000;
+/*     config->clientSocketConfig.socketConfig.sendBufferSize = 65535; */
+/*     config->clientSocketConfig.socketConfig.recvBufferSize = 65535; */
+/*     config->clientSocketConfig.socketConfig.port = 4840; */
+/*     config->clientSocketConfig.socketConfig.networkManager = NULL; */
+/*     config->clientSocketConfig.socketConfig.customHostname = UA_STRING_NULL; */
+/*     config->clientSocketConfig.socketConfig.createSocket = UA_TCP_ClientDataSocket; */
+/*     config->clientSocketConfig.targetEndpointUrl = UA_STRING_NULL; */
+/*     config->clientSocketConfig.timeout = 5000; */
 
-    retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &config->networkManager);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_free(config->securityPolicies);
-        config->securityPolicies = NULL;
-        return retval;
-    }
-    config->internallyAllocatedNetworkManager = true;
+/*     retval = UA_SelectBasedNetworkManager(UA_Log_Stdout, &config->networkManager); */
+/*     if(retval != UA_STATUSCODE_GOOD) { */
+/*         UA_free(config->securityPolicies); */
+/*         config->securityPolicies = NULL; */
+/*         return retval; */
+/*     } */
+/*     config->internallyAllocatedNetworkManager = true; */
 
-    config->customDataTypes = NULL;
-    config->stateCallback = NULL;
-    config->connectivityCheckInterval = 0;
+/*     config->customDataTypes = NULL; */
+/*     config->stateCallback = NULL; */
+/*     config->connectivityCheckInterval = 0; */
 
-    config->requestedSessionTimeout = 1200000; /* requestedSessionTimeout */
+/*     config->requestedSessionTimeout = 1200000; /\* requestedSessionTimeout *\/ */
 
-    config->inactivityCallback = NULL;
-    config->clientContext = NULL;
+/*     config->inactivityCallback = NULL; */
+/*     config->clientContext = NULL; */
 
-#ifdef UA_ENABLE_SUBSCRIPTIONS
-    config->outStandingPublishRequests = 10;
-    config->subscriptionInactivityCallback = NULL;
-#endif
+/* #ifdef UA_ENABLE_SUBSCRIPTIONS */
+/*     config->outStandingPublishRequests = 10; */
+/*     config->subscriptionInactivityCallback = NULL; */
+/* #endif */
 
-    config->networkManager->start(config->networkManager);
+/*     config->networkManager->start(config->networkManager); */
 
     return UA_STATUSCODE_GOOD;
 }

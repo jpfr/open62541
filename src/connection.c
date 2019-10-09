@@ -53,19 +53,19 @@ UA_Connection_sendError(UA_Connection *connection, UA_TcpErrorMessage *error) {
     header.messageSize = 8 + (4 + 4 + (UA_UInt32)error->reason.length);
 
     /* Get the send buffer from the network layer */
-    UA_ByteString *sendBuffer = NULL;
+    UA_ByteString sendBuffer = UA_BYTESTRING_NULL;
     UA_StatusCode retval = sock->acquireSendBuffer(sock, header.messageSize, &sendBuffer);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
     /* Encode and send the response */
-    UA_Byte *bufPos = sendBuffer->data;
-    const UA_Byte *bufEnd = &sendBuffer->data[sendBuffer->length];
+    UA_Byte *bufPos = sendBuffer.data;
+    const UA_Byte *bufEnd = &sendBuffer.data[sendBuffer.length];
     // TODO: error handling
     UA_TcpMessageHeader_encodeBinary(&header, &bufPos, bufEnd);
     UA_TcpErrorMessage_encodeBinary(error, &bufPos, bufEnd);
-    sendBuffer->length = header.messageSize;
-    return sock->send(sock, sendBuffer);
+    sendBuffer.length = header.messageSize;
+    return sock->send(sock, &sendBuffer);
 }
 
 UA_StatusCode

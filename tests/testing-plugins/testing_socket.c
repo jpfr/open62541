@@ -12,28 +12,21 @@ static UA_ByteString *vBuffer;
 static UA_ByteString sendBuffer;
 static size_t sendBufferLength;
 
-static UA_StatusCode
+static void
 dummyActivity(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActivity) {
-    return UA_STATUSCODE_GOOD;
-}
-
-static UA_Boolean
-dummyMayDelete(UA_Socket *sock) {
-    return false;
 }
 
 static UA_StatusCode
-dummyGetSendBuffer(UA_Socket *sock, size_t length, UA_ByteString **p_buf) {
+dummyGetSendBuffer(UA_Socket *sock, size_t length, UA_ByteString *p_buf) {
     if(length > sendBufferLength)
         return UA_STATUSCODE_BADCOMMUNICATIONERROR;
-    *p_buf = &sendBuffer;
+    *p_buf = sendBuffer;
     sendBuffer.length = length;
     return UA_STATUSCODE_GOOD;
 }
 
-static UA_StatusCode
+static void
 dummyReleaseSendBuffer(UA_Socket *sock, UA_ByteString *buf) {
-    return UA_STATUSCODE_GOOD;
 }
 
 static UA_StatusCode
@@ -48,17 +41,15 @@ dummySend(UA_Socket *sock, UA_ByteString *buffer) {
     return UA_STATUSCODE_GOOD;
 }
 
-static UA_StatusCode
+static void
 dummyClose(UA_Socket *sock) {
     if(vBuffer)
         UA_ByteString_deleteMembers(vBuffer);
     UA_ByteString_deleteMembers(&sendBuffer);
-    return UA_STATUSCODE_GOOD;
 }
 
-static UA_StatusCode
-dummyFree(UA_Socket *sock) {
-    return UA_STATUSCODE_GOOD;
+static void
+dummyClear(UA_Socket *sock) {
 }
 
 UA_Socket
@@ -69,7 +60,6 @@ createDummySocket(UA_ByteString *verificationBuffer) {
 
     UA_Socket sock;
     memset(&sock, 0, sizeof(UA_Socket));
-    sock.mayDelete = dummyMayDelete;
     sock.discoveryUrl = UA_STRING_NULL;
     sock.isListener = false;
     sock.id = 42;
@@ -78,7 +68,7 @@ createDummySocket(UA_ByteString *verificationBuffer) {
     sock.releaseSendBuffer = dummyReleaseSendBuffer;
     sock.activity = dummyActivity;
     sock.close = dummyClose;
-    sock.free = dummyFree;
+    sock.clear = dummyClear;
 
     return sock;
 }
@@ -86,21 +76,19 @@ createDummySocket(UA_ByteString *verificationBuffer) {
 UA_StatusCode UA_Socket_activityTesting_result = UA_STATUSCODE_GOOD;
 
 UA_UInt32 UA_Socket_activitySleepDuration;
-UA_StatusCode (*UA_Socket_activity)(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActivity);
+void (*UA_Socket_activity)(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActivity);
 
-UA_StatusCode
+void
 UA_Socket_activityTesting(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActivity) {
     if(UA_Socket_activityTesting_result != UA_STATUSCODE_GOOD) {
-        UA_StatusCode temp = UA_Socket_activityTesting_result;
         UA_Socket_activityTesting_result = UA_STATUSCODE_GOOD;
         UA_fakeSleep(UA_Socket_activitySleepDuration);
         UA_Socket_activitySleepDuration = 0;
-        return temp;
     }
 
     UA_fakeSleep(UA_Socket_activitySleepDuration);
     UA_Socket_activitySleepDuration = 0;
-    return UA_Socket_activity(sock, readActivity, writeActivity);
+    UA_Socket_activity(sock, readActivity, writeActivity);
 }
 
 UA_StatusCode UA_NetworkManager_processTesting_result = UA_STATUSCODE_GOOD;

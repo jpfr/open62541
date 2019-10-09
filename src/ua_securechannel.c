@@ -522,15 +522,15 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
         return UA_STATUSCODE_BADINTERNALERROR;
 
     /* Allocate the message buffer */
-    UA_ByteString *buf = NULL;
+    UA_ByteString buf = UA_BYTESTRING_NULL;
     UA_StatusCode retval =
         sock->acquireSendBuffer(sock, connection->config.sendBufferSize, &buf);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
     /* Restrict buffer to the available space for the payload */
-    UA_Byte *buf_pos = buf->data;
-    const UA_Byte *buf_end = &buf->data[buf->length];
+    UA_Byte *buf_pos = buf.data;
+    const UA_Byte *buf_end = &buf.data[buf.length];
     hideBytesAsym(channel, &buf_pos, &buf_end);
 
     /* Encode the message type and content */
@@ -551,7 +551,7 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
 #endif
 
     /* The total message length */
-    size_t pre_sig_length = (uintptr_t)buf_pos - (uintptr_t)buf->data;
+    size_t pre_sig_length = (uintptr_t)buf_pos - (uintptr_t)buf.data;
     size_t total_length = pre_sig_length;
     if(channel->securityMode == UA_MESSAGESECURITYMODE_SIGN ||
        channel->securityMode == UA_MESSAGESECURITYMODE_SIGNANDENCRYPT)
@@ -561,7 +561,7 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
     /* The total message length is known here which is why we encode the headers
      * at this step and not earlier. */
     size_t finalLength = 0;
-    retval = prependHeadersAsym(channel, buf->data, buf_end, total_length,
+    retval = prependHeadersAsym(channel, buf.data, buf_end, total_length,
                                 securityHeaderLength, requestId, &finalLength);
     if(retval != UA_STATUSCODE_GOOD)
         goto error;
@@ -573,15 +573,15 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
 #endif
 
     /* Send the message, the buffer is freed in the network layer */
-    buf->length = finalLength;
-    retval = sock->send(sock, buf);
+    buf.length = finalLength;
+    retval = sock->send(sock, &buf);
 #ifdef UA_ENABLE_UNIT_TEST_FAILURE_HOOKS
     retval |= sendAsym_sendFailure;
 #endif
     return retval;
 
 error:
-    sock->releaseSendBuffer(sock, buf);
+    sock->releaseSendBuffer(sock, &buf);
     return retval;
 }
 
@@ -674,8 +674,8 @@ static void
 setBufPos(UA_MessageContext *mc) {
     /* Forward the data pointer so that the payload is encoded after the
      * message header */
-    mc->buf_pos = &mc->messageBuffer->data[UA_SECURE_MESSAGE_HEADER_LENGTH];
-    mc->buf_end = &mc->messageBuffer->data[mc->messageBuffer->length];
+    mc->buf_pos = &mc->messageBuffer.data[UA_SECURE_MESSAGE_HEADER_LENGTH];
+    mc->buf_end = &mc->messageBuffer.data[mc->messageBuffer.length];
 
 #ifdef UA_ENABLE_ENCRYPTION
     const UA_SecureChannel *channel = mc->channel;
@@ -722,7 +722,7 @@ checkLimitsSym(UA_MessageContext *const messageContext, size_t *const bodyLength
     if(!connection)
         return UA_STATUSCODE_BADINTERNALERROR;
 
-    UA_Byte *buf_body_start = messageContext->messageBuffer->data + UA_SECURE_MESSAGE_HEADER_LENGTH;
+    UA_Byte *buf_body_start = messageContext->messageBuffer.data + UA_SECURE_MESSAGE_HEADER_LENGTH;
     const UA_Byte *buf_body_end = messageContext->buf_pos;
     *bodyLength = (uintptr_t)buf_body_end - (uintptr_t)buf_body_start;
     messageContext->messageSizeSoFar += *bodyLength;
@@ -742,7 +742,7 @@ checkLimitsSym(UA_MessageContext *const messageContext, size_t *const bodyLength
 static UA_StatusCode
 encodeHeadersSym(UA_MessageContext *const messageContext, size_t totalLength) {
     UA_SecureChannel *channel = messageContext->channel;
-    UA_Byte *header_pos = messageContext->messageBuffer->data;
+    UA_Byte *header_pos = messageContext->messageBuffer.data;
 
     UA_SecureConversationMessageHeader respHeader;
     respHeader.secureChannelId = channel->securityToken.channelId;
@@ -796,7 +796,7 @@ sendSymmetricChunk(UA_MessageContext *messageContext) {
 
     /* The total message length */
     size_t pre_sig_length = (uintptr_t)(messageContext->buf_pos) -
-        (uintptr_t)messageContext->messageBuffer->data;
+        (uintptr_t)messageContext->messageBuffer.data;
     size_t total_length = pre_sig_length;
     if(channel->securityMode == UA_MESSAGESECURITYMODE_SIGN ||
        channel->securityMode == UA_MESSAGESECURITYMODE_SIGNANDENCRYPT)
@@ -806,7 +806,7 @@ sendSymmetricChunk(UA_MessageContext *messageContext) {
     UA_assert(total_length <= connection->config.sendBufferSize);
 
     /* For giving the buffer to the network layer */
-    messageContext->messageBuffer->length = total_length;
+    messageContext->messageBuffer.length = total_length;
 
     UA_assert(res == UA_STATUSCODE_GOOD);
     res = encodeHeadersSym(messageContext, total_length);
@@ -824,10 +824,10 @@ sendSymmetricChunk(UA_MessageContext *messageContext) {
 #endif
 
     /* Send the chunk, the buffer is freed in the network layer */
-    return sock->send(sock, messageContext->messageBuffer);
+    return sock->send(sock, &messageContext->messageBuffer);
 
 error:
-    sock->releaseSendBuffer(sock, messageContext->messageBuffer);
+    sock->releaseSendBuffer(sock, &messageContext->messageBuffer);
     return res;
 }
 
@@ -885,7 +885,7 @@ UA_MessageContext_begin(UA_MessageContext *mc, UA_SecureChannel *channel,
     mc->chunksSoFar = 0;
     mc->messageSizeSoFar = 0;
     mc->final = false;
-    mc->messageBuffer = NULL;
+    mc->messageBuffer = UA_BYTESTRING_NULL;
     mc->messageType = messageType;
 
     /* Allocate the message buffer */
@@ -905,7 +905,7 @@ UA_MessageContext_encode(UA_MessageContext *mc, const void *content,
                          const UA_DataType *contentType) {
     UA_StatusCode retval = UA_encodeBinary(content, contentType, &mc->buf_pos, &mc->buf_end,
                                            sendSymmetricEncodingCallback, mc);
-    if(retval != UA_STATUSCODE_GOOD && mc->messageBuffer->length > 0) {
+    if(retval != UA_STATUSCODE_GOOD && mc->messageBuffer.length > 0) {
         /* TODO: Send the abort message */
         UA_MessageContext_abort(mc);
     }
@@ -939,8 +939,8 @@ UA_SecureChannel_sendSymmetricMessage(UA_SecureChannel *channel, UA_UInt32 reque
         return retval;
 
     /* Assert's required for clang-analyzer */
-    UA_assert(mc.buf_pos == &mc.messageBuffer->data[UA_SECURE_MESSAGE_HEADER_LENGTH]);
-    UA_assert(mc.buf_end <= &mc.messageBuffer->data[mc.messageBuffer->length]);
+    UA_assert(mc.buf_pos == &mc.messageBuffer.data[UA_SECURE_MESSAGE_HEADER_LENGTH]);
+    UA_assert(mc.buf_end <= &mc.messageBuffer.data[mc.messageBuffer.length]);
 
     UA_NodeId typeId = UA_NODEID_NUMERIC(0, payloadType->binaryEncodingId);
     retval = UA_MessageContext_encode(&mc, &typeId, &UA_TYPES[UA_TYPES_NODEID]);

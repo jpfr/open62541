@@ -316,15 +316,14 @@ processHEL(UA_Server *server, UA_Connection *connection,
     ackHeader.messageSize = 8 + 20; /* ackHeader + ackMessage */
 
     /* Get the send buffer from the network layer */
-    UA_ByteString *ackBuffer = NULL;
-    retval = sock->acquireSendBuffer(sock, connection->config.sendBufferSize,
-                                             &ackBuffer);
+    UA_ByteString ackBuffer = UA_BYTESTRING_NULL;
+    retval = sock->acquireSendBuffer(sock, connection->config.sendBufferSize, &ackBuffer);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
     /* Encode and send the response */
-    UA_Byte *bufPos = ackBuffer->data;
-    const UA_Byte *bufEnd = &ackBuffer->data[ackBuffer->length];
+    UA_Byte *bufPos = ackBuffer.data;
+    const UA_Byte *bufEnd = &ackBuffer.data[ackBuffer.length];
 
     retval = UA_TcpMessageHeader_encodeBinary(&ackHeader, &bufPos, bufEnd);
     if(retval != UA_STATUSCODE_GOOD)
@@ -333,8 +332,8 @@ processHEL(UA_Server *server, UA_Connection *connection,
     retval = UA_TcpAcknowledgeMessage_encodeBinary(&ackMessage, &bufPos, bufEnd);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
-    ackBuffer->length = ackHeader.messageSize;
-    return sock->send(sock, ackBuffer);
+    ackBuffer.length = ackHeader.messageSize;
+    return sock->send(sock, &ackBuffer);
 }
 
 /* OPN -> Open up/renew the securechannel */
@@ -411,8 +410,8 @@ sendResponse(UA_SecureChannel *channel, UA_UInt32 requestId, UA_UInt32 requestHa
         return retval;
 
     /* Assert's required for clang-analyzer */
-    UA_assert(mc.buf_pos == &mc.messageBuffer->data[UA_SECURE_MESSAGE_HEADER_LENGTH]);
-    UA_assert(mc.buf_end <= &mc.messageBuffer->data[mc.messageBuffer->length]);
+    UA_assert(mc.buf_pos == &mc.messageBuffer.data[UA_SECURE_MESSAGE_HEADER_LENGTH]);
+    UA_assert(mc.buf_end <= &mc.messageBuffer.data[mc.messageBuffer.length]);
 
     /* Encode the response type */
     UA_NodeId typeId = UA_NODEID_NUMERIC(0, responseType->binaryEncodingId);
@@ -791,11 +790,16 @@ processCompleteChunkWithoutChannel(UA_Server *server, UA_Connection *connection,
     return retval;
 }
 
-UA_StatusCode
-UA_Server_processChunk(UA_Server *server, UA_Connection *connection, UA_ByteString *chunk) {
+void
+UA_Server_processBinaryMessage(UA_Server *server, UA_Socket *socket,
+                               UA_ByteString data) {
 #ifdef UA_DEBUG_DUMP_PKGS_FILE
     UA_debug_dumpCompleteChunk(server, connection, chunk);
 #endif
+
+    /* Create a connection if none is attached */
+
+    /* Process the data on the connection */
     UA_StatusCode retval;
     if(!connection->channel)
         return processCompleteChunkWithoutChannel(server, connection, chunk);

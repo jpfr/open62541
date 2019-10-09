@@ -48,13 +48,13 @@ register_server_with_discovery_server(UA_Server *server,
 
     /* Copy the discovery urls from the server config and the network layers*/
     size_t config_discurls = server->config.applicationDescription.discoveryUrlsSize;
-    UA_String *discoveryUrls;
-    size_t discoveryUrlsSize;
-    UA_StatusCode retval =
-        server->config.networkManager->getDiscoveryUrls(server->config.networkManager,
-                                                        &discoveryUrls, &discoveryUrlsSize);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+    UA_String *discoveryUrls = NULL;
+    size_t discoveryUrlsSize = 0;
+    /* UA_StatusCode retval = */
+    /*     server->config.networkManager->getDiscoveryUrls(server->config.networkManager, */
+    /*                                                     &discoveryUrls, &discoveryUrlsSize); */
+    /* if(retval != UA_STATUSCODE_GOOD) */
+    /*     return retval; */
     size_t total_discurls = config_discurls + discoveryUrlsSize;
     UA_STACKARRAY(UA_String, urlsBuf, total_discurls);
     request.server.discoveryUrls = urlsBuf;

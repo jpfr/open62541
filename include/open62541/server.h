@@ -64,16 +64,12 @@ UA_ServerConfig UA_EXPORT *
 UA_Server_getConfig(UA_Server *server);
 
 /**
- * Processes a single chunk received from the connection.
- * This function is registered as callback when a connection is created.
- * @param server
- * @param connection
- * @param chunk
- * @return
- */
-UA_StatusCode
-UA_Server_processChunk(UA_Server *server, UA_Connection *connection,
-                       UA_ByteString *chunk);
+ * Processes data that was received over a socket. This creates a
+ * connection/securechannel if data is received over the socket for the first
+ * time. */
+void
+UA_Server_processBinaryMessage(UA_Server *server, UA_Socket *socket,
+                               UA_ByteString data);
 
 /* Runs the main loop of the server. In each iteration, this calls into the
  * networklayers to see if messages have arrived.

@@ -120,8 +120,8 @@ struct UA_ServerConfig {
      * One ore more sockets will be created for each socket config depending on the
      * createSocket function.
      */
-    UA_ListenerSocketConfig *listenerSocketConfigs;
-    size_t listenerSocketConfigsSize;
+    //UA_ListenerSocketConfig *listenerSocketConfigs;
+    //size_t listenerSocketConfigsSize;
 
     /**
      * The connection config contains parameters for all connections created by the server.

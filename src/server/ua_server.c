@@ -578,44 +578,39 @@ UA_Server_CallMethodResponse(UA_Server *server, void* data) {
 
 #define UA_MAXTIMEOUT 50 /* Max timeout in ms between main-loop iterations */
 
-static UA_StatusCode
-removeConnection(UA_Socket *sock) {
-    (void)sock;
-    UA_Connection *const connection = (UA_Connection *const)sock->context;
-    return UA_Connection_free(connection);
-}
+/* static UA_StatusCode */
+/* removeConnection(UA_Socket *sock) { */
+/*     (void)sock; */
+/*     UA_Connection *const connection = (UA_Connection *const)sock->context; */
+/*     return UA_Connection_free(connection); */
+/* } */
 
-static UA_StatusCode
-createConnection(UA_Socket *sock) {
-    UA_Server *const server = (UA_Server *const)sock->application;
+/* static UA_StatusCode */
+/* createConnection(UA_Socket *sock) { */
+/*     UA_Server *const server = (UA_Server *const)sock->application; */
 
-    UA_StatusCode retval = sock->open(sock);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+/*     UA_StatusCode retval = sock->open(sock); */
+/*     if(retval != UA_STATUSCODE_GOOD) */
+/*         return retval; */
 
-    UA_LOG_DEBUG(&server->config.logger, UA_LOGCATEGORY_SERVER,
-                 "New data socket created. Adding corresponding connection");
+/*     UA_LOG_DEBUG(&server->config.logger, UA_LOGCATEGORY_SERVER, */
+/*                  "New data socket created. Adding corresponding connection"); */
 
-    UA_Connection *connection;
-    retval = UA_Connection_new(server->config.connectionConfig, sock, NULL, sock->networkManager->logger, &connection);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
-    connection->connectionManager = &server->connectionManager;
-    connection->chunkCallback.callbackContext = server;
-    connection->chunkCallback.function = (UA_ProcessChunkCallbackFunction)UA_Server_processChunk;
+/*     UA_Connection *connection; */
+/*     retval = UA_Connection_new(server->config.connectionConfig, sock, NULL, sock->networkManager->logger, &connection); */
+/*     if(retval != UA_STATUSCODE_GOOD) */
+/*         return retval; */
+/*     connection->connectionManager = &server->connectionManager; */
+/*     connection->chunkCallback.callbackContext = server; */
+/*     connection->chunkCallback.function = (UA_ProcessChunkCallbackFunction)UA_Server_processChunk; */
 
-    sock->dataCallback = (UA_Socket_DataCallbackFunction)UA_Connection_assembleChunks;
+/*     sock->dataCallback = (UA_Socket_DataCallbackFunction)UA_Connection_assembleChunks; */
 
-    sock->context = connection;
-    sock->freeCallback = removeConnection;
+/*     sock->context = connection; */
+/*     sock->freeCallback = removeConnection; */
 
-    return UA_STATUSCODE_GOOD;
-}
-
-static UA_StatusCode
-open_listener_socket(UA_Socket *sock) {
-    return sock->open(sock);
-}
+/*     return UA_STATUSCODE_GOOD; */
+/* } */
 
 /* Start: Spin up the workers and the network layer and sample the server's
  *        start time.
@@ -666,16 +661,16 @@ UA_Server_run_startup(UA_Server *server) {
     server->config.networkManager->start(server->config.networkManager);
 
     /* Delayed creation of the server sockets. */
-    UA_NetworkManager *networkManager = server->config.networkManager;
-    for(size_t i = 0; i < server->config.listenerSocketConfigsSize; ++i) {
-        UA_ListenerSocketConfig listenerSocketConfig = server->config.listenerSocketConfigs[i];
-        listenerSocketConfig.socketConfig.application = server;
-        listenerSocketConfig.onAccept = createConnection;
+    /* UA_NetworkManager *networkManager = server->config.networkManager; */
+    /* for(size_t i = 0; i < server->config.listenerSocketConfigsSize; ++i) { */
+    /*     UA_ListenerSocketConfig listenerSocketConfig = server->config.listenerSocketConfigs[i]; */
+    /*     listenerSocketConfig.socketConfig.application = server; */
+    /*     listenerSocketConfig.onAccept = createConnection; */
 
-        listenerSocketConfig.socketConfig.networkManager
-                            ->createSocket(networkManager, (UA_SocketConfig *)&listenerSocketConfig,
-                                           open_listener_socket);
-    }
+    /*     listenerSocketConfig.socketConfig.networkManager */
+    /*                         ->createSocket(networkManager, (UA_SocketConfig *)&listenerSocketConfig, */
+    /*                                        open_listener_socket); */
+    /* } */
 
     /* Update the application description to match the previously added discovery urls.
      * We can only do this after the network layer is started since it inits the discovery url */
