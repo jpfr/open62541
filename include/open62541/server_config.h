@@ -16,7 +16,6 @@
 #include <open62541/plugin/pki.h>
 #include <open62541/plugin/securitypolicy.h>
 #include <open62541/server.h>
-#include <open62541/connection.h>
 #include <open62541/plugin/network.h>
 
 #ifdef UA_ENABLE_PUBSUB
@@ -34,7 +33,7 @@ _UA_BEGIN_DECLS
  *
  * Server Configuration
  * --------------------
-
+ *
  * The configuration structure is passed to the server during initialization.
  * The server expects that the configuration is not modified during runtime.
  * Currently, only one server can use a configuration at a time. During
@@ -114,22 +113,28 @@ struct UA_ServerConfig {
      *    ``/examples/custom_datatype/``. */
 
     /* Networking */
+    UA_UInt16 listenPort;
     UA_NetworkManager *networkManager;
+    UA_NetworkManager localNetworkManager; /* networkManager may point here or
+                                            * to an external NetworkManage */
 
-    /**
-     * One ore more sockets will be created for each socket config depending on the
-     * createSocket function.
-     */
-    //UA_ListenerSocketConfig *listenerSocketConfigs;
-    //size_t listenerSocketConfigsSize;
+    /* Custom callbacks for setting up the server's network layer in the network
+     * manager. Is called from UA_Server_run_startup. The created sockets are
+     * removed during UA_Server_run_shutdown. */
+    UA_StatusCode (*registerListenSockets)(UA_NetworkManager *nm, UA_UInt32 listenPort,
+                                           UA_Server *server,
+                                           UA_SocketReceiveCallback receiveCallback,
+                                           UA_SocketCallback detachCallback,
+                                           size_t *outListenSocketsSize,
+                                           UA_UInt64 **outListenSockets,
+                                           UA_String **outListenSocketsDomainNames);
 
-    /**
-     * The connection config contains parameters for all connections created by the server.
-     */
+    /* The connection config contains parameters for all new connections created
+     * by the server. */
     UA_ConnectionConfig connectionConfig;
 
 #ifdef UA_ENABLE_PUBSUB
-    /*PubSub network layer */
+    /* PubSub network layer */
     size_t pubsubTransportLayersSize;
     UA_PubSubTransportLayer *pubsubTransportLayers;
 #endif

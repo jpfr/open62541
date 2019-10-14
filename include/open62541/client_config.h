@@ -13,7 +13,6 @@
 #include <open62541/plugin/log.h>
 #include <open62541/plugin/securitypolicy.h>
 #include <open62541/plugin/network.h>
-#include "connection.h"
 
 _UA_BEGIN_DECLS
 
@@ -110,7 +109,8 @@ struct UA_ClientConfig {
     /* Networking */
     //UA_ClientSocketConfig clientSocketConfig;
     UA_NetworkManager *networkManager;
-    UA_Boolean internallyAllocatedNetworkManager; /* If true, NM will be deleted on client delete */
+    UA_NetworkManager localNetworkManager; /* networkManager may point here or
+                                            * to an external NetworkManage */
 
     /* Callback for state changes */
     void (*stateCallback)(UA_Client *client, UA_ClientState clientState);

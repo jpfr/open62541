@@ -24,11 +24,8 @@ UA_ServerConfig_clean(UA_ServerConfig *config) {
     /* nothing to do */
 
     /* Networking */
-    if(config->networkManager != NULL) {
-        config->networkManager->shutdown(config->networkManager);
-        config->networkManager->clear(config->networkManager);
-        config->networkManager = NULL;
-    }
+    if(config->networkManager == &config->localNetworkManager)
+        config->localNetworkManager.clear(&config->localNetworkManager);
 
     /* for(size_t i = 0; i < config->listenerSocketConfigsSize; ++i) { */
     /*     UA_String_deleteMembers(&config->listenerSocketConfigs[i].socketConfig.customHostname); */

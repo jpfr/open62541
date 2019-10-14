@@ -57,7 +57,7 @@ processACKResponse(void *application, UA_Connection *connection,
     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Received ACK message");
 
     /* Process the ACK message */
-    retval = UA_Connection_adjustParameters(connection, (const UA_ConnectionConfig *)&ackMessage);
+    //retval = UA_Connection_adjustParameters(connection, (const UA_ConnectionConfig *)&ackMessage);
     client->state = UA_CLIENTSTATE_CONNECTED;
     return retval;
 }
@@ -65,12 +65,9 @@ processACKResponse(void *application, UA_Connection *connection,
 static UA_StatusCode
 HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
     /* Get a buffer */
-    UA_Connection *conn = client->connection;
-    if(conn == NULL)
-        return UA_STATUSCODE_BADINTERNALERROR;
-
     UA_ByteString message = UA_BYTESTRING_NULL;
-    UA_Socket *sock = UA_Connection_getSocket(conn);
+    UA_SecureChannel *channel = &client->channel;
+    UA_Socket *sock = channel->socket;
     UA_StatusCode retval = sock->acquireSendBuffer(sock, UA_MINMESSAGESIZE, &message);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
@@ -116,17 +113,12 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
                      "No NetworkManager configured");
         return UA_STATUSCODE_BADCONFIGURATIONERROR;
     }
-    retval = client->config.networkManager->processSocket(client->config.networkManager,
-                                                          client->config.timeout,
-                                                          UA_Connection_getSocket(client->connection));
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "Receiving ACK message failed with %s", UA_StatusCode_name(retval));
-        if(retval == UA_STATUSCODE_BADCONNECTIONCLOSED)
-            client->state = UA_CLIENTSTATE_DISCONNECTED;
-        UA_Client_disconnect(client);
-    }
+
+    client->config.networkManager->processSocket(client->config.networkManager,
+                                                 client->config.timeout,
+                                                 client->channel.socket);
     return retval;
+
 error_before_send:
     sock->releaseSendBuffer(sock, &message);
     return retval;
@@ -141,36 +133,36 @@ getSecurityPolicy(UA_Client *client, UA_String policyUri) {
     return NULL;
 }
 
-static void
-processDecodedOPNResponse(UA_Client *client, UA_OpenSecureChannelResponse *response,
-                          UA_Boolean renew) {
-    /* Replace the token */
-    if(renew)
-        client->channel.nextSecurityToken = response->securityToken;
-    else
-        client->channel.securityToken = response->securityToken;
+/* static void */
+/* processDecodedOPNResponse(UA_Client *client, UA_OpenSecureChannelResponse *response, */
+/*                           UA_Boolean renew) { */
+/*     /\* Replace the token *\/ */
+/*     if(renew) */
+/*         client->channel.nextSecurityToken = response->securityToken; */
+/*     else */
+/*         client->channel.securityToken = response->securityToken; */
 
-    /* Replace the nonce */
-    UA_ByteString_deleteMembers(&client->channel.remoteNonce);
-    client->channel.remoteNonce = response->serverNonce;
-    UA_ByteString_init(&response->serverNonce);
+/*     /\* Replace the nonce *\/ */
+/*     UA_ByteString_deleteMembers(&client->channel.remoteNonce); */
+/*     client->channel.remoteNonce = response->serverNonce; */
+/*     UA_ByteString_init(&response->serverNonce); */
 
-    if(client->channel.state == UA_SECURECHANNELSTATE_OPEN)
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                    "SecureChannel renewed");
-    else
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                    "Opened SecureChannel with SecurityPolicy %.*s",
-                    (int)client->channel.securityPolicy->policyUri.length,
-                    client->channel.securityPolicy->policyUri.data);
+/*     if(client->channel.state == UA_SECURECHANNELSTATE_OPEN) */
+/*         UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+/*                     "SecureChannel renewed"); */
+/*     else */
+/*         UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+/*                     "Opened SecureChannel with SecurityPolicy %.*s", */
+/*                     (int)client->channel.securityPolicy->policyUri.length, */
+/*                     client->channel.securityPolicy->policyUri.data); */
 
-    /* Response.securityToken.revisedLifetime is UInt32 we need to cast it to
-     * DateTime=Int64 we take 75% of lifetime to start renewing as described in
-     * standard */
-    client->channel.state = UA_SECURECHANNELSTATE_OPEN;
-    client->nextChannelRenewal = UA_DateTime_nowMonotonic() + (UA_DateTime)
-        (client->channel.securityToken.revisedLifetime * (UA_Double)UA_DATETIME_MSEC * 0.75);
-}
+/*     /\* Response.securityToken.revisedLifetime is UInt32 we need to cast it to */
+/*      * DateTime=Int64 we take 75% of lifetime to start renewing as described in */
+/*      * standard *\/ */
+/*     client->channel.state = UA_SECURECHANNELSTATE_OPEN; */
+/*     client->nextChannelRenewal = UA_DateTime_nowMonotonic() + (UA_DateTime) */
+/*         (client->channel.securityToken.revisedLifetime * (UA_Double)UA_DATETIME_MSEC * 0.75); */
+/* } */
 
 UA_StatusCode
 openSecureChannel(UA_Client *client, UA_Boolean renew) {
@@ -178,78 +170,79 @@ openSecureChannel(UA_Client *client, UA_Boolean renew) {
     if(renew && client->nextChannelRenewal > UA_DateTime_nowMonotonic())
         return UA_STATUSCODE_GOOD;
 
-    UA_Connection *conn = client->connection;
-    if(conn == NULL)
-        return UA_STATUSCODE_BADSERVERNOTCONNECTED;
-    if(conn->state != UA_CONNECTION_ESTABLISHED)
-        return UA_STATUSCODE_BADSERVERNOTCONNECTED;
+    return UA_STATUSCODE_GOOD;
 
-    /* Generate clientNonce. */
-    UA_StatusCode retval = UA_SecureChannel_generateLocalNonce(&client->channel);
-    if(retval != UA_STATUSCODE_GOOD) {
-      UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-        "Generating a local nonce failed");
-      return retval;
-    }
+    /* if(conn == NULL) */
+    /*     return UA_STATUSCODE_BADSERVERNOTCONNECTED; */
+    /* if(conn->state != UA_CONNECTION_ESTABLISHED) */
+    /*     return UA_STATUSCODE_BADSERVERNOTCONNECTED; */
 
-    /* Prepare the OpenSecureChannelRequest */
-    UA_OpenSecureChannelRequest opnSecRq;
-    UA_OpenSecureChannelRequest_init(&opnSecRq);
-    opnSecRq.requestHeader.timestamp = UA_DateTime_now();
-    opnSecRq.requestHeader.authenticationToken = client->authenticationToken;
-    if(renew) {
-        opnSecRq.requestType = UA_SECURITYTOKENREQUESTTYPE_RENEW;
-        UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL,
-                     "Requesting to renew the SecureChannel");
-    } else {
-        opnSecRq.requestType = UA_SECURITYTOKENREQUESTTYPE_ISSUE;
-        UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL,
-                     "Requesting to open a SecureChannel");
-    }
+    /* /\* Generate clientNonce. *\/ */
+    /* UA_StatusCode retval = UA_SecureChannel_generateLocalNonce(&client->channel); */
+    /* if(retval != UA_STATUSCODE_GOOD) { */
+    /*   UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*     "Generating a local nonce failed"); */
+    /*   return retval; */
+    /* } */
 
-    /* Set the securityMode to input securityMode from client data */
-    opnSecRq.securityMode = client->channel.securityMode;
+    /* /\* Prepare the OpenSecureChannelRequest *\/ */
+    /* UA_OpenSecureChannelRequest opnSecRq; */
+    /* UA_OpenSecureChannelRequest_init(&opnSecRq); */
+    /* opnSecRq.requestHeader.timestamp = UA_DateTime_now(); */
+    /* opnSecRq.requestHeader.authenticationToken = client->authenticationToken; */
+    /* if(renew) { */
+    /*     opnSecRq.requestType = UA_SECURITYTOKENREQUESTTYPE_RENEW; */
+    /*     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL, */
+    /*                  "Requesting to renew the SecureChannel"); */
+    /* } else { */
+    /*     opnSecRq.requestType = UA_SECURITYTOKENREQUESTTYPE_ISSUE; */
+    /*     UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL, */
+    /*                  "Requesting to open a SecureChannel"); */
+    /* } */
 
-    opnSecRq.clientNonce = client->channel.localNonce;
-    opnSecRq.requestedLifetime = client->config.secureChannelLifeTime;
+    /* /\* Set the securityMode to input securityMode from client data *\/ */
+    /* opnSecRq.securityMode = client->channel.securityMode; */
 
-    /* Send the OPN message */
-    UA_UInt32 requestId = ++client->requestId;
-    retval = UA_SecureChannel_sendAsymmetricOPNMessage(&client->channel, requestId, &opnSecRq,
-                                                       &UA_TYPES[UA_TYPES_OPENSECURECHANNELREQUEST]);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL,
-                     "Sending OPN message failed with error %s", UA_StatusCode_name(retval));
-        UA_Client_disconnect(client);
-        return retval;
-    }
+    /* opnSecRq.clientNonce = client->channel.localNonce; */
+    /* opnSecRq.requestedLifetime = client->config.secureChannelLifeTime; */
 
-    UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL, "OPN message sent");
+    /* /\* Send the OPN message *\/ */
+    /* UA_UInt32 requestId = ++client->requestId; */
+    /* retval = UA_SecureChannel_sendAsymmetricOPNMessage(&client->channel, requestId, &opnSecRq, */
+    /*                                                    &UA_TYPES[UA_TYPES_OPENSECURECHANNELREQUEST]); */
+    /* if(retval != UA_STATUSCODE_GOOD) { */
+    /*     UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL, */
+    /*                  "Sending OPN message failed with error %s", UA_StatusCode_name(retval)); */
+    /*     UA_Client_disconnect(client); */
+    /*     return retval; */
+    /* } */
 
-    /* Increase nextChannelRenewal to avoid that we re-start renewal when
-     * publish responses are received before the OPN response arrives. */
-    client->nextChannelRenewal = UA_DateTime_nowMonotonic() +
-                                 (2 * ((UA_DateTime)client->config.timeout * UA_DATETIME_MSEC));
+    /* UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL, "OPN message sent"); */
 
-    /* Receive / decrypt / decode the OPN response. Process async services in
-     * the background until the OPN response arrives. */
-    UA_OpenSecureChannelResponse response;
-    retval = receiveServiceResponse(client, &response,
-                                    &UA_TYPES[UA_TYPES_OPENSECURECHANNELRESPONSE],
-                                    UA_DateTime_nowMonotonic() +
-                                    ((UA_DateTime)client->config.timeout * UA_DATETIME_MSEC),
-                                    &requestId);
+    /* /\* Increase nextChannelRenewal to avoid that we re-start renewal when */
+    /*  * publish responses are received before the OPN response arrives. *\/ */
+    /* client->nextChannelRenewal = UA_DateTime_nowMonotonic() + */
+    /*                              (2 * ((UA_DateTime)client->config.timeout * UA_DATETIME_MSEC)); */
 
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL,
-                     "Receiving service response failed with error %s", UA_StatusCode_name(retval));
-        UA_Client_disconnect(client);
-        return retval;
-    }
+    /* /\* Receive / decrypt / decode the OPN response. Process async services in */
+    /*  * the background until the OPN response arrives. *\/ */
+    /* UA_OpenSecureChannelResponse response; */
+    /* retval = receiveServiceResponse(client, &response, */
+    /*                                 &UA_TYPES[UA_TYPES_OPENSECURECHANNELRESPONSE], */
+    /*                                 UA_DateTime_nowMonotonic() + */
+    /*                                 ((UA_DateTime)client->config.timeout * UA_DATETIME_MSEC), */
+    /*                                 &requestId); */
 
-    processDecodedOPNResponse(client, &response, renew);
-    UA_OpenSecureChannelResponse_deleteMembers(&response);
-    return retval;
+    /* if(retval != UA_STATUSCODE_GOOD) { */
+    /*     UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_SECURECHANNEL, */
+    /*                  "Receiving service response failed with error %s", UA_StatusCode_name(retval)); */
+    /*     UA_Client_disconnect(client); */
+    /*     return retval; */
+    /* } */
+
+    /* processDecodedOPNResponse(client, &response, renew); */
+    /* UA_OpenSecureChannelResponse_deleteMembers(&response); */
+    /* return retval; */
 }
 
 /* Function to verify the signature corresponds to ClientNonce
@@ -773,40 +766,40 @@ UA_StatusCode
 UA_Client_createConnection(UA_Socket *sock) {
     if(sock == NULL)
         return UA_STATUSCODE_BADINVALIDARGUMENT;
-    UA_Client *const client = (UA_Client *const)sock->application;
+    return UA_STATUSCODE_GOOD;
+    /* UA_Client *const client = (UA_Client *const)sock->application; */
 
-    if(client == NULL)
-        return UA_STATUSCODE_BADINVALIDARGUMENT;
-    if(client->config.networkManager == NULL) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                     "No NetworkManager configured");
-        return UA_STATUSCODE_BADCONFIGURATIONERROR;
-    }
-    UA_Connection *connection = NULL;
-    UA_StatusCode retval = UA_Connection_new(client->config.localConnectionConfig, sock, NULL,
-                                             sock->networkManager->logger, &connection);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+    /* if(client == NULL) */
+    /*     return UA_STATUSCODE_BADINVALIDARGUMENT; */
+    /* if(client->config.networkManager == NULL) { */
+    /*     UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+    /*                  "No NetworkManager configured"); */
+    /*     return UA_STATUSCODE_BADCONFIGURATIONERROR; */
+    /* } */
+    /* UA_Connection *connection = NULL; */
+    /* UA_StatusCode retval = UA_Connection_new(client->config.localConnectionConfig, sock, NULL, */
+    /*                                          sock->networkManager->logger, &connection); */
+    /* if(retval != UA_STATUSCODE_GOOD) */
+    /*     return retval; */
 
-    //sock->dataCallback = (UA_Socket_DataCallbackFunction)UA_Connection_assembleChunks;
-    //sock->freeCallback = UA_Client_removeConnection;
-    sock->context = connection;
+    /* //sock->dataCallback = (UA_Socket_DataCallbackFunction)UA_Connection_assembleChunks; */
+    /* //sock->freeCallback = UA_Client_removeConnection; */
+    /* sock->context = connection; */
 
-    connection->chunkCallback.callbackContext = client;
-    connection->chunkCallback.function = (UA_ProcessChunkCallbackFunction)UA_Client_processChunk;
+    /* connection->chunkCallback.callbackContext = client; */
+    /* connection->chunkCallback.function = (UA_ProcessChunkCallbackFunction)UA_Client_processChunk; */
 
-    client->connection = connection;
+    /* client->connection = connection; */
 
-    return retval;
+    /* return retval; */
 }
 
 UA_StatusCode
 UA_Client_removeConnection(UA_Socket *sock) {
     UA_Client *const client = (UA_Client *const)sock->application;
-    UA_StatusCode retval = UA_Connection_free(client->connection);
     client->connection = NULL;
     client->state = UA_CLIENTSTATE_DISCONNECTED;
-    return retval;
+    return UA_STATUSCODE_GOOD;
 }
 
 /* static UA_StatusCode */
@@ -820,10 +813,11 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     if(client->state >= UA_CLIENTSTATE_CONNECTED)
         return UA_STATUSCODE_GOOD;
 
-    UA_ChannelSecurityToken_init(&client->channel.securityToken);
-    client->channel.state = UA_SECURECHANNELSTATE_FRESH;
-    client->channel.sendSequenceNumber = 0;
-    client->requestId = 0;
+    return UA_STATUSCODE_GOOD;
+    /* UA_ChannelSecurityToken_init(&client->channel.securityToken); */
+    /* client->channel.state = UA_SECURECHANNELSTATE_FRESH; */
+    /* client->channel.sendSequenceNumber = 0; */
+    /* client->requestId = 0; */
 
     /* // we can autoconfigure in this case. Otherwise the user has to configure the endpoint data */
     /* // in the config. */
@@ -877,10 +871,10 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     /*     goto cleanup; */
     /* } */
 
-    if(client->connection->state != UA_CONNECTION_OPENING) {
-        retval = UA_STATUSCODE_BADCONNECTIONCLOSED;
-        goto cleanup;
-    }
+    /* if(client->channel->state != UA_CONNECTION_OPENING) { */
+    /*     retval = UA_STATUSCODE_BADCONNECTIONCLOSED; */
+    /*     goto cleanup; */
+    /* } */
 
     /* Set the channel SecurityMode if not done so far */
     client->channel.securityMode = client->config.endpoint.securityMode;
@@ -927,7 +921,7 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
     setClientState(client, UA_CLIENTSTATE_CONNECTED);
 
     /* Open a SecureChannel. */
-    UA_Connection_attachSecureChannel(client->connection, &client->channel);
+    //UA_Connection_attachSecureChannel(client->connection, &client->channel);
     retval = openSecureChannel(client, false);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
@@ -1176,14 +1170,14 @@ UA_Client_disconnect(UA_Client *client) {
         sendCloseSecureChannel(client);
     }
 
-    /* Close the TCP connection */
-    if(client->connection != NULL) {
-        if(client->connection->state != UA_CONNECTION_CLOSED) {
-            UA_Connection_close(client->connection);
-            UA_Socket *const sock = UA_Connection_getSocket(client->connection);
-            sock->close(sock);
-        }
-    }
+    /* /\* Close the TCP connection *\/ */
+    /* if(client->connection != NULL) { */
+    /*     if(client->connection->state != UA_CONNECTION_CLOSED) { */
+    /*         UA_Connection_close(client->connection); */
+    /*         UA_Socket *sock = client->connection->socket; */
+    /*         sock->close(sock); */
+    /*     } */
+    /* } */
 
 #ifdef UA_ENABLE_SUBSCRIPTIONS
     // TODO REMOVE WHEN UA_SESSION_RECOVERY IS READY

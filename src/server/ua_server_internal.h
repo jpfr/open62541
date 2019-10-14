@@ -87,6 +87,8 @@ struct AsyncMethodQueueElement {
 #endif	
 	
 struct UA_Server {
+    UA_ServerLifecycle state;
+
     /* Config */
     UA_ServerConfig config;
     UA_DateTime startTime;
@@ -96,9 +98,10 @@ struct UA_Server {
     /* Nodestore */
     void *nsCtx;
 
-    UA_ServerLifecycle state;
     /* Networking */
-    UA_ConnectionManager connectionManager;
+    size_t listenSocketsSize;
+    UA_UInt64 *listenSockets;
+    UA_String *listenSocketsDomainName;
 
     /* Security */
     UA_SecureChannelManager secureChannelManager;
@@ -443,6 +446,19 @@ UA_StatusCode UA_Server_initNS0(UA_Server *server);
 
 UA_StatusCode writeNs0VariableArray(UA_Server *server, UA_UInt32 id, void *v,
                       size_t length, const UA_DataType *type);
+
+/**************/
+/* Networking */
+/**************/
+
+/* Processes data that was received over a socket. This creates a
+ * connection/securechannel if data is received over the socket for the first
+ * time. */
+void
+UA_Server_TCP_processMessage(UA_Server *server, UA_Socket *socket,
+                             const UA_ByteString data);
+
+void UA_Server_TCP_detach(UA_Socket *socket);
 
 _UA_END_DECLS
 

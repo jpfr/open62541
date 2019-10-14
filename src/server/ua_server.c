@@ -177,7 +177,6 @@ void UA_Server_delete(UA_Server *server) {
     UA_SessionManager_deleteMembers(&server->sessionManager);
     UA_UNLOCK(server->serviceMutex);
     UA_SecureChannelManager_deleteMembers(&server->secureChannelManager);
-    UA_ConnectionManager_deleteMembers(&server->connectionManager);
     UA_Array_delete(server->namespaces, server->namespacesSize, &UA_TYPES[UA_TYPES_STRING]);
 
 #ifdef UA_ENABLE_SUBSCRIPTIONS
@@ -237,7 +236,6 @@ UA_Server_cleanup(UA_Server *server, void *_) {
     UA_DateTime nowMonotonic = UA_DateTime_nowMonotonic();
     UA_SessionManager_cleanupTimedOut(&server->sessionManager, nowMonotonic);
     UA_SecureChannelManager_cleanupTimedOut(&server->secureChannelManager, nowMonotonic);
-    UA_ConnectionManager_cleanupTimedOut(&server->connectionManager, nowMonotonic);
 #ifdef UA_ENABLE_DISCOVERY
     UA_Discovery_cleanupTimedOut(server, nowMonotonic);
 #endif
@@ -287,7 +285,6 @@ UA_Server_init(UA_Server *server) {
     server->namespacesSize = 2;
 
     /* Initialized SecureChannel and Session managers */
-    UA_ConnectionManager_init(&server->connectionManager, &server->config.logger);
     UA_SecureChannelManager_init(&server->secureChannelManager, server);
     UA_SessionManager_init(&server->sessionManager, server);
 
@@ -633,6 +630,20 @@ UA_Server_run_startup(UA_Server *server) {
     if(server->state > UA_SERVERLIFECYCLE_FRESH)
         return UA_STATUSCODE_GOOD;
 
+    /* Initialize networking for the server in the network manager */
+    if(server->config.registerListenSockets) {
+        retVal = server->config.
+            registerListenSockets(server->config.networkManager,
+                                  server->config.listenPort, server,
+                                  (UA_SocketReceiveCallback)UA_Server_TCP_processMessage,
+                                  (UA_SocketCallback)UA_Server_TCP_detach,
+                                  &server->listenSocketsSize,
+                                  &server->listenSockets,
+                                  &server->listenSocketsDomainName);
+        if(retVal != UA_STATUSCODE_GOOD)
+            return retVal;
+    }
+    
     /* At least one endpoint has to be configured */
     if(server->config.endpointsSize == 0) {
         UA_LOG_WARNING(&server->config.logger, UA_LOGCATEGORY_SERVER,
@@ -658,24 +669,12 @@ UA_Server_run_startup(UA_Server *server) {
                          UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_SERVERSTATUS_STARTTIME),
                          var);
 
-    server->config.networkManager->start(server->config.networkManager);
-
-    /* Delayed creation of the server sockets. */
-    /* UA_NetworkManager *networkManager = server->config.networkManager; */
-    /* for(size_t i = 0; i < server->config.listenerSocketConfigsSize; ++i) { */
-    /*     UA_ListenerSocketConfig listenerSocketConfig = server->config.listenerSocketConfigs[i]; */
-    /*     listenerSocketConfig.socketConfig.application = server; */
-    /*     listenerSocketConfig.onAccept = createConnection; */
-
-    /*     listenerSocketConfig.socketConfig.networkManager */
-    /*                         ->createSocket(networkManager, (UA_SocketConfig *)&listenerSocketConfig, */
-    /*                                        open_listener_socket); */
-    /* } */
-
     /* Update the application description to match the previously added discovery urls.
      * We can only do this after the network layer is started since it inits the discovery url */
     if (server->config.applicationDescription.discoveryUrlsSize != 0) {
-        UA_Array_delete(server->config.applicationDescription.discoveryUrls, server->config.applicationDescription.discoveryUrlsSize, &UA_TYPES[UA_TYPES_STRING]);
+        UA_Array_delete(server->config.applicationDescription.discoveryUrls,
+                        server->config.applicationDescription.discoveryUrlsSize,
+                        &UA_TYPES[UA_TYPES_STRING]);
         server->config.applicationDescription.discoveryUrlsSize = 0;
     }
 
@@ -720,7 +719,7 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
     UA_UInt16 timeout = 0;
 
     /* round always to upper value to avoid timeout to be set to 0
-    * if(nextRepeated - now) < (UA_DATETIME_MSEC/2) */
+     * if(nextRepeated - now) < (UA_DATETIME_MSEC/2) */
     if(waitInternal)
         timeout = (UA_UInt16)(((nextRepeated - now) + (UA_DATETIME_MSEC - 1)) / UA_DATETIME_MSEC);
 
@@ -761,9 +760,24 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
     return timeout;
 }
 
-UA_StatusCode
+void
 UA_Server_run_shutdown(UA_Server *server) {
-    server->config.networkManager->shutdown(server->config.networkManager);
+    /* Close all listen sockets */
+    UA_ServerConfig *config = UA_Server_getConfig(server);
+    UA_NetworkManager *nm = config->networkManager;
+    for(size_t i = 0; i < server->listenSocketsSize; i++) {
+        UA_Socket *socket = nm->getSocket(nm, server->listenSockets[i]);
+        if(!socket)
+            continue;
+        socket->close(socket);
+    }
+    nm->process(nm, 0);
+    UA_free(server->listenSockets);
+    UA_Array_delete(server->listenSocketsDomainName, server->listenSocketsSize,
+                    &UA_TYPES[UA_TYPES_STRING]);
+    server->listenSockets = NULL;
+    server->listenSocketsDomainName = NULL;
+    server->listenSocketsSize = 0;
 
 #if UA_MULTITHREADING >= 200
     /* Shut down the workers */
@@ -781,8 +795,6 @@ UA_Server_run_shutdown(UA_Server *server) {
 
     /* Execute all delayed callbacks */
     UA_WorkQueue_cleanup(&server->workQueue);
-
-    return UA_STATUSCODE_GOOD;
 }
 
 static UA_Boolean
@@ -814,7 +826,9 @@ UA_Server_run(UA_Server *server, const volatile UA_Boolean *running) {
                 break;
         }
     }
-    return UA_Server_run_shutdown(server);
+
+    UA_Server_run_shutdown(server);
+    return UA_STATUSCODE_GOOD;
 }
 
 #ifdef UA_ENABLE_HISTORIZING
@@ -826,9 +840,9 @@ UA_Server_AccessControl_allowHistoryUpdateUpdateData(UA_Server *server,
                                                      UA_PerformUpdateType performInsertReplace,
                                                      const UA_DataValue *value) {
     if(server->config.accessControl.allowHistoryUpdateUpdateData &&
-            !server->config.accessControl.allowHistoryUpdateUpdateData(server, &server->config.accessControl,
-                                                                       sessionId, sessionContext, nodeId,
-                                                                       performInsertReplace, value)) {
+       !server->config.accessControl.allowHistoryUpdateUpdateData(server, &server->config.accessControl,
+                                                                  sessionId, sessionContext, nodeId,
+                                                                  performInsertReplace, value)) {
         return false;
     }
     return true;
@@ -843,10 +857,10 @@ UA_Server_AccessControl_allowHistoryUpdateDeleteRawModified(UA_Server *server,
                                                             UA_DateTime endTimestamp,
                                                             bool isDeleteModified) {
     if(server->config.accessControl.allowHistoryUpdateDeleteRawModified &&
-            !server->config.accessControl.allowHistoryUpdateDeleteRawModified(server, &server->config.accessControl,
-                                                                              sessionId, sessionContext, nodeId,
-                                                                              startTimestamp, endTimestamp,
-                                                                              isDeleteModified)) {
+       !server->config.accessControl.allowHistoryUpdateDeleteRawModified(server, &server->config.accessControl,
+                                                                         sessionId, sessionContext, nodeId,
+                                                                         startTimestamp, endTimestamp,
+                                                                         isDeleteModified)) {
         return false;
     }
     return true;

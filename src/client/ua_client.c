@@ -75,10 +75,8 @@ UA_ClientConfig_deleteMembers(UA_ClientConfig *config) {
     UA_free(config->securityPolicies);
     config->securityPolicies = 0;
 
-    if(config->internallyAllocatedNetworkManager) {
-        config->networkManager->shutdown(config->networkManager);
-        config->networkManager->clear(config->networkManager);
-    }
+    if(config->networkManager == &config->localNetworkManager)
+        config->localNetworkManager.clear(&config->localNetworkManager);
 }
 
 static void
@@ -88,8 +86,6 @@ UA_Client_deleteMembers(UA_Client *client) {
      * in UA_Client_disconnect function */
     //UA_SecureChannel_deleteMembersCleanup(&client->channel);
 
-    if(client->connection != NULL)
-        UA_Connection_close(client->connection);
     if(client->endpointUrl.data)
         UA_String_clear(&client->endpointUrl);
     UA_NodeId_deleteMembers(&client->authenticationToken);

@@ -669,12 +669,13 @@ UA_Server_addPeriodicServerRegisterCallback(UA_Server *server,
     }
 
 
-    if(client->connection != NULL && client->connection->state != UA_CONNECTION_CLOSED) {
+    if(client->channel.state != UA_SECURECHANNELSTATE_OPEN) {
         UA_UNLOCK(server->serviceMutex);
         return UA_STATUSCODE_BADINVALIDSTATE;
     }
 
-    /* check if we are already registering with the given discovery url and remove the old periodic call */
+    /* check if we are already registering with the given discovery url and
+       remove the old periodic call */
     {
         periodicServerRegisterCallback_entry *rs, *rs_tmp;
         LIST_FOREACH_SAFE(rs, &server->discoveryManager.

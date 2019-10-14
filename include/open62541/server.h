@@ -63,14 +63,6 @@ void UA_EXPORT UA_Server_delete(UA_Server *server);
 UA_ServerConfig UA_EXPORT *
 UA_Server_getConfig(UA_Server *server);
 
-/**
- * Processes data that was received over a socket. This creates a
- * connection/securechannel if data is received over the socket for the first
- * time. */
-void
-UA_Server_processBinaryMessage(UA_Server *server, UA_Socket *socket,
-                               UA_ByteString data);
-
 /* Runs the main loop of the server. In each iteration, this calls into the
  * networklayers to see if messages have arrived.
  *
@@ -99,7 +91,7 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal);
 
 /* The epilogue part of UA_Server_run (no need to use if you call
  * UA_Server_run) */
-UA_StatusCode UA_EXPORT
+void UA_EXPORT
 UA_Server_run_shutdown(UA_Server *server);
 
 /**

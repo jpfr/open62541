@@ -9,64 +9,64 @@
 #include <open62541/transport_generated_encoding_binary.h>
 #include "ua_client_internal.h"
 
-static UA_StatusCode
-UA_Client_processTcpErrorMessage(UA_Client *client, UA_ByteString *message,
-                                 size_t *offset) {
-    UA_TcpErrorMessage tcpErrorMessage;
-    UA_TcpErrorMessage_decodeBinary(message, offset, &tcpErrorMessage);
+/* static UA_StatusCode */
+/* UA_Client_processTcpErrorMessage(UA_Client *client, UA_ByteString *message, */
+/*                                  size_t *offset) { */
+/*     UA_TcpErrorMessage tcpErrorMessage; */
+/*     UA_TcpErrorMessage_decodeBinary(message, offset, &tcpErrorMessage); */
 
-    UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                 "Received ERR response. %s - %.*s",
-                 UA_StatusCode_name(tcpErrorMessage.error),
-                 (int)tcpErrorMessage.reason.length,
-                 tcpErrorMessage.reason.data);
-    return tcpErrorMessage.error;
-}
+/*     UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK, */
+/*                  "Received ERR response. %s - %.*s", */
+/*                  UA_StatusCode_name(tcpErrorMessage.error), */
+/*                  (int)tcpErrorMessage.reason.length, */
+/*                  tcpErrorMessage.reason.data); */
+/*     return tcpErrorMessage.error; */
+/* } */
 
-static UA_StatusCode
-client_processCompleteChunkWithoutChannel(UA_Client *client, UA_Connection *connection,
-                                          UA_ByteString *message) {
-    UA_Socket *const sock = UA_Connection_getSocket(connection);
-    if(sock == NULL)
-        return UA_STATUSCODE_BADINTERNALERROR;
+/* static UA_StatusCode */
+/* client_processCompleteChunkWithoutChannel(UA_Client *client, UA_Connection *connection, */
+/*                                           UA_ByteString *message) { */
+/*     UA_Socket *sock = client->channel.socket; */
+/*     if(sock == NULL) */
+/*         return UA_STATUSCODE_BADINTERNALERROR; */
 
-    UA_LOG_TRACE(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                 "Socket %i | No channel attached to the connection. "
-                 "Process the chunk directly", (int)(sock->id));
-    size_t offset = 0;
-    UA_TcpMessageHeader tcpMessageHeader;
-    UA_StatusCode retval = UA_TcpMessageHeader_decodeBinary(message, &offset, &tcpMessageHeader);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+/*     UA_LOG_TRACE(&client->config.logger, UA_LOGCATEGORY_NETWORK, */
+/*                  "Socket %i | No channel attached to the connection. " */
+/*                  "Process the chunk directly", (int)(sock->id)); */
+/*     size_t offset = 0; */
+/*     UA_TcpMessageHeader tcpMessageHeader; */
+/*     UA_StatusCode retval = UA_TcpMessageHeader_decodeBinary(message, &offset, &tcpMessageHeader); */
+/*     if(retval != UA_STATUSCODE_GOOD) */
+/*         return retval; */
 
-    UA_MessageType messageType = (UA_MessageType)
-        (tcpMessageHeader.messageTypeAndChunkType & UA_BITMASK_MESSAGETYPE);
-    UA_ChunkType chunkType = (UA_ChunkType)
-        (tcpMessageHeader.messageTypeAndChunkType & UA_BITMASK_CHUNKTYPE);
-    if(chunkType != UA_CHUNKTYPE_FINAL) {
-        // Chunks can only be final if we don't have a secure channel.
-        return UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
-    }
+/*     UA_MessageType messageType = (UA_MessageType) */
+/*         (tcpMessageHeader.messageTypeAndChunkType & UA_BITMASK_MESSAGETYPE); */
+/*     UA_ChunkType chunkType = (UA_ChunkType) */
+/*         (tcpMessageHeader.messageTypeAndChunkType & UA_BITMASK_CHUNKTYPE); */
+/*     if(chunkType != UA_CHUNKTYPE_FINAL) { */
+/*         // Chunks can only be final if we don't have a secure channel. */
+/*         return UA_STATUSCODE_BADTCPMESSAGETYPEINVALID; */
+/*     } */
 
-    // Only HEL and OPN messages possible without a channel (on the client side)
-    switch(messageType) {
-    case UA_MESSAGETYPE_ACK: {
-        retval = processACKResponse(client, connection, message, &offset);
-        break;
-    }
-    case UA_MESSAGETYPE_ERR: {
-        retval = UA_Client_processTcpErrorMessage(client, message, &offset);
-        break;
-    }
-    default:
-        UA_LOG_TRACE(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                     "Socket %i | Expected ACK or ERR message on a connection "
-                     "without a SecureChannel", (int)(sock->id));
-        retval = UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
-        break;
-    }
-    return retval;
-}
+/*     // Only HEL and OPN messages possible without a channel (on the client side) */
+/*     switch(messageType) { */
+/*     case UA_MESSAGETYPE_ACK: { */
+/*         retval = processACKResponse(client, connection, message, &offset); */
+/*         break; */
+/*     } */
+/*     case UA_MESSAGETYPE_ERR: { */
+/*         retval = UA_Client_processTcpErrorMessage(client, message, &offset); */
+/*         break; */
+/*     } */
+/*     default: */
+/*         UA_LOG_TRACE(&client->config.logger, UA_LOGCATEGORY_CLIENT, */
+/*                      "Socket %i | Expected ACK or ERR message on a connection " */
+/*                      "without a SecureChannel", (int)(sock->id)); */
+/*         retval = UA_STATUSCODE_BADTCPMESSAGETYPEINVALID; */
+/*         break; */
+/*     } */
+/*     return retval; */
+/* } */
 
 /* For synchronous service calls. Execute async responses with a callback. When
  * the response with the correct requestId turns up, return it via the
@@ -234,6 +234,12 @@ finish:
     }
 }
 
+static UA_StatusCode
+prepareClientSecureChannel(void *application, UA_SecureChannel *channel,
+                           UA_AsymmetricAlgorithmSecurityHeader *asymHeader) {
+    return UA_STATUSCODE_GOOD;
+}
+
 /* Receive and process messages until a synchronous message arrives or the
  * timout finishes */
 UA_StatusCode
@@ -267,19 +273,16 @@ receiveServiceResponse(UA_Client *client, void *response,
                                  "No NetworkManager configured");
                     return UA_STATUSCODE_BADCONFIGURATIONERROR;
                 }
-                retval = client->config.networkManager->processSocket(client->config.networkManager,
-                                                                      timeout,
-                                                                      UA_Connection_getSocket(client->connection));
-                if(retval != UA_STATUSCODE_GOOD) {
-                    UA_Client_disconnect(client);
-                    return retval;
-                }
+                client->config.networkManager->processSocket(client->config.networkManager,
+                                                             timeout, client->channel.socket);
             } while(!UA_SecureChannel_isMessageComplete(&client->channel, rd.requestId));
 
-            retval = UA_SecureChannel_processMessage(&client->channel, &rd,
-                                                     processServiceResponse, rd.requestId);
+            retval = UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
+                                                              prepareClientSecureChannel,
+                                                              processServiceResponse);
         } else {
             retval = UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
+                                                              prepareClientSecureChannel,
                                                               processServiceResponse);
             rd.received = true;
         }
@@ -299,7 +302,9 @@ receiveServiceResponseAsync(UA_Client *client, void *response,
                             const UA_DataType *responseType) {
     SyncResponseDescription rd = {client, false, 0, response, responseType};
 
-    UA_StatusCode retval = UA_SecureChannel_processCompleteMessages(&client->channel, &rd, processServiceResponse);
+    UA_StatusCode retval = UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
+                                                                    prepareClientSecureChannel,
+                                                                    processServiceResponse);
     /*let client run when non critical timeout*/
     if(retval != UA_STATUSCODE_GOOD
        && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
@@ -309,19 +314,4 @@ receiveServiceResponseAsync(UA_Client *client, void *response,
         UA_Client_disconnect(client);
     }
     return retval;
-}
-
-UA_StatusCode
-UA_Client_processChunk(UA_Client *client, UA_Connection *connection, UA_ByteString *chunk) {
-
-    UA_StatusCode retval;
-    if(!connection->channel)
-        return client_processCompleteChunkWithoutChannel(client, connection, chunk);
-    else
-        retval = UA_SecureChannel_decryptAddChunk(connection->channel, chunk, false);
-
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
-
-    return UA_SecureChannel_persistIncompleteMessages(connection->channel);
 }

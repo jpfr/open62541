@@ -116,9 +116,7 @@ UA_StatusCode UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
         if(retval != UA_STATUSCODE_GOOD)
             return retval;
 
-        retval = client->config.networkManager->process(client->config.networkManager, timeout);
-        if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT)
-            return retval;
+        client->config.networkManager->process(client->config.networkManager, timeout);
 
         UA_DateTime maxDate = UA_DateTime_nowMonotonic() + (timeout * UA_DATETIME_MSEC);
         retval = receiveServiceResponse(client, NULL, NULL, maxDate, NULL);
@@ -136,13 +134,7 @@ UA_StatusCode UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
         if(retval != UA_STATUSCODE_GOOD)
             return retval;
 
-        retval = client->config.networkManager->process(client->config.networkManager, timeout);
-        if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
-            if(retval == UA_STATUSCODE_BADCONNECTIONCLOSED)
-                setClientState(client, UA_CLIENTSTATE_DISCONNECTED);
-            UA_Client_disconnect(client);
-            return retval;
-        }
+        client->config.networkManager->process(client->config.networkManager, timeout);
 
         // TODO: Do we need this?
         if((cs == UA_CLIENTSTATE_SECURECHANNEL) || (cs == UA_CLIENTSTATE_SESSION)) {
@@ -150,7 +142,7 @@ UA_StatusCode UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
             retval = receiveServiceResponseAsync(client, NULL, NULL);
         } else if(cs == UA_CLIENTSTATE_CONNECTED) {
             /* Open a SecureChannel. TODO: Select with endpoint  */
-            UA_Connection_attachSecureChannel(client->connection, &client->channel);
+            //UA_Connection_attachSecureChannel(client->connection, &client->channel);
             retval = UA_CLient_openSecureChannelAsync(client/*, false*/);
             if(retval != UA_STATUSCODE_GOOD)
                 return retval;

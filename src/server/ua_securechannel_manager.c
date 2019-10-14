@@ -72,7 +72,7 @@ UA_SecureChannelManager_cleanupTimedOut(UA_SecureChannelManager *cm,
     TAILQ_FOREACH_SAFE(entry, &cm->channels, pointers, temp) {
         /* The channel was closed internally */
         if(entry->channel.state == UA_SECURECHANNELSTATE_CLOSED ||
-           !entry->channel.connection) {
+           !entry->channel.socket) {
             removeSecureChannel(cm, entry);
             continue;
         }
@@ -100,7 +100,7 @@ static UA_Boolean
 purgeFirstChannelWithoutSession(UA_SecureChannelManager *cm) {
     channel_entry *entry;
     TAILQ_FOREACH(entry, &cm->channels, pointers) {
-        if(LIST_EMPTY(&entry->channel.sessions)) {
+        if(!entry->channel.session) {
             UA_LOG_INFO_CHANNEL(&cm->server->config.logger, &entry->channel,
                                 "Channel was purged since maxSecureChannels was "
                                 "reached and channel had no session attached");
@@ -112,11 +112,10 @@ purgeFirstChannelWithoutSession(UA_SecureChannelManager *cm) {
 }
 
 UA_StatusCode
-UA_SecureChannelManager_create(UA_SecureChannelManager *const cm, UA_Connection *const connection,
-                               const UA_SecurityPolicy *const securityPolicy,
-                               const UA_AsymmetricAlgorithmSecurityHeader *const asymHeader) {
-    /* connection already has a channel attached. */
-    if(connection->channel != NULL)
+UA_SecureChannelManager_create(UA_SecureChannelManager *cm, UA_Socket *socket,
+                               UA_SecureChannel **outChannel) {
+    /* Socket already has a channel attached. */
+    if(socket->context)
         return UA_STATUSCODE_BADINTERNALERROR;
 
     /* Check if there exists a free SC, otherwise try to purge one SC without a
@@ -136,13 +135,6 @@ UA_SecureChannelManager_create(UA_SecureChannelManager *const cm, UA_Connection 
     /* Create the channel context and parse the sender (remote) certificate used for the
      * secureChannel. */
     UA_SecureChannel_init(&entry->channel);
-    UA_StatusCode retval =
-        UA_SecureChannel_setSecurityPolicy(&entry->channel, securityPolicy,
-                                           &asymHeader->senderCertificate);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_free(entry);
-        return retval;
-    }
 
     /* Channel state is fresh (0) */
     entry->channel.securityToken.channelId = 0;
@@ -152,7 +144,9 @@ UA_SecureChannelManager_create(UA_SecureChannelManager *const cm, UA_Connection 
 
     TAILQ_INSERT_TAIL(&cm->channels, entry, pointers);
     UA_atomic_addUInt32(&cm->currentChannelCount, 1);
-    UA_Connection_attachSecureChannel(connection, &entry->channel);
+    socket->context = &entry->channel;
+    entry->channel.socket = socket;
+    *outChannel = &entry->channel;
     return UA_STATUSCODE_GOOD;
 }
 
@@ -160,7 +154,7 @@ UA_StatusCode
 UA_SecureChannelManager_open(UA_SecureChannelManager *cm, UA_SecureChannel *channel,
                              const UA_OpenSecureChannelRequest *request,
                              UA_OpenSecureChannelResponse *response) {
-    if(channel->state != UA_SECURECHANNELSTATE_FRESH) {
+    if(channel->state != UA_SECURECHANNELSTATE_OPENREQSENT) {
         UA_LOG_ERROR_CHANNEL(&cm->server->config.logger, channel,
                              "Called open on already open or closed channel");
         return UA_STATUSCODE_BADINTERNALERROR;

@@ -20,7 +20,7 @@ _UA_BEGIN_DECLS
  *                         the newly allocated NetworkManager.
  */
 UA_EXPORT UA_StatusCode
-UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager **p_networkManager);
+UA_SelectBasedNetworkManager(const UA_Logger *logger, UA_NetworkManager *nm);
 
 _UA_END_DECLS
 

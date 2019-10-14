@@ -19,15 +19,14 @@ typedef struct {
     UA_Socket socket;
     UA_UInt32 recvBufferSize;
     UA_UInt32 sendBufferSize;
-    UA_String customHostname;
     UA_SocketReceiveCallback receiveCallback; /* To be set in the data socket. */
-    UA_SocketApplicationCallback detachCallback; /* To be set in the data socket. */
+    UA_SocketCallback detachCallback; /* To be set in the data socket. */
 } UA_Socket_tcpListener;
 
 typedef struct {
     UA_Socket socket;
     UA_SocketReceiveCallback receiveCallback;
-    UA_SocketApplicationCallback detachCallback;
+    UA_SocketCallback detachCallback;
 } UA_Socket_tcpDataSocket;
 
 typedef struct {
@@ -35,19 +34,21 @@ typedef struct {
     UA_String endpointUrl;
     UA_UInt32 timeout;
     struct addrinfo *server;
-    UA_DateTime dtTimeout;
-    UA_DateTime connStart;
 } UA_Socket_tcpClientDataSocket;
 
 static void
 tcp_sock_close(UA_Socket *sock) {
     if(!sock)
         return;
-    if(sock->socketState == UA_SOCKETSTATE_CLOSED)
+    if(sock->state == UA_SOCKETSTATE_CLOSED)
         return;
+
+    UA_LOG_DEBUG(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
+                 "Shutting down socket %lu", sock->id);
+
     if((UA_SOCKET)sock->id != UA_INVALID_SOCKET)
         UA_shutdown((UA_SOCKET)sock->id, UA_SHUT_RDWR);
-    sock->socketState = UA_SOCKETSTATE_CLOSED;
+    sock->state = UA_SOCKETSTATE_CLOSED;
 }
 
 static UA_StatusCode
@@ -73,123 +74,99 @@ UA_TCP_DataSocket_clear(UA_Socket *sock) {
     if(!sock)
         return;
     
-    UA_Socket_tcpDataSocket *const internalSocket = (UA_Socket_tcpDataSocket *const)sock;
-
+    UA_Socket_tcpDataSocket *internalSocket = (UA_Socket_tcpDataSocket *)sock;
     UA_LOG_DEBUG(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
                  "Detach socket %i from the application", (int)sock->id);
 
     if(internalSocket->detachCallback)
-        internalSocket->detachCallback(sock->application, sock);
-
-    UA_String_deleteMembers(&sock->discoveryUrl);
+        internalSocket->detachCallback(sock);
 }
 
-#define UA_HOSTNAME_MAX_LENGTH 512
+/* #define UA_HOSTNAME_MAX_LENGTH 512 */
 
-static UA_StatusCode
-TCP_ClientDataSocket_open(UA_Socket *sock) {
-    if(sock == NULL) {
-        return UA_STATUSCODE_BADINVALIDARGUMENT;
-    }
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
+/* static UA_StatusCode */
+/* TCP_ClientDataSocket_open(UA_Socket *sock) { */
+/*     if(!sock) */
+/*         return UA_STATUSCODE_BADINVALIDARGUMENT; */
 
-    UA_Socket_tcpClientDataSocket *internalSocket = (UA_Socket_tcpClientDataSocket *)sock;
+/*     /\* Non blocking connect *\/ */
+/*     UA_Socket_tcpClientDataSocket *internalSocket = (UA_Socket_tcpClientDataSocket *)sock; */
+/*     int error = UA_connect((UA_SOCKET)sock->id, internalSocket->server->ai_addr, */
+/*                            (socklen_t)internalSocket->server->ai_addrlen); */
 
-    internalSocket->dtTimeout = internalSocket->timeout * UA_DATETIME_MSEC;
-    internalSocket->connStart = UA_DateTime_nowMonotonic();
+/*     UA_StatusCode retval = UA_STATUSCODE_GOOD; */
+/*     if((error == -1) && (UA_ERRNO != UA_ERR_CONNECTION_PROGRESS)) { */
+/*         UA_LOG_SOCKET_ERRNO_WRAP( */
+/*             UA_LOG_WARNING(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK, */
+/*                            "Connection to %.*s failed with error: %s", */
+/*                            (int)internalSocket->endpointUrl.length, */
+/*                            internalSocket->endpointUrl.data, errno_str)); */
+/*         retval = UA_STATUSCODE_BADCOMMUNICATIONERROR; */
+/*         goto error; */
+/*     } */
 
-    /* Non blocking connect */
-    int error = UA_connect((UA_SOCKET)sock->id, internalSocket->server->ai_addr,
-                           (socklen_t)internalSocket->server->ai_addrlen);
+/* #ifdef SO_NOSIGPIPE */
+/*     int val = 1; */
+/*     int sso_result = UA_setsockopt((UA_SOCKET)sock->id, SOL_SOCKET, */
+/*                                    SO_NOSIGPIPE, (void*)&val, sizeof(val)); */
+/*     if(sso_result < 0) */
+/*         UA_LOG_WARNING(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK, */
+/*                        "Couldn't set SO_NOSIGPIPE"); */
+/* #endif */
 
-    if((error == -1) && (UA_ERRNO != UA_ERR_CONNECTION_PROGRESS)) {
-        UA_LOG_SOCKET_ERRNO_WRAP(
-            UA_LOG_WARNING(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                           "Connection to %.*s failed with error: %s",
-                           (int)internalSocket->endpointUrl.length,
-                           internalSocket->endpointUrl.data, errno_str));
-        retval = UA_STATUSCODE_BADCOMMUNICATIONERROR;
-        goto error;
-    }
+/*     /\* The open callback will be called later if the connection succeeds *\/ */
+/*     return retval; */
 
-#ifdef SO_NOSIGPIPE
-    int val = 1;
-    int sso_result = UA_setsockopt((UA_SOCKET)sock->id, SOL_SOCKET,
-                                   SO_NOSIGPIPE, (void*)&val, sizeof(val));
-    if(sso_result < 0)
-        UA_LOG_WARNING(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                       "Couldn't set SO_NOSIGPIPE");
-#endif
-
-    /* We want to wait for write activity since this signals
-     * that the socket is connected and ready to send */
-    sock->waitForWriteActivity = true;
-
-    /* The open callback will be called later if the connection succeeds */
-    return retval;
-
-error:
-    sock->close(sock);
-    return retval;
-}
-
+/* error: */
+/*     sock->close(sock); */
+/*     return retval; */
+/* } */
 
 static void
-UA_TCP_DataSocket_activity(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActivity) {
+UA_TCP_DataSocket_activity(UA_Socket *sock) {
     if(!sock) 
         return;
+    if(sock->state != UA_SOCKETSTATE_OPEN)
+        return;
 
-    UA_Socket_tcpDataSocket *const internalSocket = (UA_Socket_tcpDataSocket *const)sock;
+    UA_LOG_DEBUG(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
+                 "Socket %i | Receiving data", (int)sock->id);
 
-    if(sock->socketState == UA_SOCKETSTATE_NEW) {
-        UA_StatusCode retval = TCP_ClientDataSocket_open(sock);
-        if(retval != UA_STATUSCODE_GOOD) {
-            UA_LOG_WARNING(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                           "Could not open the new socket");
-            tcp_sock_close(sock);
+    UA_ByteString recvBuf;
+    UA_StatusCode retval = UA_ByteString_allocBuffer(&recvBuf, 16664);
+    if(retval != UA_STATUSCODE_GOOD)
+        return;
+
+    // we want to read as many bytes as possible.
+    // the code called in the callback is responsible for disassembling the data
+    // into e.g. chunks and copying it.
+    ssize_t bytesReceived = UA_recv((int)sock->id, (char *)recvBuf.data, recvBuf.length, 0);
+
+    if(bytesReceived < 0) {
+        UA_ByteString_clear(&recvBuf);
+        if(UA_ERRNO == UA_WOULDBLOCK || UA_ERRNO == UA_EAGAIN || UA_ERRNO == UA_INTERRUPTED)
             return;
-        }
-        sock->socketState = UA_SOCKETSTATE_OPEN;
+        UA_LOG_SOCKET_ERRNO_WRAP(UA_LOG_ERROR(sock->networkManager->logger,
+                                              UA_LOGCATEGORY_NETWORK,
+                                              "Error while receiving data from socket: %s",
+                                              errno_str));
+        sock->close(sock);
+        return;
     }
 
-    if(sock->socketState == UA_SOCKETSTATE_OPEN) {
-        UA_ByteString recvBuf;
-        UA_StatusCode retval = UA_ByteString_allocBuffer(&recvBuf, 16664);
-        if(retval != UA_STATUSCODE_GOOD)
-            return;
-
-        // we want to read as many bytes as possible.
-        // the code called in the callback is responsible for disassembling the data
-        // into e.g. chunks and copying it.
-        ssize_t bytesReceived = UA_recv((int)sock->id, (char *)recvBuf.data, recvBuf.length, 0);
-
-        if(bytesReceived < 0) {
-            UA_ByteString_clear(&recvBuf);
-            if(UA_ERRNO == UA_WOULDBLOCK || UA_ERRNO == UA_EAGAIN || UA_ERRNO == UA_INTERRUPTED)
-                return;
-            UA_LOG_SOCKET_ERRNO_WRAP(UA_LOG_ERROR(sock->networkManager->logger,
-                                                  UA_LOGCATEGORY_NETWORK,
-                                                  "Error while receiving data from socket: %s",
-                                                  errno_str));
-            sock->close(sock);
-            return;
-        }
-        if(bytesReceived == 0) {
-            UA_LOG_INFO(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                        "Socket %i | Performing orderly shutdown", (int)sock->id);
-            sock->close(sock);
-            UA_ByteString_clear(&recvBuf);
-            return;
-        }
-
-        /* Receive Callback */
-        internalSocket->receiveCallback(sock->application, sock, recvBuf);
+    if(bytesReceived == 0) {
+        UA_LOG_INFO(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
+                    "Socket %i | Performing orderly shutdown", (int)sock->id);
+        tcp_sock_close(sock);
         UA_ByteString_clear(&recvBuf);
         return;
     }
 
-    /* Unknown state */
-    sock->close(sock);
+    /* Receive Callback */
+    recvBuf.length = (size_t)bytesReceived;
+    UA_Socket_tcpDataSocket *internalSocket = (UA_Socket_tcpDataSocket *)sock;
+    internalSocket->receiveCallback(sock->application, sock, recvBuf);
+    UA_ByteString_clear(&recvBuf);
 }
 
 static UA_StatusCode
@@ -221,21 +198,6 @@ UA_TCP_DataSocket_send(UA_Socket *sock, UA_ByteString *buffer) {
     return UA_STATUSCODE_GOOD;
 }
 
-static UA_StatusCode
-UA_TCP_DataSocket_disableNaglesAlgorithm(UA_Socket *sock) {
-    int dummy = 1;
-    if(UA_setsockopt((int)sock->id, IPPROTO_TCP, TCP_NODELAY,
-                     (const char *)&dummy, sizeof(dummy)) < 0) {
-        UA_LOG_SOCKET_ERRNO_WRAP(
-            UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                         "Cannot set socket option TCP_NODELAY. Error: %s",
-                         errno_str));
-        return UA_STATUSCODE_BADUNEXPECTEDERROR;
-    }
-
-    return UA_STATUSCODE_GOOD;
-}
-
 static void
 UA_TCP_DataSocket_logPeerName(UA_Socket *sock, struct sockaddr_storage *remote) {
 #ifdef UA_getnameinfo
@@ -262,35 +224,6 @@ UA_TCP_DataSocket_logPeerName(UA_Socket *sock, struct sockaddr_storage *remote) 
 #endif
 }
 
-static UA_StatusCode
-UA_TCP_DataSocket_init(UA_Socket_tcpDataSocket *sock,
-                       UA_NetworkManager *networkManager,
-                       UA_UInt64 sockFd,
-                       UA_UInt32 sendBufferSize,
-                       UA_UInt32 recvBufferSize,
-                       void *application,
-                       UA_SocketReceiveCallback receiveCallback,
-                       UA_SocketApplicationCallback detachCallback) {
-    if(sock == NULL || networkManager == NULL) {
-        return UA_STATUSCODE_BADINVALIDARGUMENT;
-    }
-
-    sock->socket.application = application;
-    sock->socket.isListener = false;
-    sock->socket.id = (UA_UInt64)sockFd;
-    sock->socket.close = tcp_sock_close;
-    sock->socket.clear = UA_TCP_DataSocket_clear;
-    sock->socket.activity = UA_TCP_DataSocket_activity;
-    sock->socket.send = UA_TCP_DataSocket_send;
-    sock->socket.acquireSendBuffer = tcp_sock_acquireSendBuffer;
-    sock->socket.releaseSendBuffer = tcp_sock_releaseSendBuffer;
-    sock->socket.networkManager = networkManager;
-    sock->socket.socketState = UA_SOCKETSTATE_NEW;
-    sock->receiveCallback = receiveCallback;
-    sock->detachCallback = detachCallback;
-    return UA_STATUSCODE_GOOD;
-}
-
 /* static void */
 /* UA_TCP_ClientDataSocket_clear(UA_Socket *sock) { */
 /*     UA_Socket_tcpClientDataSocket *internalSocket = (UA_Socket_tcpClientDataSocket *)sock; */
@@ -301,10 +234,10 @@ UA_TCP_DataSocket_init(UA_Socket_tcpDataSocket *sock,
 /* } */
 
 UA_StatusCode
-UA_TCP_ClientSocket(UA_NetworkManager *nm, void *application,
-                    UA_String domain, UA_UInt32 port,
-                    UA_SocketReceiveCallback receiveCallback,
-                    UA_SocketApplicationCallback clearCallback) {
+UA_TCP_DataSocket(UA_NetworkManager *nm, void *application,
+                  UA_String domain, UA_UInt32 port, 
+                  UA_SocketReceiveCallback receiveCallback,
+                  UA_SocketCallback detachCallback) {
 /*     if(socketParameters == NULL || socketParameters->createSocket == NULL) */
 /*         return UA_STATUSCODE_BADINTERNALERROR; */
 
@@ -429,107 +362,34 @@ UA_TCP_ClientSocket(UA_NetworkManager *nm, void *application,
 /* Listener Socket */
 /*******************/
 
-static UA_StatusCode
-tcp_sock_setDiscoveryUrl(UA_Socket *sock, UA_UInt16 port,
-                         UA_ByteString *customHostname) {
-    if(sock == NULL)
-        return UA_STATUSCODE_BADINTERNALERROR;
-
-    /* Get the discovery url from the hostname */
-    UA_String du = UA_STRING_NULL;
-    char discoveryUrlBuffer[256];
-    if(!UA_ByteString_equal(customHostname, &UA_BYTESTRING_NULL)) {
-        du.length = (size_t)UA_snprintf(discoveryUrlBuffer, 255, "opc.tcp://%.*s:%d/",
-                                        (int)customHostname->length,
-                                        customHostname->data,
-                                        port);
-        du.data = (UA_Byte *)discoveryUrlBuffer;
-    } else {
-        char hostnameBuffer[256];
-        if(UA_gethostname(hostnameBuffer, 255) == 0) {
-            du.length = (size_t)UA_snprintf(discoveryUrlBuffer, 255, "opc.tcp://%s:%d/",
-                                            hostnameBuffer, port);
-            du.data = (UA_Byte *)discoveryUrlBuffer;
-        } else {
-            UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK, "Could not get the hostname");
-        }
-    }
-    UA_LOG_INFO(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                "New TCP listener socket will listen on %.*s",
-                (int)du.length, du.data);
-    return UA_String_copy(&du, &sock->discoveryUrl);
-}
-
-static UA_StatusCode
-tcp_sock_open(UA_Socket *sock) {
-    UA_Socket_tcpListener *internalSock = (UA_Socket_tcpListener *)sock;
-    if(sock->socketState != UA_SOCKETSTATE_NEW) {
-        UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                     "Calling open on already open socket not supported");
-        return UA_STATUSCODE_BADINTERNALERROR;
-    }
-
-    if(UA_listen((UA_SOCKET)sock->id, MAXBACKLOG) < 0) {
-        UA_LOG_SOCKET_ERRNO_WRAP(
-            UA_LOG_WARNING(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                           "Error listening on server socket: %s", errno_str));
-        return UA_STATUSCODE_BADINTERNALERROR;
-    }
-
-    sock->socketState = UA_SOCKETSTATE_OPEN;
-
-    struct sockaddr_storage returned_addr;
-    memset(&returned_addr, 0, sizeof(returned_addr));
-    socklen_t len = sizeof(returned_addr);
-    if(UA_getsockname((UA_SOCKET)sock->id, (struct sockaddr *)&returned_addr, &len) < 0) {
-        UA_LOG_SOCKET_ERRNO_WRAP(
-            UA_LOG_WARNING(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
-                           "Error getting the socket port on server socket: %s", errno_str));
-        return UA_STATUSCODE_BADINTERNALERROR;
-    }
-    UA_UInt16 port = 0;
-    if(returned_addr.ss_family == AF_INET)
-        port = UA_ntohs(((struct sockaddr_in *)&returned_addr)->sin_port);
-    else if(returned_addr.ss_family == AF_INET6)
-        port = UA_ntohs(((struct sockaddr_in6 *)&returned_addr)->sin6_port);
-
-    tcp_sock_setDiscoveryUrl(sock, port, &internalSock->customHostname);
-
-    sock->socketState = UA_SOCKETSTATE_OPEN;
-
-    return UA_STATUSCODE_GOOD;
-}
-
 static void
 tcp_sock_clear(UA_Socket *sock) {
     if(sock == NULL)
         return;
-    UA_Socket_tcpListener *const internalSock = (UA_Socket_tcpListener *const)sock;
-    UA_String_deleteMembers(&internalSock->customHostname);
-    UA_ByteString_deleteMembers(&sock->discoveryUrl);
+    UA_Socket_tcpListener *internalSock = (UA_Socket_tcpListener *)sock;
+    if(internalSock->detachCallback)
+        internalSock->detachCallback(sock);
 }
 
 /* Activity on the listener socket with a new data socket opening */
 static void
-tcp_sock_activity(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActivity) {
-    UA_Socket_tcpListener *internalSock = (UA_Socket_tcpListener *)sock;
-    UA_NetworkManager *nm = sock->networkManager;
-
+tcp_sock_activity(UA_Socket *sock) {
     if(!sock)
         return;
 
-    if(!readActivity)
-        return;
+    UA_Socket_tcpListener *internalSock = (UA_Socket_tcpListener *)sock;
+    UA_NetworkManager *nm = sock->networkManager;
 
     struct sockaddr_storage remote;
     socklen_t remote_size = sizeof(remote);
     UA_SOCKET newsockfd = UA_accept((UA_SOCKET)sock->id,
                                     (struct sockaddr*)&remote, &remote_size);
     if(newsockfd == UA_INVALID_SOCKET) {
+        if(errno == UA_WOULDBLOCK || errno == UA_EAGAIN)
+            return;
         UA_LOG_TRACE(nm->logger, UA_LOGCATEGORY_NETWORK,
-                    "Connection %i | Could not accept a new socket",
+                     "Connection %i | Could not accept a new socket",
                      (int)sock->id);
-        tcp_sock_close(sock);
         return;
     }
 
@@ -537,7 +397,7 @@ tcp_sock_activity(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActi
                  "Connection %i | New TCP connection on server socket %i",
                  (int)newsockfd, (int)sock->id);
         
-    UA_Socket_tcpDataSocket *newSock;
+    UA_Socket_tcpDataSocket *newSock = NULL;
     UA_StatusCode retval = sock->networkManager->
         createSocket(sock->networkManager, sizeof(UA_Socket_tcpDataSocket),
                      (UA_Socket**)&newSock);
@@ -545,13 +405,6 @@ tcp_sock_activity(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActi
         UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
                      "Error while accepting new socket connection: %s",
                      UA_StatusCode_name(retval));
-        goto error;
-    }
-
-    retval = UA_String_copy(&sock->discoveryUrl, &newSock->socket.discoveryUrl);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(nm->logger, UA_LOGCATEGORY_NETWORK,
-                     "Failed to copy discovery url while creating data socket");
         goto error;
     }
 
@@ -563,26 +416,41 @@ tcp_sock_activity(UA_Socket *sock, UA_Boolean readActivity, UA_Boolean writeActi
         goto error;
     }
 
-    retval = UA_TCP_DataSocket_disableNaglesAlgorithm(&newSock->socket);
-    if(retval != UA_STATUSCODE_GOOD)
+    /* Disable Nagle's Algorithm so packets don't get batched */
+    int dummy = 1;
+    if(UA_setsockopt(newsockfd, IPPROTO_TCP, TCP_NODELAY,
+                     (const char *)&dummy, sizeof(dummy)) < 0) {
+        UA_LOG_SOCKET_ERRNO_WRAP(
+            UA_LOG_ERROR(sock->networkManager->logger, UA_LOGCATEGORY_NETWORK,
+                         "Cannot set socket option TCP_NODELAY. Error: %s",
+                         errno_str));
+        retval = UA_STATUSCODE_BADUNEXPECTEDERROR;
         goto error;
+    }
 
+    newSock->socket.application = sock->application;
+    newSock->socket.id = (UA_UInt64)newsockfd;
+    newSock->socket.close = tcp_sock_close;
+    newSock->socket.clear = UA_TCP_DataSocket_clear;
+    newSock->socket.activity = UA_TCP_DataSocket_activity;
+    newSock->socket.send = UA_TCP_DataSocket_send;
+    newSock->socket.acquireSendBuffer = tcp_sock_acquireSendBuffer;
+    newSock->socket.releaseSendBuffer = tcp_sock_releaseSendBuffer;
+    newSock->socket.networkManager = nm;
+    newSock->socket.state = UA_SOCKETSTATE_NEW;
+    newSock->receiveCallback = internalSock->receiveCallback;
+    newSock->detachCallback = internalSock->detachCallback;
+
+    nm->registerSocket(nm, &newSock->socket);
+    newSock->socket.state = UA_SOCKETSTATE_OPEN;
     UA_TCP_DataSocket_logPeerName(&newSock->socket, &remote);
-    tcp_sock_open(&newSock->socket);
-
-    retval = UA_TCP_DataSocket_init(newSock,
-                                    sock->networkManager,
-                                    (UA_UInt64)newsockfd,
-                                    0, 0, sock->application,
-                                    internalSock->receiveCallback,
-                                    internalSock->detachCallback);
-    if(retval != UA_STATUSCODE_GOOD)
-        goto error;
-
     return;
 
  error:
-    tcp_sock_close(&newSock->socket);
+    if(newSock) {
+        tcp_sock_close(&newSock->socket);
+        nm->deleteSocket(nm, &newSock->socket);
+    }
 }
 
 static UA_StatusCode
@@ -593,34 +461,43 @@ tcp_sock_send(UA_Socket *sock, UA_ByteString *buffer) {
     return UA_STATUSCODE_BADNOTIMPLEMENTED;
 }
 
-UA_StatusCode
+static UA_StatusCode
 UA_TCP_ServerSocketFromAddrinfo(UA_NetworkManager *nm,
                                 struct addrinfo *addrinfo, void *application,
                                 UA_SocketReceiveCallback receiveCallback,
-                                UA_SocketApplicationCallback clearCallback,
+                                UA_SocketCallback detachCallback,
+                                UA_UInt64 *outSocketId,
                                 UA_String *outDomainNames) {
-    UA_SOCKET socket_fd = UA_socket(addrinfo->ai_family, addrinfo->ai_socktype,
-                                    addrinfo->ai_protocol);
-    if(socket_fd == UA_INVALID_SOCKET) {
-        UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
-                       "Error opening the listener socket");
-        return UA_STATUSCODE_BADINTERNALERROR;
-    }
-
     UA_Socket_tcpListener *sock;
     nm->createSocket(nm, sizeof(UA_Socket_tcpListener), (UA_Socket**)&sock);
     if(!sock)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
     memset(sock, 0, sizeof(UA_Socket_tcpListener));
-    sock->socket.id = (UA_UInt64)socket_fd;
     sock->socket.application = application;
-    sock->socket.isListener = true;
-    sock->socket.socketState = UA_SOCKETSTATE_NEW;
-    sock->socket.waitForReadActivity = true;
-    sock->socket.waitForWriteActivity = false;
+    sock->socket.state = UA_SOCKETSTATE_NEW;
     sock->socket.networkManager = nm;
+    sock->socket.close = tcp_sock_close;
+    sock->socket.clear = tcp_sock_clear;
+    sock->socket.activity = tcp_sock_activity;
+    sock->socket.send = tcp_sock_send;
+    sock->socket.acquireSendBuffer = tcp_sock_acquireSendBuffer;
+    sock->socket.releaseSendBuffer = tcp_sock_releaseSendBuffer;
+    sock->receiveCallback = receiveCallback;
+    sock->detachCallback = detachCallback;
 
+    UA_SOCKET socket_fd = UA_socket(addrinfo->ai_family, addrinfo->ai_socktype,
+                                    addrinfo->ai_protocol);
+    if(socket_fd == UA_INVALID_SOCKET) {
+        UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
+                       "Error opening the listener socket");
+        nm->deleteSocket(nm, &sock->socket);
+        return UA_STATUSCODE_BADINTERNALERROR;
+    }
+
+    sock->socket.id = (UA_UInt64)socket_fd;
+
+    /* Set to IPV6 only */
     int optVal = 1;
 #if UA_IPV6
     if(addrinfo->ai_family == AF_INET6 &&
@@ -631,6 +508,8 @@ UA_TCP_ServerSocketFromAddrinfo(UA_NetworkManager *nm,
         goto error;
     }
 #endif
+
+    /* Make the socket reusable */
     if(UA_setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR,
                      (const char *)&optVal, sizeof(optVal)) == -1) {
         UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
@@ -638,58 +517,82 @@ UA_TCP_ServerSocketFromAddrinfo(UA_NetworkManager *nm,
         goto error;
     }
 
+    /* Set non-blocking */
     if(UA_socket_set_nonblocking(socket_fd) != UA_STATUSCODE_GOOD) {
         UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
-                       "Could not set the server socket to non blocking");
+                       "Could not set the listen socket to non blocking");
         goto error;
     }
 
+    /* Bind the socket */
     if(UA_bind(socket_fd, addrinfo->ai_addr, (socklen_t)addrinfo->ai_addrlen) < 0) {
         UA_LOG_SOCKET_ERRNO_WRAP(
             UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
-                           "Error binding a server socket: %s", errno_str));
+                           "Error binding a listen socket: %s", errno_str));
         goto error;
     }
 
-    sock->socket.close = tcp_sock_close;
-    sock->socket.clear = tcp_sock_clear;
-    sock->socket.activity = tcp_sock_activity;
-    sock->socket.send = tcp_sock_send;
-    sock->socket.acquireSendBuffer = tcp_sock_acquireSendBuffer;
-    sock->socket.releaseSendBuffer = tcp_sock_releaseSendBuffer;
-
-    UA_LOG_TRACE(nm->logger, UA_LOGCATEGORY_NETWORK,
-                 "Created new listener socket %p", (void *)sock);
-
-    if(outDomainNames) {
-        char hostname[NI_MAXHOST];
-        int error = getnameinfo(addrinfo->ai_addr, addrinfo->ai_addrlen,
-                                hostname, NI_MAXHOST, NULL, 0, 0); 
-        if(error != 0) {
-            UA_LOG_SOCKET_ERRNO_WRAP(UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
-                                                    "Error binding a server socket: %s", errno_str));
-        } else {
-            *outDomainNames = UA_STRING_ALLOC(hostname);
-        }
+    /* Start to listen */
+    if(UA_listen(socket_fd, MAXBACKLOG) < 0) {
+        UA_LOG_SOCKET_ERRNO_WRAP(
+            UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
+                           "Error listening on server socket: %s", errno_str));
+        goto error;
     }
 
+    /* Get the port */
+    struct sockaddr_storage returned_addr;
+    memset(&returned_addr, 0, sizeof(returned_addr));
+    socklen_t len = sizeof(returned_addr);
+    if(UA_getsockname((UA_SOCKET)sock->socket.id, (struct sockaddr *)&returned_addr, &len) < 0) {
+        UA_LOG_SOCKET_ERRNO_WRAP(
+            UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
+                           "Error getting the socket port on server socket: %s", errno_str));
+        goto error;
+    }
+    UA_UInt16 port = 0;
+    if(returned_addr.ss_family == AF_INET)
+        port = UA_ntohs(((struct sockaddr_in *)&returned_addr)->sin_port);
+    else if(returned_addr.ss_family == AF_INET6)
+        port = UA_ntohs(((struct sockaddr_in6 *)&returned_addr)->sin6_port);
+
+    /* Get the domain name we are listening on */
+    char hostname[NI_MAXHOST];
+    int error = getnameinfo(addrinfo->ai_addr, addrinfo->ai_addrlen,
+                            hostname, NI_MAXHOST, NULL, 0, 0); 
+    if(error != 0) {
+        UA_LOG_SOCKET_ERRNO_WRAP(UA_LOG_WARNING(nm->logger, UA_LOGCATEGORY_NETWORK,
+                                                "Error binding a server socket: %s", errno_str));
+        goto error;
+    }
+
+    nm->registerSocket(nm, &sock->socket);
+    sock->socket.state = UA_SOCKETSTATE_OPEN;
+
+    UA_LOG_TRACE(nm->logger, UA_LOGCATEGORY_NETWORK,
+                 "Socket %i | New socket listening on %s:%u",
+                 (int)socket_fd, hostname, port);
+
+    *outSocketId = sock->socket.id;
+    *outDomainNames = UA_STRING_ALLOC(hostname);
     return UA_STATUSCODE_GOOD;
 
 error:
-    if(socket_fd != UA_INVALID_SOCKET)
-        UA_close(socket_fd);
-    UA_free(sock);
+    tcp_sock_close(&sock->socket);
+    nm->deleteSocket(nm, &sock->socket);
     return UA_STATUSCODE_BADINTERNALERROR;
 }
 
-
 UA_StatusCode
-UA_TCP_ServerSocket(UA_NetworkManager *nm,
-                    UA_UInt32 listenPort, void *application,
-                    UA_SocketReceiveCallback receiveCallback,
-                    UA_SocketApplicationCallback detachCallback,
-                    size_t *outDomainNamesSize, UA_String **outDomainNames) {
+UA_TCP_ListenSockets(UA_NetworkManager *nm, UA_UInt32 listenPort, void *application,
+                     UA_SocketReceiveCallback receiveCallback,
+                     UA_SocketCallback detachCallback,
+                     size_t *outSocketsSize, UA_UInt64 **outSocketIds,
+                     UA_String **outDomainNames) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
+
+    UA_LOG_DEBUG(nm->logger, UA_LOGCATEGORY_NETWORK,
+                 "Create listen sockets on port %u", listenPort);
 
     char portNumber[6];
     UA_snprintf(portNumber, 6, "%d", listenPort);
@@ -716,35 +619,42 @@ UA_TCP_ServerSocket(UA_NetworkManager *nm,
         sockets_size = FD_SETSIZE;
 
     /* Return domain names if this is requested */
-    if(outDomainNames) {
-        *outDomainNames = (UA_String*)
-            UA_Array_new(sockets_size, &UA_TYPES[UA_TYPES_STRING]);
-        if(retval != UA_STATUSCODE_GOOD)
-            goto cleanup;
-    }
+    *outSocketIds = NULL;
+    *outDomainNames = (UA_String*)
+        UA_Array_new(sockets_size, &UA_TYPES[UA_TYPES_STRING]);
+    if(!*outDomainNames)
+        goto cleanup;
+    *outSocketIds = (UA_UInt64*)
+        UA_Array_new(sockets_size, &UA_TYPES[UA_TYPES_UINT64]);
+    if(!*outSocketIds)
+        goto cleanup;
     
     tmp = res;
     for(size_t i = 0; i < sockets_size; i++, tmp = tmp->ai_next) {
         retval = UA_TCP_ServerSocketFromAddrinfo(nm, tmp, application,
                                                  receiveCallback, detachCallback,
+                                                 &(*outSocketIds)[i],
                                                  &(*outDomainNames)[i]);
         if(retval != UA_STATUSCODE_GOOD)
-            UA_LOG_ERROR(nm->logger, UA_LOGCATEGORY_NETWORK,
-                         "Error calling socket callback %s",
-                         UA_StatusCode_name(retval));
+            goto cleanup;
     }
 
-    if(outDomainNames) {
-        if(retval == UA_STATUSCODE_GOOD) {
-            *outDomainNamesSize = sockets_size;
-        } else {
-            UA_Array_delete(*outDomainNames, sockets_size, &UA_TYPES[UA_TYPES_STRING]);
-            *outDomainNames = NULL;
-        }
-    }
+    *outSocketsSize = sockets_size;
+    UA_freeaddrinfo(res);
+    return UA_STATUSCODE_GOOD;
 
  cleanup:
+    UA_LOG_ERROR(nm->logger, UA_LOGCATEGORY_NETWORK,
+                 "Error calling socket callback %s",
+                 UA_StatusCode_name(retval));
+    if(*outDomainNames) {
+        UA_Array_delete(*outDomainNames, sockets_size, &UA_TYPES[UA_TYPES_STRING]);
+        *outDomainNames = NULL;
+    }
+    if(*outSocketIds) {
+        UA_free(*outSocketIds);
+        *outSocketIds = NULL;
+    }
     UA_freeaddrinfo(res);
     return retval;
 }
-

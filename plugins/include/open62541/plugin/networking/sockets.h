@@ -11,23 +11,22 @@
 
 _UA_BEGIN_DECLS
 
-/**
- * Creates all listener sockets for the specified port. If the underlying
+/* Creates all listener sockets for the specified port. If the underlying
  * network architecture has a IPv4/IPv6 dual stack, a socket will be created for
  * each feasible combination of IP version and network interface. */
 UA_StatusCode
-UA_TCP_ServerSocket(UA_NetworkManager *nm,
-                    UA_UInt32 listenPort, void *application,
-                    UA_SocketReceiveCallback receiveCallback,
-                    UA_SocketApplicationCallback detachCallback,
-                    size_t *outDomainNamesSize, UA_String **outDomainNames);
+UA_TCP_ListenSockets(UA_NetworkManager *nm, UA_UInt32 listenPort, void *application,
+                     UA_SocketReceiveCallback receiveCallback,
+                     UA_SocketCallback detachCallback,
+                     size_t *outSocketsSize, UA_UInt64 **outSocketIds,
+                     UA_String **outDomainNames);
 
+/* Creates a new data socket according to the socket config */
 UA_StatusCode
-UA_TCP_ServerSocketFromAddrinfo(UA_NetworkManager *nm,
-                                struct addrinfo *addrinfo, void *application,
-                                UA_SocketReceiveCallback receiveCallback,
-                                UA_SocketApplicationCallback clearCallback,
-                                UA_String *outDomainNames);
+UA_TCP_DataSocket(UA_NetworkManager *nm, void *application,
+                  UA_String domain, UA_UInt32 port, 
+                  UA_SocketReceiveCallback receiveCallback,
+                  UA_SocketCallback detachCallback);
 
 #ifdef UA_ENABLE_WEBSOCKET_SERVER
 UA_StatusCode
@@ -38,15 +37,6 @@ UA_StatusCode
 UA_WSS_ClientSocket(const UA_SocketConfig *socketConfig,
                     UA_SocketCallbackFunction const creationCallback);
 #endif
-
-/**
- * Creates a new client socket according to the socket config
- */
-UA_StatusCode
-UA_TCP_ClientSocket(UA_NetworkManager *nm, void *application,
-                    UA_String domain, UA_UInt32 port, 
-                    UA_SocketReceiveCallback receiveCallback,
-                    UA_SocketApplicationCallback detachCallback);
 
 _UA_END_DECLS
 

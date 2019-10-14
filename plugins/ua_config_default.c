@@ -104,8 +104,8 @@ static UA_UsernamePasswordLogin usernamePasswords[2] = {
     {UA_STRING_STATIC("user1"), UA_STRING_STATIC("password")},
     {UA_STRING_STATIC("user2"), UA_STRING_STATIC("password1")}};
 
-static UA_StatusCode
-setDefaultConfig(UA_ServerConfig *conf) {
+UA_StatusCode
+UA_ServerConfig_setBasics(UA_ServerConfig* conf) {
     if (!conf)
         return UA_STATUSCODE_BADINVALIDARGUMENT;
 
@@ -233,68 +233,26 @@ setDefaultConfig(UA_ServerConfig *conf) {
     return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
-UA_ServerConfig_setBasics(UA_ServerConfig* conf) {
-    return setDefaultConfig(conf);
-}
-
+/* Set up a new network manager for the server */
 static UA_StatusCode
 configureNetworking_default(UA_ServerConfig *conf, UA_UInt16 portNumber,
                             UA_UInt32 sendBufferSize, UA_UInt32 recvBufferSize) {
-/*     conf->listenerSocketConfigsSize = 1; */
-/* #ifdef UA_ENABLE_WEBSOCKET_SERVER */
-/*     conf->listenerSocketConfigsSize += 1; */
-/* #endif */
-/*     conf->listenerSocketConfigs = (UA_ListenerSocketConfig *)UA_malloc( */
-/*         conf->listenerSocketConfigsSize * sizeof(UA_ListenerSocketConfig)); */
-/*     if(conf->listenerSocketConfigs == NULL) { */
-/*         conf->listenerSocketConfigsSize = 0; */
-/*         return UA_STATUSCODE_BADOUTOFMEMORY; */
-/*     } */
-
-    UA_StatusCode retval = UA_SelectBasedNetworkManager(&conf->logger, &conf->networkManager);
+    UA_StatusCode retval =
+        UA_SelectBasedNetworkManager(&conf->logger, &conf->localNetworkManager);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
-
-    // TCP Listeners
-/*     conf->listenerSocketConfigs[0].socketConfig.networkManager = conf->networkManager; */
-/*     conf->listenerSocketConfigs[0].socketConfig.sendBufferSize = sendBufferSize; */
-/*     if(conf->listenerSocketConfigs[0].socketConfig.sendBufferSize <= 0) */
-/*         conf->listenerSocketConfigs[0].socketConfig.sendBufferSize = 65535; */
-/*     conf->listenerSocketConfigs[0].socketConfig.recvBufferSize = recvBufferSize; */
-/*     if(conf->listenerSocketConfigs[0].socketConfig.recvBufferSize <= 0) */
-/*         conf->listenerSocketConfigs[0].socketConfig.recvBufferSize = 65535; */
-/*     conf->listenerSocketConfigs[0].socketConfig.port = portNumber; */
-/*     conf->listenerSocketConfigs[0].socketConfig.createSocket = UA_TCP_ListenerSockets; */
-/*     conf->listenerSocketConfigs[0].socketConfig.customHostname = UA_STRING_NULL; */
-/*     conf->listenerSocketConfigs[0].socketConfig.additionalParameters = NULL; */
-
-/* #ifdef UA_ENABLE_WEBSOCKET_SERVER */
-/*     // Websocket Listeners */
-/*     conf->listenerSocketConfigs[1].socketConfig.networkManager = conf->networkManager; */
-/*     conf->listenerSocketConfigs[1].socketConfig.sendBufferSize = sendBufferSize; */
-/*     if(conf->listenerSocketConfigs[1].socketConfig.sendBufferSize <= 0) */
-/*         conf->listenerSocketConfigs[1].socketConfig.sendBufferSize = 65535; */
-/*     conf->listenerSocketConfigs[1].socketConfig.recvBufferSize = recvBufferSize; */
-/*     if(conf->listenerSocketConfigs[1].socketConfig.recvBufferSize <= 0) */
-/*         conf->listenerSocketConfigs[1].socketConfig.recvBufferSize = 65535; */
-/*     conf->listenerSocketConfigs[1].socketConfig.port = 4880; */
-/*     conf->listenerSocketConfigs[1].socketConfig.createSocket = UA_WSS_ListenerSocket; */
-/*     conf->listenerSocketConfigs[1].socketConfig.customHostname = UA_STRING_NULL; */
-/*     conf->listenerSocketConfigs[1].socketConfig.additionalParameters = NULL; */
-/* #endif */
-
-/*     conf->connectionConfig.sendBufferSize = sendBufferSize; */
-/*     if(conf->connectionConfig.sendBufferSize <= 0) */
-/*         conf->connectionConfig.sendBufferSize = 65535; */
-/*     conf->connectionConfig.recvBufferSize = recvBufferSize; */
-/*     if(conf->connectionConfig.recvBufferSize <= 0) */
-/*         conf->connectionConfig.recvBufferSize = 65535; */
-
-    return retval;
+    conf->listenPort = portNumber;
+    conf->networkManager = &conf->localNetworkManager;
+    conf->registerListenSockets =
+        (UA_StatusCode (*)(UA_NetworkManager *nm, UA_UInt32 listenPort, UA_Server *server,
+                           UA_SocketReceiveCallback receiveCallback,
+                           UA_SocketCallback detachCallback,
+                           size_t *outSocketsSize, UA_UInt64 **outSocketIds,
+                           UA_String **outDomainNames))UA_TCP_ListenSockets;
+    return UA_STATUSCODE_GOOD;
 }
 
-UA_EXPORT UA_StatusCode
+UA_StatusCode
 UA_ServerConfig_addSecurityPolicyNone(UA_ServerConfig *config,
                                       const UA_ByteString *certificate) {
     UA_StatusCode retval;
@@ -321,8 +279,7 @@ UA_ServerConfig_addSecurityPolicyNone(UA_ServerConfig *config,
 
 UA_EXPORT UA_StatusCode
 UA_ServerConfig_addEndpoint(UA_ServerConfig *config, const UA_String securityPolicyUri,
-                            UA_MessageSecurityMode securityMode)
-{
+                            UA_MessageSecurityMode securityMode) {
     UA_StatusCode retval;
 
     /* Allocate the endpoint */
@@ -400,7 +357,7 @@ UA_ServerConfig_setMinimalCustomBuffer(UA_ServerConfig *config, UA_UInt16 portNu
     if (!config)
         return UA_STATUSCODE_BADINVALIDARGUMENT;
 
-    UA_StatusCode retval = setDefaultConfig(config);
+    UA_StatusCode retval = UA_ServerConfig_setBasics(config);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_ServerConfig_clean(config);
         return retval;
@@ -592,7 +549,7 @@ UA_ServerConfig_setDefaultWithSecurityPolicies(UA_ServerConfig *conf,
                                                size_t issuerListSize,
                                                const UA_ByteString *revocationList,
                                                size_t revocationListSize) {
-    UA_StatusCode retval = setDefaultConfig(conf);
+    UA_StatusCode retval = UA_ServerConfig_setBasics(conf);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_ServerConfig_clean(conf);
         return retval;

@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
         tv.tv_usec = timeout * 1000;
         select(0, NULL, NULL, NULL, &tv);
     }
-    retval = UA_Server_run_shutdown(server);
+    UA_Server_run_shutdown(server);
 
  cleanup:
     UA_Server_delete(server);
