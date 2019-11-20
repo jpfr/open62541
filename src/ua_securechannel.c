@@ -167,13 +167,13 @@ UA_SecureChannel_close(UA_SecureChannel *channel) {
         UA_Connection_detachSecureChannel(channel->connection);
     }
 
-    /* Remove session pointers (not the sessions) and NULL the pointers back to
-     * the SecureChannel in the Session */
-    UA_SessionHeader *sh, *temp;
-    LIST_FOREACH_SAFE(sh, &channel->sessions, pointers, temp) {
-        sh->channel = NULL;
-        LIST_REMOVE(sh, pointers);
-    }
+    /* Remove session pointer and NULL the pointers back to the SecureChannel
+     * from the Session */
+    UA_SessionHeader *sh = channel->session;
+    if(!sh)
+        return;
+    sh->channel = NULL;
+    channel->session = NULL;
 }
 
 UA_StatusCode
@@ -307,17 +307,6 @@ UA_SecureChannel_generateNewKeys(UA_SecureChannel *channel) {
     }
 
     return retval;
-}
-
-UA_SessionHeader *
-UA_SecureChannel_getSession(UA_SecureChannel *channel,
-                            const UA_NodeId *authenticationToken) {
-    UA_SessionHeader *sh;
-    LIST_FOREACH(sh, &channel->sessions, pointers) {
-        if(UA_NodeId_equal(&sh->authenticationToken, authenticationToken))
-            break;
-    }
-    return sh;
 }
 
 UA_StatusCode

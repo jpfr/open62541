@@ -31,13 +31,12 @@ extern UA_StatusCode sendAsym_sendFailure;
 extern UA_StatusCode processSym_seqNumberFailure;
 #endif
 
-/* The Session implementation differs between client and server. Still, it is
- * expected that the Session structure begins with the SessionHeader. This is
- * the interface that will be used by the SecureChannel. The lifecycle of
- * Sessions is independent of the underlying SecureChannel. But every Session
- * can be attached to only one SecureChannel. */
+/* The Session implementation differs between client and server. But in both
+ * cases, the Session structure begins with the SessionHeader. This is the
+ * interface that will be used by the SecureChannel. The lifecycle of Sessions
+ * is independent of the underlying SecureChannel. But every Session can be
+ * attached to only one SecureChannel. */
 typedef struct UA_SessionHeader {
-    LIST_ENTRY(UA_SessionHeader) pointers;
     UA_NodeId authenticationToken;
     UA_SecureChannel *channel; /* The pointer back to the SecureChannel in the session. */
 } UA_SessionHeader;
@@ -101,7 +100,7 @@ struct UA_SecureChannel {
     UA_UInt32 receiveSequenceNumber;
     UA_UInt32 sendSequenceNumber;
 
-    LIST_HEAD(, UA_SessionHeader) sessions;
+    UA_SessionHeader* session; /* Can be a client or a server session */
     UA_MessageQueue messages;
 };
 
@@ -128,10 +127,6 @@ UA_SecureChannel_generateNewKeys(UA_SecureChannel* channel);
  * a nonce with the specified length. */
 UA_StatusCode
 UA_SecureChannel_generateLocalNonce(UA_SecureChannel *channel);
-
-UA_SessionHeader *
-UA_SecureChannel_getSession(UA_SecureChannel *channel,
-                            const UA_NodeId *authenticationToken);
 
 UA_StatusCode
 UA_SecureChannel_revolveTokens(UA_SecureChannel *channel);

@@ -496,7 +496,7 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
         UA_LOG_INFO_SESSION(&server->config.logger, session,
                             "ActivateSession: Detach from old channel");
         /* Detach the old SecureChannel and attach the new */
-        UA_Session_detachFromSecureChannel(session);
+        UA_Session_detachCloseSecureChannel(session);
         UA_Session_attachToSecureChannel(session, channel);
     }
 
@@ -509,7 +509,7 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
     response->responseHeader.serviceResult |=
         UA_ByteString_copy(&session->serverNonce, &response->serverNonce);
     if(response->responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
-        UA_Session_detachFromSecureChannel(session);
+        UA_Session_detachCloseSecureChannel(session);
         session->activated = false;
         UA_LOG_INFO_SESSION(&server->config.logger, session,
                             "ActivateSession: Could not generate a server nonce");
