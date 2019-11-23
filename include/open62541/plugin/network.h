@@ -60,7 +60,6 @@ typedef enum {
 
 struct UA_Connection {
     UA_ConnectionState state;
-    UA_ConnectionConfig config;
     UA_SecureChannel *channel;     /* The securechannel that is attached to
                                     * this connection */
     UA_SOCKET sockfd;              /* Most connectivity solutions run on
@@ -68,9 +67,8 @@ struct UA_Connection {
                                     * simplifies the design. */
     UA_DateTime openingDate;       /* The date the connection was created */
     void *handle;                  /* A pointer to internal data */
-    UA_ByteString incompleteChunk; /* A half-received chunk (TCP is a
-                                    * streaming protocol) is stored here */
     UA_UInt64 connectCallbackID;   /* Callback Id, for the connect-loop */
+
     /* Get a buffer for sending */
     UA_StatusCode (*getSendBuffer)(UA_Connection *connection, size_t length,
                                    UA_ByteString *buf);
@@ -111,10 +109,6 @@ struct UA_Connection {
      * Frees up the connection's memory. */
     void (*free)(UA_Connection *connection);
 };
-
-/* Cleans up half-received messages, and so on. Called from connection->free. */
-void UA_EXPORT
-UA_Connection_clear(UA_Connection *connection);
 
 /**
  * Server Network Layer

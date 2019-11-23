@@ -72,6 +72,7 @@ typedef TAILQ_HEAD(UA_MessageQueue, UA_Message) UA_MessageQueue;
 
 struct UA_SecureChannel {
     UA_SecureChannelState   state;
+    UA_ConnectionConfig     config;
     UA_MessageSecurityMode  securityMode;
     /* We use three tokens because when switching tokens the client is allowed to accept
      * messages with the old token for up to 25% of the lifetime after the token would have timed out.
@@ -100,13 +101,22 @@ struct UA_SecureChannel {
     UA_UInt32 receiveSequenceNumber;
     UA_UInt32 sendSequenceNumber;
 
-    UA_SessionHeader* session; /* Can be a client or a server session */
-    UA_MessageQueue messages;
+    UA_SessionHeader *session;     /* Can be a client or a server session */
+    UA_MessageQueue messages;      /* Received chunks */
+    UA_ByteString incompleteChunk; /* A half-received chunk (TCP is a
+                                    * streaming protocol) is stored here */
 };
 
 void UA_SecureChannel_init(UA_SecureChannel *channel);
 
 void UA_SecureChannel_close(UA_SecureChannel *channel);
+
+/* Process the remote configuration in the HEL/ACK handshake. The connection
+ * config is initialized with the local settings. */
+UA_StatusCode
+UA_SecureChannel_processHELACK(UA_SecureChannel *channel,
+                               const UA_ConnectionConfig *localConfig,
+                               const UA_ConnectionConfig *remoteConfig);
 
 UA_StatusCode
 UA_SecureChannel_setSecurityPolicy(UA_SecureChannel *channel,
@@ -194,10 +204,63 @@ UA_StatusCode
 UA_SecureChannel_decryptAddChunk(UA_SecureChannel *channel, const UA_ByteString *chunk,
                                  UA_Boolean allowPreviousToken);
 
+/* The application can decide what it wants to do with an asymmetric encryption.
+ * Usually it will set the SecurityPolicy of the channel based on the asymmetric
+ * security header. After the callback, the channel tries to decrypt the rest of
+ * the chunk. */
+typedef struct {
+    UA_StatusCode
+    (*processHEL)(UA_SecureChannel *channel, void *application,
+                  const UA_ByteString *chunkContent);
+
+    UA_StatusCode
+    (*processACK)(UA_SecureChannel *channel, void *application,
+                  const UA_ByteString *chunkContent);
+
+    UA_StatusCode
+    (*processOPNHeader)(UA_SecureChannel *channel, void *application,
+                        const UA_AsymmetricAlgorithmSecurityHeader *asymHeader);
+
+    UA_Boolean allowPreviousToken;
+} UA_SecureChannel_ProcessChunkSettings;
+
+/* The network layer may receive several chunks in one packet since TCP is a
+ * streaming protocol. The last chunk in the packet may be only partial. This
+ * puts all full chunks into the MessageQueue. If the last chunk is incomplete,
+ * it is buffered in the SecureChannel.
+ *
+ * For zero-copy processing, the elements in the MessageQueue may point in the
+ * packet after this function. Call UA_SecureChannel_persistIncompleteMessages
+ * to persist remaining messages before freeing the packet content. */
+UA_StatusCode
+UA_SecureChannel_processChunks(UA_SecureChannel *channel,
+                               UA_SecureChannel_ProcessChunkSettings *pcs,
+                               void *application,
+                               const UA_ByteString *packet);
+
 /* The network buffer is about to be cleared. Copy all chunks that point into
  * the network buffer into dedicated memory. */
 UA_StatusCode
 UA_SecureChannel_persistIncompleteMessages(UA_SecureChannel *channel);
+
+/* Try to receive at least one complete chunk on the connection. This blocks the
+ * current thread up to the given timeout.
+ *
+ * @param connection The connection
+ * @param application The client or server application
+ * @param processCallback The function pointer for processing each chunk
+ * @param timeout The timeout (in milliseconds) the method will block at most.
+ * @return Returns UA_STATUSCODE_GOOD or an error code. When an timeout occurs,
+ *         UA_STATUSCODE_GOODNONCRITICALTIMEOUT is returned. */
+UA_StatusCode
+UA_SecureChannel_receiveChunksBlocking(UA_SecureChannel *channel,
+                                       UA_SecureChannel_ProcessChunkSettings *pcs,
+                                       void *application, UA_UInt32 timeout);
+
+UA_StatusCode
+UA_SecureChannel_receiveChunksNonBlocking(UA_SecureChannel *channel,
+                                          UA_SecureChannel_ProcessChunkSettings *pcs,
+                                          void *application);
 
 typedef void
 (UA_ProcessMessageCallback)(void *application, UA_SecureChannel *channel,

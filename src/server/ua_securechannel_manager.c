@@ -107,13 +107,8 @@ purgeFirstChannelWithoutSession(UA_SecureChannelManager *cm) {
 }
 
 UA_StatusCode
-UA_SecureChannelManager_create(UA_SecureChannelManager *const cm, UA_Connection *const connection,
-                               const UA_SecurityPolicy *const securityPolicy,
-                               const UA_AsymmetricAlgorithmSecurityHeader *const asymHeader) {
-    /* connection already has a channel attached. */
-    if(connection->channel != NULL)
-        return UA_STATUSCODE_BADINTERNALERROR;
-
+UA_SecureChannelManager_create(UA_SecureChannelManager *cm,
+                               UA_Connection *connection) {
     /* Check if there exists a free SC, otherwise try to purge one SC without a
      * session the purge has been introduced to pass CTT, it is not clear what
      * strategy is expected here */
@@ -127,17 +122,7 @@ UA_SecureChannelManager_create(UA_SecureChannelManager *const cm, UA_Connection 
     channel_entry *entry = (channel_entry *)UA_malloc(sizeof(channel_entry));
     if(!entry)
         return UA_STATUSCODE_BADOUTOFMEMORY;
-
-    /* Create the channel context and parse the sender (remote) certificate used for the
-     * secureChannel. */
     UA_SecureChannel_init(&entry->channel);
-    UA_StatusCode retval =
-        UA_SecureChannel_setSecurityPolicy(&entry->channel, securityPolicy,
-                                           &asymHeader->senderCertificate);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_free(entry);
-        return retval;
-    }
 
     /* Channel state is fresh (0) */
     entry->channel.securityToken.channelId = 0;
