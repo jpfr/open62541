@@ -22,6 +22,8 @@
 #define MSG_NOSIGNAL 0
 #endif
 
+#define UA_RECVSIZE 16384
+
 /****************************/
 /* Generic Socket Functions */
 /****************************/
@@ -29,8 +31,6 @@
 static UA_StatusCode
 connection_getsendbuffer(UA_Connection *connection,
                          size_t length, UA_ByteString *buf) {
-    if(length > connection->config.sendBufferSize)
-        return UA_STATUSCODE_BADCOMMUNICATIONERROR;
     return UA_ByteString_allocBuffer(buf, length);
 }
 
@@ -113,24 +113,14 @@ connection_recv(UA_Connection *connection, UA_ByteString *response,
         }
     }
 
-    response->data = (UA_Byte*)UA_malloc(connection->config.recvBufferSize);
+    response->data = (UA_Byte*)UA_malloc(UA_RECVSIZE);
     if(!response->data) {
         response->length = 0;
         return UA_STATUSCODE_BADOUTOFMEMORY; /* not enough memory retry */
     }
 
-#ifdef _WIN32
-    // windows requires int parameter for length
-    int offset = (int)connection->incompleteChunk.length;
-    int remaining = connection->config.recvBufferSize - offset;
-#else
-    size_t offset = connection->incompleteChunk.length;
-    size_t remaining = connection->config.recvBufferSize - offset;
-#endif
-
     /* Get the received packet(s) */
-    ssize_t ret = UA_recv(connection->sockfd, (char*)&response->data[offset],
-                          remaining, 0);
+    ssize_t ret = UA_recv(connection->sockfd, (char*)&response->data, response->length, 0);
 
     /* The remote side closed the connection */
     if(ret == 0) {
@@ -149,15 +139,8 @@ connection_recv(UA_Connection *connection, UA_ByteString *response,
         return UA_STATUSCODE_BADCONNECTIONCLOSED;
     }
 
-    /* Preprend the last incompleteChunk into the buffer */
-    if (connection->incompleteChunk.length > 0) {
-        memcpy(response->data, connection->incompleteChunk.data,
-               connection->incompleteChunk.length);
-        UA_ByteString_deleteMembers(&connection->incompleteChunk);
-    }
-
     /* Set the length of the received buffer */
-    response->length = offset + (size_t)ret;
+    response->length = (size_t)ret;
     return UA_STATUSCODE_GOOD;
 }
 
@@ -185,7 +168,6 @@ typedef struct {
 
 static void
 ServerNetworkLayerTCP_freeConnection(UA_Connection *connection) {
-    UA_Connection_clear(connection);
     UA_free(connection);
 }
 
@@ -249,7 +231,6 @@ ServerNetworkLayerTCP_add(UA_ServerNetworkLayer *nl, ServerNetworkLayerTCP *laye
     memset(c, 0, sizeof(UA_Connection));
     c->sockfd = newsockfd;
     c->handle = layer;
-    c->config = nl->localConnectionConfig;
     c->send = connection_write;
     c->close = ServerNetworkLayerTCP_close;
     c->free = ServerNetworkLayerTCP_freeConnection;
@@ -764,7 +745,6 @@ UA_ClientConnectionTCP_init(UA_ConnectionConfig config, const UA_String endpoint
     memset(&connection, 0, sizeof(UA_Connection));
 
     connection.state = UA_CONNECTION_OPENING;
-    connection.config = config;
     connection.send = connection_write;
     connection.recv = connection_recv;
     connection.close = ClientNetworkLayerTCP_close;
@@ -826,7 +806,6 @@ UA_ClientConnectionTCP(UA_ConnectionConfig config, const UA_String endpointUrl,
     UA_Connection connection;
     memset(&connection, 0, sizeof(UA_Connection));
     connection.state = UA_CONNECTION_CLOSED;
-    connection.config = config;
     connection.send = connection_write;
     connection.recv = connection_recv;
     connection.close = ClientNetworkLayerTCP_close;

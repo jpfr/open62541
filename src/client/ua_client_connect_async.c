@@ -48,41 +48,6 @@ requestSession(UA_Client *client, UA_UInt32 *requestId);
 static UA_StatusCode
 requestGetEndpoints(UA_Client *client, UA_UInt32 *requestId);
 
-/*receives hello ack, opens secure channel*/
-UA_StatusCode
-processACKResponseAsync(void *application, UA_Connection *connection,
-                         UA_ByteString *chunk) {
-    UA_Client *client = (UA_Client*)application;
-
-    /* Decode the message */
-    size_t offset = 0;
-    UA_TcpMessageHeader messageHeader;
-    UA_TcpAcknowledgeMessage ackMessage;
-    client->connectStatus = UA_TcpMessageHeader_decodeBinary (chunk, &offset,
-                                                              &messageHeader);
-    client->connectStatus |= UA_TcpAcknowledgeMessage_decodeBinary(
-            chunk, &offset, &ackMessage);
-    if (client->connectStatus != UA_STATUSCODE_GOOD) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "Decoding ACK message failed");
-        return client->connectStatus;
-    }
-    UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Received ACK message");
-
-    client->connectStatus =
-        UA_Connection_processHELACK(connection, &client->config.localConnectionConfig,
-                                    (const UA_ConnectionConfig*)&ackMessage);
-    if(client->connectStatus != UA_STATUSCODE_GOOD)
-        return client->connectStatus;
-
-    client->state = UA_CLIENTSTATE_CONNECTED;
-
-    /* Open a SecureChannel. TODO: Select with endpoint  */
-    client->channel.connection = &client->connection;
-    client->connectStatus = openSecureChannelAsync(client/*, false*/);
-    return client->connectStatus;
-}
-
 static UA_StatusCode
 sendHELMessage(UA_Client *client) {
     /* Get a buffer */
@@ -186,47 +151,6 @@ processDecodedOPNResponseAsync(void *application, UA_SecureChannel *channel,
 
     if(client->state < UA_CLIENTSTATE_SECURECHANNEL)
         setClientState(client, UA_CLIENTSTATE_SECURECHANNEL);
-}
-
-UA_StatusCode
-processOPNResponseAsync(void *application, UA_Connection *connection,
-                        UA_ByteString *chunk) {
-    UA_Client *client = (UA_Client*) application;
-    UA_StatusCode retval = UA_SecureChannel_decryptAddChunk(&client->channel, chunk, true);
-    client->connectStatus = retval;
-    if(retval != UA_STATUSCODE_GOOD)
-        goto error;
-    UA_SecureChannel_processCompleteMessages(&client->channel, client, processDecodedOPNResponseAsync);
-    
-    if(client->state < UA_CLIENTSTATE_SECURECHANNEL) {
-        retval = UA_STATUSCODE_BADSECURECHANNELCLOSED;
-        goto error;
-    }
-
-    retval = UA_SecureChannel_persistIncompleteMessages(&client->channel);
-    if(retval != UA_STATUSCODE_GOOD)
-        goto error;
-
-    retval = UA_SecureChannel_generateNewKeys(&client->channel);
-    if(retval != UA_STATUSCODE_GOOD)
-        goto error;
-
-    /* Following requests and responses */
-    UA_UInt32 reqId;
-    if(client->endpointsHandshake)
-        retval = requestGetEndpoints (client, &reqId);
-    else
-        retval = requestSession (client, &reqId);
-
-    if(retval != UA_STATUSCODE_GOOD)
-        goto error;
-
-    return retval;
-
-error:
-    UA_Client_disconnect(client);
-
-    return retval;
 }
 
 /* OPN messges to renew the channel are sent asynchronous */
@@ -546,36 +470,38 @@ requestSession(UA_Client *client, UA_UInt32 *requestId) {
     return client->connectStatus;
 }
 
-UA_StatusCode
-UA_Client_connect_iterate(UA_Client *client) {
-    UA_LOG_TRACE(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                 "Client connect iterate");
-    if (client->connection.state == UA_CONNECTION_ESTABLISHED){
-        if(client->state < UA_CLIENTSTATE_WAITING_FOR_ACK) {
-            client->connectStatus = sendHELMessage(client);
-            if(client->connectStatus == UA_STATUSCODE_GOOD) {
-                setClientState(client, UA_CLIENTSTATE_WAITING_FOR_ACK);
-            } else {
-                client->connection.close(&client->connection);
-                client->connection.free(&client->connection);
-            }
-            return client->connectStatus;
-        }
-    }
 
-    /* If server is not connected */
-    if(client->connection.state == UA_CONNECTION_CLOSED) {
-        client->connectStatus = UA_STATUSCODE_BADCONNECTIONCLOSED;
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "No connection to server.");
+static void
+clientProcessSecureChannelMessage(void *application, UA_SecureChannel *channel,
+                                  UA_MessageType messagetype, UA_UInt32 requestId,
+                                  const UA_ByteString *message) {
+    UA_Client *client = (UA_Client*)client;
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
+    switch(messagetype) {
+    case UA_MESSAGETYPE_OPN:
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel,
+                             "Process an OPN on an open channel");
+        retval = processOPN(server, channel, requestId, message);
+        break;
+    case UA_MESSAGETYPE_MSG:
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process a MSG");
+        retval = processMSG(server, channel, requestId, message);
+        break;
+    case UA_MESSAGETYPE_CLO:
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process a CLO");
+        Service_CloseSecureChannel(server, channel);
+        break;
+    default:
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Invalid message type");
+        retval = UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
+        break;
     }
-
-    if(client->connectStatus != UA_STATUSCODE_GOOD) {
-        client->connection.close(&client->connection);
-        client->connection.free(&client->connection);
+    if(retval != UA_STATUSCODE_GOOD) {
+        UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
+                            "Processing the message failed with StatusCode %s. "
+                            "Closing the channel.", UA_StatusCode_name(retval));
+        UA_Client_close(client);
     }
-
-    return client->connectStatus;
 }
 
 UA_StatusCode

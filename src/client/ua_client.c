@@ -18,12 +18,50 @@
  */
 
 #include <open62541/types_generated_encoding_binary.h>
+#include <open62541/transport_generated.h>
+#include <open62541/transport_generated_encoding_binary.h>
+#include <open62541/transport_generated_handling.h>
 
 #include "ua_client_internal.h"
 #include "ua_connection_internal.h"
 #include "ua_types_encoding_binary.h"
 
 #define STATUS_CODE_BAD_POINTER 0x01
+
+/*receives hello ack, opens secure channel*/
+UA_StatusCode
+processACKResponseAsync(UA_SecureChannel *channel, void *application,
+                        const UA_ByteString *chunkContent) {
+    UA_Client *client = (UA_Client*)application;
+
+    /* Decode the message */
+    size_t offset = 0;
+    UA_TcpMessageHeader messageHeader;
+    UA_TcpAcknowledgeMessage ackMessage;
+    client->connectStatus = UA_TcpMessageHeader_decodeBinary(chunkContent, &offset,
+                                                             &messageHeader);
+    client->connectStatus |= UA_TcpAcknowledgeMessage_decodeBinary(chunkContent,
+                                                                   &offset, &ackMessage);
+    if (client->connectStatus != UA_STATUSCODE_GOOD) {
+        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_NETWORK,
+                     "Decoding ACK message failed");
+        return client->connectStatus;
+    }
+    UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Received ACK message");
+
+    client->connectStatus =
+        UA_SecureChannel_processHELACK(&client->channel, &client->config.localConnectionConfig,
+                                       (const UA_ConnectionConfig*)&ackMessage);
+    if(client->connectStatus != UA_STATUSCODE_GOOD)
+        return client->connectStatus;
+
+    client->state = UA_CLIENTSTATE_CONNECTED;
+
+    /* Open a SecureChannel. TODO: Select with endpoint  */
+    client->channel.connection = &client->connection;
+    //client->connectStatus = openSecureChannelAsync(client/*, false*/);
+    return client->connectStatus;
+}
 
 /********************/
 /* Client Lifecycle */
@@ -89,9 +127,8 @@ UA_Client_deleteMembers(UA_Client *client) {
     /* Commented as UA_SecureChannel_deleteMembers already done
      * in UA_Client_disconnect function */
     //UA_SecureChannel_deleteMembersCleanup(&client->channel);
-    if (client->connection.free)
+    if(client->connection.free)
         client->connection.free(&client->connection);
-    UA_Connection_clear(&client->connection);
     UA_NodeId_deleteMembers(&client->authenticationToken);
     UA_String_deleteMembers(&client->endpointUrl);
 
@@ -259,7 +296,7 @@ processAsyncResponse(UA_Client *client, UA_UInt32 requestId, const UA_NodeId *re
 static void
 processServiceResponse(void *application, UA_SecureChannel *channel,
                        UA_MessageType messageType, UA_UInt32 requestId,
-                       const UA_ByteString *message) {
+                       UA_ByteString *message) {
     SyncResponseDescription *rd = (SyncResponseDescription*)application;
 
     /* Must be OPN or MSG */
@@ -340,16 +377,6 @@ finish:
     }
 }
 
-/* Forward complete chunks directly to the securechannel */
-static UA_StatusCode
-client_processChunk(void *application, UA_Connection *connection, UA_ByteString *chunk) {
-    SyncResponseDescription *rd = (SyncResponseDescription*)application;
-    UA_StatusCode retval = UA_SecureChannel_decryptAddChunk(&rd->client->channel, chunk, true);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
-    return UA_SecureChannel_persistIncompleteMessages(&rd->client->channel);
-}
-
 /* Receive and process messages until a synchronous message arrives or the
  * timout finishes */
 UA_StatusCode
@@ -363,7 +390,7 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
     if(synchronousRequestId)
         rd.requestId = *synchronousRequestId;
 
-    UA_StatusCode retval;
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
     do {
         UA_DateTime now = UA_DateTime_nowMonotonic();
 
@@ -375,8 +402,9 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
          * if(maxDate - now) < (UA_DATETIME_MSEC/2) */
         UA_UInt32 timeout = (UA_UInt32)(((maxDate - now) + (UA_DATETIME_MSEC - 1)) / UA_DATETIME_MSEC);
 
-        retval = UA_Connection_receiveChunksBlocking(&client->connection, &rd, client_processChunk, timeout);
-        UA_SecureChannel_processCompleteMessages(&client->channel, &rd, processServiceResponse);
+        retval |= UA_SecureChannel_receiveChunksBlocking(&client->channel, timeout);
+        retval |= UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
+                                                           processServiceResponse);
 
         if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
             if(retval == UA_STATUSCODE_BADCONNECTIONCLOSED)
@@ -385,6 +413,7 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
             break;
         }
     } while(!rd.received);
+
     return retval;
 }
 
@@ -425,9 +454,11 @@ receiveServiceResponseAsync(UA_Client *client, void *response,
                              const UA_DataType *responseType) {
     SyncResponseDescription rd = { client, false, 0, response, responseType };
 
-    UA_StatusCode retval = UA_Connection_receiveChunksNonBlocking(
-            &client->connection, &rd, client_processChunk);
-    UA_SecureChannel_processCompleteMessages(&client->channel, &rd, processServiceResponse);
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
+    retval |= UA_SecureChannel_receiveChunksNonBlocking(&client->channel);
+    retval |= UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
+                                                       processServiceResponse);
+
     /*let client run when non critical timeout*/
     if(retval != UA_STATUSCODE_GOOD
             && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
@@ -444,10 +475,10 @@ receivePacketAsync(UA_Client *client) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     if (UA_Client_getState(client) == UA_CLIENTSTATE_DISCONNECTED ||
             UA_Client_getState(client) == UA_CLIENTSTATE_WAITING_FOR_ACK) {
-        retval = UA_Connection_receiveChunksNonBlocking(&client->connection, client, processACKResponseAsync);
+        retval = UA_SecureChannel_receiveChunksNonBlocking(&client->channel);
     }
     else if(UA_Client_getState(client) == UA_CLIENTSTATE_CONNECTED) {
-        retval = UA_Connection_receiveChunksNonBlocking(&client->connection, client, processOPNResponseAsync);
+        retval = UA_SecureChannel_receiveChunksNonBlocking(&client->channel);
     }
     if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
         if(retval == UA_STATUSCODE_BADCONNECTIONCLOSED)

@@ -205,8 +205,12 @@ UA_StatusCode
 receivePacketAsync(UA_Client *client);
 
 UA_StatusCode
-processACKResponseAsync(void *application, UA_Connection *connection,
-                        UA_ByteString *chunk);
+processACKResponseAsync(UA_SecureChannel *channel, void *application,
+                        const UA_ByteString *chunkContent);
+
+UA_StatusCode
+processOPNHeader(UA_SecureChannel *channel, void *application,
+                 const UA_AsymmetricAlgorithmSecurityHeader *asymHeader);
 
 UA_StatusCode
 processOPNResponseAsync(void *application, UA_Connection *connection,

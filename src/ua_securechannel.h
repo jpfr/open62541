@@ -64,6 +64,12 @@ typedef struct UA_Message {
 
 typedef enum {
     UA_SECURECHANNELSTATE_FRESH,
+    UA_SECURECHANNELSTATE_HEL_SENT,
+    UA_SECURECHANNELSTATE_HEL_RECEIVED,
+    UA_SECURECHANNELSTATE_ACK_SENT,
+    UA_SECURECHANNELSTATE_ACK_RECEIVED,
+    UA_SECURECHANNELSTATE_OPN_SENT,
+    UA_SECURECHANNELSTATE_OPN_RECEIVED,
     UA_SECURECHANNELSTATE_OPEN,
     UA_SECURECHANNELSTATE_CLOSED
 } UA_SecureChannelState;
@@ -74,16 +80,20 @@ struct UA_SecureChannel {
     UA_SecureChannelState   state;
     UA_ConnectionConfig     config;
     UA_MessageSecurityMode  securityMode;
-    /* We use three tokens because when switching tokens the client is allowed to accept
-     * messages with the old token for up to 25% of the lifetime after the token would have timed out.
-     * For messages that are sent, the new token is already used, which is contained in the securityToken
-     * variable. The nextSecurityToken variable holds a newly issued token, that will be automatically
-     * revolved into the securityToken variable. This could be done with two variables, but would require
-     * greater changes to the current code. This could be done in the future after the client and networking
-     * structure has been reworked, which would make this easier to implement. */
+    /* We use three tokens because when switching tokens the client is allowed
+     * to accept messages with the old token for up to 25% of the lifetime after
+     * the token would have timed out. For messages that are sent, the new token
+     * is already used, which is contained in the securityToken variable. The
+     * nextSecurityToken variable holds a newly issued token, that will be
+     * automatically revolved into the securityToken variable. This could be
+     * done with two variables, but would require greater changes to the current
+     * code. This could be done in the future after the client and networking
+     * structure has been reworked, which would make this easier to
+     * implement. */
     UA_ChannelSecurityToken securityToken; /* the channelId is contained in the securityToken */
     UA_ChannelSecurityToken nextSecurityToken;
     UA_ChannelSecurityToken previousSecurityToken;
+    UA_Boolean allowPreviousToken;
 
     /* The endpoint and context of the channel */
     const UA_SecurityPolicy *securityPolicy;
@@ -123,10 +133,7 @@ UA_SecureChannel_setSecurityPolicy(UA_SecureChannel *channel,
                                    const UA_SecurityPolicy *securityPolicy,
                                    const UA_ByteString *remoteCertificate);
 
-/* Remove (partially) received unprocessed messages */
-void UA_SecureChannel_deleteMessages(UA_SecureChannel *channel);
-
-void UA_SecureChannel_deleteMembers(UA_SecureChannel *channel);
+void UA_SecureChannel_clear(UA_SecureChannel *channel);
 
 /* Generates new keys and sets them in the channel context */
 UA_StatusCode
@@ -144,6 +151,18 @@ UA_SecureChannel_revolveTokens(UA_SecureChannel *channel);
 /**
  * Sending Messages
  * ---------------- */
+
+void
+hideBytesAsym(const UA_SecureChannel *channel, UA_Byte **buf_start, const UA_Byte **buf_end);
+
+size_t
+calculateAsymAlgSecurityHeaderLength(const UA_SecureChannel *channel);
+
+UA_StatusCode
+prependHeadersAsym(UA_SecureChannel *channel, UA_Byte *header_pos,
+                   const UA_Byte *buf_end, size_t totalLength,
+                   size_t securityHeaderLength, UA_UInt32 requestId,
+                   size_t *finalLength);
 
 UA_StatusCode
 UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel, UA_UInt32 requestId,
@@ -195,34 +214,46 @@ UA_MessageContext_finish(UA_MessageContext *mc);
 void
 UA_MessageContext_abort(UA_MessageContext *mc);
 
+UA_StatusCode
+checkLimitsSym(UA_MessageContext *messageContext, size_t *bodyLength);
+
+UA_StatusCode
+checkSymHeader(UA_SecureChannel *channel, UA_UInt32 tokenId);
+
+UA_StatusCode
+processSequenceNumberAsym(UA_SecureChannel *channel, UA_UInt32 sequenceNumber);
+
+UA_StatusCode
+checkAsymHeader(UA_SecureChannel *channel,
+                const UA_AsymmetricAlgorithmSecurityHeader *asymHeader);
+
+UA_StatusCode
+decryptAndVerifyChunk(const UA_SecureChannel *channel,
+                      const UA_SecurityPolicyCryptoModule *cryptoModule,
+                      UA_MessageType messageType, const UA_ByteString *chunk,
+                      size_t offset, UA_UInt32 *requestId,
+                      UA_UInt32 *sequenceNumber, UA_ByteString *payload);
+
+UA_StatusCode
+processSequenceNumberSym(UA_SecureChannel *channel, UA_UInt32 sequenceNumber);
+
+UA_StatusCode
+encodeHeadersSym(UA_MessageContext *const messageContext, size_t totalLength);
+
+void
+setBufPos(UA_MessageContext *mc);
+
+UA_StatusCode
+decodeOPNHeader(UA_SecureChannel *channel, void *application,
+                UA_ByteString *chunkContent, size_t *offset);
+
+UA_StatusCode
+UA_SecureChannel_generateRemoteKeys(const UA_SecureChannel *channel,
+                                    const UA_SecurityPolicy *securityPolicy);
+
 /**
  * Receive Message
  * --------------- */
-
-/* Decrypt a chunk and add it to the message. Create a new message if necessary. */
-UA_StatusCode
-UA_SecureChannel_decryptAddChunk(UA_SecureChannel *channel, const UA_ByteString *chunk,
-                                 UA_Boolean allowPreviousToken);
-
-/* The application can decide what it wants to do with an asymmetric encryption.
- * Usually it will set the SecurityPolicy of the channel based on the asymmetric
- * security header. After the callback, the channel tries to decrypt the rest of
- * the chunk. */
-typedef struct {
-    UA_StatusCode
-    (*processHEL)(UA_SecureChannel *channel, void *application,
-                  const UA_ByteString *chunkContent);
-
-    UA_StatusCode
-    (*processACK)(UA_SecureChannel *channel, void *application,
-                  const UA_ByteString *chunkContent);
-
-    UA_StatusCode
-    (*processOPNHeader)(UA_SecureChannel *channel, void *application,
-                        const UA_AsymmetricAlgorithmSecurityHeader *asymHeader);
-
-    UA_Boolean allowPreviousToken;
-} UA_SecureChannel_ProcessChunkSettings;
 
 /* The network layer may receive several chunks in one packet since TCP is a
  * streaming protocol. The last chunk in the packet may be only partial. This
@@ -233,9 +264,7 @@ typedef struct {
  * packet after this function. Call UA_SecureChannel_persistIncompleteMessages
  * to persist remaining messages before freeing the packet content. */
 UA_StatusCode
-UA_SecureChannel_processChunks(UA_SecureChannel *channel,
-                               UA_SecureChannel_ProcessChunkSettings *pcs,
-                               void *application,
+UA_SecureChannel_processPacket(UA_SecureChannel *channel,
                                const UA_ByteString *packet);
 
 /* The network buffer is about to be cleared. Copy all chunks that point into
@@ -253,19 +282,15 @@ UA_SecureChannel_persistIncompleteMessages(UA_SecureChannel *channel);
  * @return Returns UA_STATUSCODE_GOOD or an error code. When an timeout occurs,
  *         UA_STATUSCODE_GOODNONCRITICALTIMEOUT is returned. */
 UA_StatusCode
-UA_SecureChannel_receiveChunksBlocking(UA_SecureChannel *channel,
-                                       UA_SecureChannel_ProcessChunkSettings *pcs,
-                                       void *application, UA_UInt32 timeout);
+UA_SecureChannel_receiveChunksBlocking(UA_SecureChannel *channel, UA_UInt32 timeout);
 
 UA_StatusCode
-UA_SecureChannel_receiveChunksNonBlocking(UA_SecureChannel *channel,
-                                          UA_SecureChannel_ProcessChunkSettings *pcs,
-                                          void *application);
+UA_SecureChannel_receiveChunksNonBlocking(UA_SecureChannel *channel);
 
 typedef void
 (UA_ProcessMessageCallback)(void *application, UA_SecureChannel *channel,
                             UA_MessageType messageType, UA_UInt32 requestId,
-                            const UA_ByteString *message);
+                            UA_ByteString *message);
 
 /* Process received complete messages in-order. The callback function is called
  * with the complete message body if the message is complete. The message is

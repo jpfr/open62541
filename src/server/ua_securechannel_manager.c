@@ -37,14 +37,14 @@ UA_SecureChannelManager_deleteMembers(UA_SecureChannelManager *cm) {
     TAILQ_FOREACH_SAFE(entry, &cm->channels, pointers, temp) {
         TAILQ_REMOVE(&cm->channels, entry, pointers);
         UA_SecureChannel_close(&entry->channel);
-        UA_SecureChannel_deleteMembers(&entry->channel);
+        UA_SecureChannel_clear(&entry->channel);
         UA_free(entry);
     }
 }
 
 static void
 removeSecureChannelCallback(void *_, channel_entry *entry) {
-    UA_SecureChannel_deleteMembers(&entry->channel);
+    UA_SecureChannel_clear(&entry->channel);
 }
 
 static void
@@ -129,6 +129,7 @@ UA_SecureChannelManager_create(UA_SecureChannelManager *cm,
     entry->channel.securityToken.tokenId = cm->lastTokenId++;
     entry->channel.securityToken.createdAt = UA_DateTime_now();
     entry->channel.securityToken.revisedLifetime = cm->server->config.maxSecurityTokenLifetime;
+    entry->channel.allowPreviousToken = false;
 
     TAILQ_INSERT_TAIL(&cm->channels, entry, pointers);
     UA_atomic_addUInt32(&cm->currentChannelCount, 1);

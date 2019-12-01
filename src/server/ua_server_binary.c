@@ -279,9 +279,8 @@ getServicePointers(UA_UInt32 requestTypeId, const UA_DataType **requestType,
 
 /* HEL -> Open up the connection */
 static UA_StatusCode
-processHEL(UA_SecureChannel *channel, void *application,
+processHEL(UA_Server *server, UA_SecureChannel *channel,
            const UA_ByteString *chunkContent) {
-    UA_Server *server = (UA_Server*)application; 
     if(!channel->connection)
         return UA_STATUSCODE_BADINTERNALERROR;
     
@@ -348,63 +347,125 @@ processHEL(UA_SecureChannel *channel, void *application,
     return connection->send(connection, &ack_msg);
 }
 
-/* OPN -> Open up/renew the securechannel */
 static UA_StatusCode
 processOPN(UA_Server *server, UA_SecureChannel *channel,
-           const UA_UInt32 requestId, const UA_ByteString *msg) {
-    /* Decode the request */
+           UA_ByteString *message) {
+    /* Decode the asymmetric algorithm security header */
     size_t offset = 0;
-    UA_NodeId requestType;
-    UA_OpenSecureChannelRequest openSecureChannelRequest;
-    UA_StatusCode retval = UA_NodeId_decodeBinary(msg, &offset, &requestType);
-
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_NodeId_clear(&requestType);
-        UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
-                            "Could not decode the NodeId. Closing the connection");
-        UA_SecureChannelManager_close(&server->secureChannelManager, channel->securityToken.channelId);
+    UA_AsymmetricAlgorithmSecurityHeader asymHeader;
+    UA_StatusCode retval =
+        UA_AsymmetricAlgorithmSecurityHeader_decodeBinary(message, &offset, &asymHeader);
+    if(retval != UA_STATUSCODE_GOOD)
         return retval;
-    }
-    retval = UA_OpenSecureChannelRequest_decodeBinary(msg, &offset, &openSecureChannelRequest);
 
-    /* Error occurred */
-    if(retval != UA_STATUSCODE_GOOD ||
-       requestType.identifier.numeric != UA_TYPES[UA_TYPES_OPENSECURECHANNELREQUEST].binaryEncodingId) {
-        UA_NodeId_clear(&requestType);
-        UA_OpenSecureChannelRequest_clear(&openSecureChannelRequest);
-        UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
-                            "Could not decode the OPN message. Closing the connection.");
-        UA_SecureChannelManager_close(&server->secureChannelManager, channel->securityToken.channelId);
+    /* Fresh channel -> Set the policy */
+    if(!channel->securityPolicy) {
+        /* Iterate over available endpoints and choose the correct one */
+        UA_SecurityPolicy *securityPolicy = NULL;
+        for(size_t i = 0; i < server->config.securityPoliciesSize; ++i) {
+            UA_SecurityPolicy *policy = &server->config.securityPolicies[i];
+            if(!UA_ByteString_equal(&asymHeader.securityPolicyUri, &policy->policyUri))
+                continue;
+
+            retval = policy->asymmetricModule.
+                compareCertificateThumbprint(policy, &asymHeader.receiverCertificateThumbprint);
+            if(retval != UA_STATUSCODE_GOOD)
+                continue;
+
+            /* We found the correct policy (except for security mode). The endpoint
+             * needs to be selected by the client / server to match the security
+             * mode in the endpoint for the session. */
+            securityPolicy = policy;
+            break;
+        }
+
+        if(!securityPolicy) {
+            return UA_STATUSCODE_BADSECURITYPOLICYREJECTED;
+            UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
+        }
+
+        /* Attach the SecurityPolicy to the SecureChannel. This has to be done before
+         * the message content is decoded. */
+        retval = UA_SecureChannel_setSecurityPolicy(channel, securityPolicy,
+                                                    &asymHeader.senderCertificate);
+        if(retval != UA_STATUSCODE_GOOD) {
+            UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
+            return retval;
+        }
+    }
+
+    /* Do some more checks that depend on a configured SecurityPolicy */
+    retval = checkAsymHeader(channel, &asymHeader);
+    UA_AsymmetricAlgorithmSecurityHeader_deleteMembers(&asymHeader);
+    if(retval != UA_STATUSCODE_GOOD)
         return retval;
-    }
-    UA_NodeId_clear(&requestType);
 
-    /* Call the service */
+    /* Decrypt */
+    UA_UInt32 requestId = 0;
+    UA_UInt32 sequenceNumber = 0;
+    retval = decryptAndVerifyChunk(channel,
+                                   &channel->securityPolicy->asymmetricModule.cryptoModule,
+                                   UA_MESSAGETYPE_OPN, message, offset, &requestId,
+                                   &sequenceNumber, message);
+    if(retval != UA_STATUSCODE_GOOD)
+        return retval;
+
+    /* Check the sequence number. Skip sequence number checking for fuzzer to
+     * improve coverage */
+#ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    retval = processSequenceNumberAsym(channel, sequenceNumber);
+    if(retval != UA_STATUSCODE_GOOD)
+        return retval;
+#endif
+
     UA_OpenSecureChannelResponse openScResponse;
     UA_OpenSecureChannelResponse_init(&openScResponse);
+
+    /* Decode the request */
+    UA_OpenSecureChannelRequest openSecureChannelRequest;
+    UA_NodeId requestType;
+    retval |= UA_NodeId_decodeBinary(message, &offset, &requestType);
+    retval |= UA_OpenSecureChannelRequest_decodeBinary(message, &offset, &openSecureChannelRequest);
+    if(retval != UA_STATUSCODE_GOOD) {
+        UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
+                            "Could not decode OPN message. Closing the connection");
+        goto cleanup;
+    }
+
+    /* Error occurred */
+    if(requestType.identifier.numeric != UA_TYPES[UA_TYPES_OPENSECURECHANNELREQUEST].binaryEncodingId) {
+        UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
+                            "Wrong request type in OPN message. Closing the connection.");
+        goto cleanup;
+    }
+
+    /* Call the service */
     Service_OpenSecureChannel(server, channel, &openSecureChannelRequest, &openScResponse);
-    UA_OpenSecureChannelRequest_clear(&openSecureChannelRequest);
     if(openScResponse.responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
-        UA_LOG_INFO_CHANNEL(&server->config.logger, channel, "Could not open a SecureChannel. "
-                            "Closing the connection.");
-        UA_SecureChannelManager_close(&server->secureChannelManager,
-                                      channel->securityToken.channelId);
-        return openScResponse.responseHeader.serviceResult;
+        UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
+                            "Could not open a SecureChannel. Closing the connection.");
+        retval = openScResponse.responseHeader.serviceResult;
+        goto cleanup;
     }
 
     /* Send the response */
     retval = UA_SecureChannel_sendAsymmetricOPNMessage(channel, requestId, &openScResponse,
                                                        &UA_TYPES[UA_TYPES_OPENSECURECHANNELRESPONSE]);
-    UA_OpenSecureChannelResponse_clear(&openScResponse);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
                             "Could not send the OPN answer with error code %s",
                             UA_StatusCode_name(retval));
-        UA_SecureChannelManager_close(&server->secureChannelManager,
-                                      channel->securityToken.channelId);
-        return retval;
+        goto cleanup;
     }
 
+ cleanup:
+    UA_NodeId_clear(&requestType);
+    UA_OpenSecureChannelRequest_clear(&openSecureChannelRequest);
+    UA_OpenSecureChannelResponse_clear(&openScResponse);
+    if(retval != UA_STATUSCODE_GOOD) {
+        UA_SecureChannelManager_close(&server->secureChannelManager,
+                                      channel->securityToken.channelId);
+    }
     return retval;
 }
 
@@ -676,69 +737,47 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
 static void
 processSecureChannelMessage(void *application, UA_SecureChannel *channel,
                             UA_MessageType messagetype, UA_UInt32 requestId,
-                            const UA_ByteString *message) {
+                            UA_ByteString *message) {
     UA_Server *server = (UA_Server*)application;
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     switch(messagetype) {
+    case UA_MESSAGETYPE_HEL:
+        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+                             "Process a HEL message");
+        retval = processHEL(server, channel, message);
+        if(retval == UA_STATUSCODE_GOOD)
+            channel->state = UA_SECURECHANNELSTATE_ACK_SENT;
+        break;
     case UA_MESSAGETYPE_OPN:
         UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
-                             "Process an OPN on an open channel");
-        retval = processOPN(server, channel, requestId, message);
+                             "Process an OPN message");
+        retval = processOPN(server, channel, message);
+        if(retval == UA_STATUSCODE_GOOD)
+            channel->state = UA_SECURECHANNELSTATE_OPEN;
         break;
     case UA_MESSAGETYPE_MSG:
-        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel, "Process a MSG");
+        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+                             "Process a MSG message");
         retval = processMSG(server, channel, requestId, message);
         break;
     case UA_MESSAGETYPE_CLO:
-        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel, "Process a CLO");
+        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+                             "Process a CLO message");
         Service_CloseSecureChannel(server, channel);
         break;
     default:
-        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel, "Invalid message type");
+        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+                             "Received an invalid message type");
         retval = UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
         break;
     }
+
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
                             "Processing the message failed with StatusCode %s. "
                             "Closing the channel.", UA_StatusCode_name(retval));
         Service_CloseSecureChannel(server, channel);
     }
-}
-
-/* Attach the SecurityPolicy to the SecureChannel. This has to be done before
- * the message content is decoded. */
-static UA_StatusCode
-processOPNHeader(UA_SecureChannel *channel, void *application,
-                 const UA_AsymmetricAlgorithmSecurityHeader *asymHeader) {
-    UA_Server *server = (UA_Server*)application;
-
-    /* Iterate over available endpoints and choose the correct one */
-    UA_SecurityPolicy *securityPolicy = NULL;
-    for(size_t i = 0; i < server->config.securityPoliciesSize; ++i) {
-        UA_SecurityPolicy *policy = &server->config.securityPolicies[i];
-        if(!UA_ByteString_equal(&asymHeader->securityPolicyUri, &policy->policyUri))
-            continue;
-
-        UA_StatusCode retval = policy->asymmetricModule.
-            compareCertificateThumbprint(policy, &asymHeader->receiverCertificateThumbprint);
-        if(retval != UA_STATUSCODE_GOOD)
-            continue;
-
-        /* We found the correct policy (except for security mode). The endpoint
-         * needs to be selected by the client / server to match the security
-         * mode in the endpoint for the session. */
-        securityPolicy = policy;
-        break;
-    }
-
-    if(!securityPolicy)
-        return UA_STATUSCODE_BADSECURITYPOLICYREJECTED;
-
-    /* Create the channel context and parse the sender (remote) certificate used for the
-     * secureChannel. */
-    return UA_SecureChannel_setSecurityPolicy(channel, securityPolicy,
-                                              &asymHeader->senderCertificate);
 }
 
 void
@@ -762,16 +801,10 @@ UA_Server_processBinaryMessage(UA_Server *server, UA_Connection *connection,
         }
     }
 
-
     UA_SecureChannel *channel = connection->channel;
     UA_assert(channel);
 
-    UA_SecureChannel_ProcessChunkSettings pcs;
-    pcs.processHEL = processHEL;
-    pcs.processACK = NULL;
-    pcs.processOPNHeader = processOPNHeader;
-    pcs.allowPreviousToken = false;
-    UA_StatusCode retval = UA_SecureChannel_processChunks(channel, &pcs, server, message);
+    UA_StatusCode retval = UA_SecureChannel_processPacket(channel, message);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_INFO(&server->config.logger, UA_LOGCATEGORY_NETWORK,
                     "Connection %i | Processing the message failed with "
@@ -788,12 +821,9 @@ UA_Server_processBinaryMessage(UA_Server *server, UA_Connection *connection,
     /* Process complete messages */
     UA_SecureChannel_processCompleteMessages(channel, server, processSecureChannelMessage);
 
-    /* Is the channel still open? */
-    if(channel->state == UA_SECURECHANNELSTATE_CLOSED)
-        return;
-
     /* Store unused decoded chunks internally in the SecureChannel */
-    UA_SecureChannel_persistIncompleteMessages(connection->channel);
+    if(channel->state != UA_SECURECHANNELSTATE_CLOSED)
+        UA_SecureChannel_persistIncompleteMessages(connection->channel);
 }
 
 #if UA_MULTITHREADING >= 200

@@ -40,52 +40,10 @@ setClientState(UA_Client *client, UA_ClientState state) {
 #define UA_BITMASK_MESSAGETYPE 0x00ffffffu
 #define UA_BITMASK_CHUNKTYPE 0xff000000u
 
-static UA_StatusCode
-processACKResponse(void *application, UA_Connection *connection, UA_ByteString *chunk) {
-    UA_Client *client = (UA_Client*)application;
-
-    /* Decode the message */
-    size_t offset = 0;
-    UA_StatusCode retval;
-    UA_TcpMessageHeader messageHeader;
-    UA_TcpAcknowledgeMessage ackMessage;
-    retval = UA_TcpMessageHeader_decodeBinary(chunk, &offset, &messageHeader);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "Decoding ACK message failed");
-        return retval;
-    }
-
-    // check if we got an error response from the server
-    UA_MessageType messageType = (UA_MessageType)
-        (messageHeader.messageTypeAndChunkType & UA_BITMASK_MESSAGETYPE);
-    UA_ChunkType chunkType = (UA_ChunkType)
-        (messageHeader.messageTypeAndChunkType & UA_BITMASK_CHUNKTYPE);
-    if (messageType == UA_MESSAGETYPE_ERR) {
-        // Header + ErrorMessage (error + reasonLength_field + length)
-        UA_StatusCode error = *(UA_StatusCode*)(&chunk->data[offset]);
-        UA_UInt32 len = *((UA_UInt32*)&chunk->data[offset + 4]);
-        UA_Byte *data = (UA_Byte*)&chunk->data[offset + 4+4];
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                    "Received ERR response. %s - %.*s", UA_StatusCode_name(error), len, data);
-        return error;
-    }
-    if (chunkType != UA_CHUNKTYPE_FINAL) {
-        return UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
-    }
-
-    /* Decode the ACK message */
-    retval = UA_TcpAcknowledgeMessage_decodeBinary(chunk, &offset, &ackMessage);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "Decoding ACK message failed");
-        return retval;
-    }
-    UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Received ACK message");
-
-    /* Process the ACK message */
-    return UA_Connection_processHELACK(connection, &client->config.localConnectionConfig,
-                                       (const UA_ConnectionConfig*)&ackMessage);
+UA_StatusCode
+processOPNHeader(UA_SecureChannel *channel, void *application,
+                 const UA_AsymmetricAlgorithmSecurityHeader *asymHeader) {
+    return UA_STATUSCODE_GOOD;
 }
 
 static UA_StatusCode
@@ -138,8 +96,7 @@ HelAckHandshake(UA_Client *client, const UA_String endpointUrl) {
                  "Sent HEL message");
 
     /* Loop until we have a complete chunk */
-    retval = UA_Connection_receiveChunksBlocking(conn, client, processACKResponse,
-                                                 client->config.timeout);
+    retval = UA_SecureChannel_receiveChunksBlocking(&client->channel, client->config.timeout);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_NETWORK,
                      "Receiving ACK message failed with %s", UA_StatusCode_name(retval));
@@ -844,7 +801,7 @@ UA_Client_connectTCPSecureChannel(UA_Client *client, const UA_String endpointUrl
                 "TCP connection established");
 
     /* Perform the HEL/ACK handshake */
-    client->connection.config = client->config.localConnectionConfig;
+    client->channel.config = client->config.localConnectionConfig;
     retval = HelAckHandshake(client, endpointUrl);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
@@ -1084,7 +1041,7 @@ sendCloseSecureChannel(UA_Client *client) {
                                           &UA_TYPES[UA_TYPES_CLOSESECURECHANNELREQUEST]);
     UA_CloseSecureChannelRequest_deleteMembers(&request);
     UA_SecureChannel_close(&client->channel);
-    UA_SecureChannel_deleteMembers(&client->channel);
+    UA_SecureChannel_clear(&client->channel);
 }
 
 UA_StatusCode
@@ -1116,7 +1073,7 @@ UA_Client_disconnect(UA_Client *client) {
     UA_Client_Subscriptions_clean(client);
 #endif
 
-    UA_SecureChannel_deleteMembers(&client->channel);
+    UA_SecureChannel_clear(&client->channel);
 
     setClientState(client, UA_CLIENTSTATE_DISCONNECTED);
     return UA_STATUSCODE_GOOD;
