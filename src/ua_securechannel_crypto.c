@@ -327,7 +327,7 @@ hideBytesAsym(const UA_SecureChannel *channel, UA_Byte **buf_start,
 
 #ifdef UA_ENABLE_ENCRYPTION
 
-static void
+void
 padChunkAsym(UA_SecureChannel *channel, const UA_ByteString *const buf,
              size_t securityHeaderLength, UA_Byte **buf_pos) {
     const UA_SecurityPolicy *const securityPolicy = channel->securityPolicy;
@@ -372,7 +372,7 @@ padChunkAsym(UA_SecureChannel *channel, const UA_ByteString *const buf,
     }
 }
 
-static UA_StatusCode
+UA_StatusCode
 signAndEncryptAsym(UA_SecureChannel *const channel, size_t preSignLength,
                    UA_ByteString *buf, size_t securityHeaderLength,
                    size_t totalLength) {
@@ -426,7 +426,7 @@ calculatePaddingSym(const UA_SecurityPolicy *securityPolicy, const void *channel
     return (UA_UInt16)padding;
 }
 
-static void
+void
 padChunkSym(UA_MessageContext *messageContext, size_t bodyLength) {
     if(messageContext->channel->securityMode != UA_MESSAGESECURITYMODE_SIGNANDENCRYPT)
         return;
@@ -454,7 +454,7 @@ padChunkSym(UA_MessageContext *messageContext, size_t bodyLength) {
     }
 }
 
-static UA_StatusCode
+UA_StatusCode
 signChunkSym(UA_MessageContext *const messageContext, size_t preSigLength) {
     const UA_SecureChannel *channel = messageContext->channel;
     if(channel->securityMode != UA_MESSAGESECURITYMODE_SIGN &&
@@ -473,7 +473,7 @@ signChunkSym(UA_MessageContext *const messageContext, size_t preSigLength) {
         sign(securityPolicy, channel->channelContext, &dataToSign, &signature);
 }
 
-static UA_StatusCode
+UA_StatusCode
 encryptChunkSym(UA_MessageContext *const messageContext, size_t totalLength) {
     const UA_SecureChannel *channel = messageContext->channel;
     if(channel->securityMode != UA_MESSAGESECURITYMODE_SIGNANDENCRYPT)

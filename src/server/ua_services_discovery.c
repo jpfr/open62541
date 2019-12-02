@@ -588,7 +588,17 @@ periodicServerRegister(UA_Server *server, void *data) {
         */
         retval = register_server_with_discovery_server(server, cb->client, false, NULL);
     }
-    if (cb->client->state == UA_CLIENTSTATE_CONNECTED) {
+
+    UA_SecureChannelState channelState;
+    UA_SessionState sessionState;
+    UA_Client_getState(cb->client,
+                       &channelState,
+                       &sessionState);
+
+    if((channelState != UA_SECURECHANNELSTATE_FRESH &&
+        channelState != UA_SECURECHANNELSTATE_CLOSED) ||
+       (sessionState != UA_SESSIONSTATE_FRESH &&
+        sessionState != UA_SESSIONSTATE_CLOSED)) {
         UA_StatusCode retval1 = UA_Client_disconnect(cb->client);
         if(retval1 != UA_STATUSCODE_GOOD) {
             UA_LOG_WARNING(&server->config.logger, UA_LOGCATEGORY_SERVER,

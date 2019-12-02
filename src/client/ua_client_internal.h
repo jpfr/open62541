@@ -85,13 +85,6 @@ UA_Client_Subscriptions_backgroundPublishInactivityCheck(UA_Client *client);
 
 #endif /* UA_ENABLE_SUBSCRIPTIONS */
 
-/**************/
-/* Encryption */
-/**************/
-
-UA_StatusCode
-signActivateSessionRequest(UA_SecureChannel *channel,
-                           UA_ActivateSessionRequest *request);
 /**********/
 /* Client */
 /**********/
@@ -126,26 +119,24 @@ typedef struct CustomCallback {
 } CustomCallback;
 
 struct UA_Client {
-    /* State */
-    UA_ClientState state;
-
     UA_ClientConfig config;
     UA_Timer timer;
-    UA_StatusCode connectStatus;
-
-    /* Connection */
+    UA_WorkQueue workQueue;
     UA_Connection connection;
 
     /* SecureChannel */
+    UA_SecureChannelState lastChannelState; /* Signal changes only */
     UA_SecureChannel channel;
     UA_UInt32 requestId;
     UA_DateTime nextChannelRenewal;
 
     /* Session */
+    UA_SessionState sessionState;
+    UA_SessionState lastSessionState; /* Signal changes only */
     UA_NodeId authenticationToken;
     UA_UInt32 requestHandle;
+    UA_ExtensionObject credentials; /* For automatic reconnect */
 
-    UA_Boolean endpointsHandshake;
     UA_String endpointUrl; /* Only for the async connect */
 
     /* Async Service */
@@ -153,9 +144,6 @@ struct UA_Client {
     LIST_HEAD(ListOfAsyncServiceCall, AsyncServiceCall) asyncServiceCalls;
     /*When using highlevel functions these are the callbacks that can be accessed by the user*/
     LIST_HEAD(ListOfCustomCallback, CustomCallback) customCallbacks;
-
-    /* Work queue */
-    UA_WorkQueue workQueue;
 
     /* Subscriptions */
 #ifdef UA_ENABLE_SUBSCRIPTIONS
@@ -179,9 +167,6 @@ UA_Client_findCustomCallback(UA_Client *client, UA_UInt32 requestId) {
     }
     return cc;
 }
-
-void
-setClientState(UA_Client *client, UA_ClientState state);
 
 /* The endpointUrl must be set in the configuration. If the complete
  * endpointdescription is not set, a GetEndpoints is performed. */
@@ -218,6 +203,10 @@ processOPNResponseAsync(void *application, UA_Connection *connection,
 
 UA_StatusCode
 openSecureChannel(UA_Client *client, UA_Boolean renew);
+
+UA_StatusCode
+signActivateSessionRequest(UA_SecureChannel *channel,
+                           UA_ActivateSessionRequest *request);
 
 UA_StatusCode
 receiveServiceResponse(UA_Client *client, void *response,

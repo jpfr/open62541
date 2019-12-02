@@ -28,41 +28,6 @@
 
 #define STATUS_CODE_BAD_POINTER 0x01
 
-/*receives hello ack, opens secure channel*/
-UA_StatusCode
-processACKResponseAsync(UA_SecureChannel *channel, void *application,
-                        const UA_ByteString *chunkContent) {
-    UA_Client *client = (UA_Client*)application;
-
-    /* Decode the message */
-    size_t offset = 0;
-    UA_TcpMessageHeader messageHeader;
-    UA_TcpAcknowledgeMessage ackMessage;
-    client->connectStatus = UA_TcpMessageHeader_decodeBinary(chunkContent, &offset,
-                                                             &messageHeader);
-    client->connectStatus |= UA_TcpAcknowledgeMessage_decodeBinary(chunkContent,
-                                                                   &offset, &ackMessage);
-    if (client->connectStatus != UA_STATUSCODE_GOOD) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_NETWORK,
-                     "Decoding ACK message failed");
-        return client->connectStatus;
-    }
-    UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Received ACK message");
-
-    client->connectStatus =
-        UA_SecureChannel_processHELACK(&client->channel, &client->config.localConnectionConfig,
-                                       (const UA_ConnectionConfig*)&ackMessage);
-    if(client->connectStatus != UA_STATUSCODE_GOOD)
-        return client->connectStatus;
-
-    client->state = UA_CLIENTSTATE_CONNECTED;
-
-    /* Open a SecureChannel. TODO: Select with endpoint  */
-    client->channel.connection = &client->connection;
-    //client->connectStatus = openSecureChannelAsync(client/*, false*/);
-    return client->connectStatus;
-}
-
 /********************/
 /* Client Lifecycle */
 /********************/
@@ -71,7 +36,8 @@ static void
 UA_Client_init(UA_Client* client) {
     UA_SecureChannel_init(&client->channel);
     if(client->config.stateCallback)
-        client->config.stateCallback(client, client->state);
+        client->config.stateCallback(client, false, false);
+
     /* Catch error during async connection */
     client->connectStatus = UA_STATUSCODE_GOOD;
 
@@ -160,9 +126,12 @@ UA_Client_delete(UA_Client* client) {
     UA_free(client);
 }
 
-UA_ClientState
-UA_Client_getState(UA_Client *client) {
-    return client->state;
+void
+UA_Client_getState(UA_Client *client,
+                   UA_SecureChannelState *channelState,
+                   UA_SessionState *sessionState) {
+    *channelState = client->channel.state;
+    *sessionState = client->sessionState;
 }
 
 UA_ClientConfig *
@@ -407,8 +376,6 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
                                                            processServiceResponse);
 
         if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
-            if(retval == UA_STATUSCODE_BADCONNECTIONCLOSED)
-                setClientState(client, UA_CLIENTSTATE_DISCONNECTED);
             UA_Client_disconnect(client);
             break;
         }
@@ -459,30 +426,9 @@ receiveServiceResponseAsync(UA_Client *client, void *response,
     retval |= UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
                                                        processServiceResponse);
 
-    /*let client run when non critical timeout*/
-    if(retval != UA_STATUSCODE_GOOD
-            && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
-        if(retval == UA_STATUSCODE_BADCONNECTIONCLOSED) {
-            setClientState(client, UA_CLIENTSTATE_DISCONNECTED);
-        }
-        UA_Client_disconnect(client);
-    }
-    return retval;
-}
-
-UA_StatusCode
-receivePacketAsync(UA_Client *client) {
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    if (UA_Client_getState(client) == UA_CLIENTSTATE_DISCONNECTED ||
-            UA_Client_getState(client) == UA_CLIENTSTATE_WAITING_FOR_ACK) {
-        retval = UA_SecureChannel_receiveChunksNonBlocking(&client->channel);
-    }
-    else if(UA_Client_getState(client) == UA_CLIENTSTATE_CONNECTED) {
-        retval = UA_SecureChannel_receiveChunksNonBlocking(&client->channel);
-    }
-    if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
-        if(retval == UA_STATUSCODE_BADCONNECTIONCLOSED)
-            setClientState(client, UA_CLIENTSTATE_DISCONNECTED);
+    /* Let client run when non critical timeout */
+    if(retval != UA_STATUSCODE_GOOD &&
+       retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
         UA_Client_disconnect(client);
     }
     return retval;
@@ -546,30 +492,14 @@ __UA_Client_AsyncServiceEx(UA_Client *client, const void *request,
 }
 
 UA_StatusCode
-__UA_Client_AsyncService(UA_Client *client, const void *request,
-                         const UA_DataType *requestType,
-                         UA_ClientAsyncServiceCallback callback,
-                         const UA_DataType *responseType,
-                         void *userdata, UA_UInt32 *requestId) {
-    return __UA_Client_AsyncServiceEx(client, request, requestType, callback,
-                                      responseType, userdata, requestId,
-                                      client->config.timeout);
-}
-
-
-UA_StatusCode
 UA_Client_sendAsyncRequest(UA_Client *client, const void *request,
                            const UA_DataType *requestType,
                            UA_ClientAsyncServiceCallback callback,
                            const UA_DataType *responseType, void *userdata,
                            UA_UInt32 *requestId) {
-    if (UA_Client_getState(client) < UA_CLIENTSTATE_SECURECHANNEL) {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-				"Client must be connected to send high-level requests");
-		return UA_STATUSCODE_BADSERVERNOTCONNECTED;
-    }
-    return __UA_Client_AsyncService(client, request, requestType, callback,
-                                    responseType, userdata, requestId);
+    return __UA_Client_AsyncServiceEx(client, request, requestType, callback,
+                                      responseType, userdata, requestId,
+                                      client->config.timeout);
 }
 
 UA_StatusCode UA_EXPORT

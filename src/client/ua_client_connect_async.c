@@ -13,89 +13,10 @@
 #define UA_SESSION_LOCALNONCELENGTH      32
 #define MAX_DATA_SIZE 4096
 
-/* Asynchronous client connection
- * To prepare an async connection, UA_Client_connectAsync() is called, which does not connect the
- * client directly. UA_Client_run_iterate() takes care of actually connecting the client:
- * if client is disconnected:
- *      send hello msg and set the client state to be WAITING_FOR_ACK
- *      (see UA_Client_connect_iterate())
- * if client is waiting for the ACK:
- *      call the non-blocking receiving function and register processACKResponseAsync() as its callback
- *      (see receivePacketAsync())
- * if ACK is processed (callback called):
- *      processACKResponseAsync() calls openSecureChannelAsync() at the end, which prepares the request
- *      to open secure channel and the client is connected
- * if client is connected:
- *      call the non-blocking receiving function and register processOPNResponse() as its callback
- *      (see receivePacketAsync())
- * if OPN-request processed (callback called)
- *      send session request, where the session response is put into a normal AsyncServiceCall, and when
- *      called, request to activate session is sent, where its response is again put into an AsyncServiceCall
- * in the very last step responseActivateSession():
- *      the user defined callback that is passed into UA_Client_connectAsync() is called and the
- *      async connection finalized.
- * */
-
-/***********************/
-/* Open the Connection */
-/***********************/
-static UA_StatusCode
-openSecureChannelAsync(UA_Client *client/*, UA_Boolean renew*/);
-
-static UA_StatusCode
-requestSession(UA_Client *client, UA_UInt32 *requestId);
-
-static UA_StatusCode
-requestGetEndpoints(UA_Client *client, UA_UInt32 *requestId);
-
-static UA_StatusCode
-sendHELMessage(UA_Client *client) {
-    /* Get a buffer */
-    UA_ByteString message;
-    UA_Connection *conn = &client->connection;
-    UA_StatusCode retval = conn->getSendBuffer(conn, UA_MINMESSAGESIZE, &message);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
-
-    /* Prepare the HEL message and encode at offset 8 */
-    UA_TcpHelloMessage hello;
-    UA_String_copy(&client->endpointUrl, &hello.endpointUrl); /* must be less than 4096 bytes */
-    memcpy(&hello, &client->config.localConnectionConfig,
-           sizeof(UA_ConnectionConfig)); /* same struct layout */
-
-    UA_Byte *bufPos = &message.data[8]; /* skip the header */
-    const UA_Byte *bufEnd = &message.data[message.length];
-    client->connectStatus = UA_TcpHelloMessage_encodeBinary(&hello, &bufPos, bufEnd);
-    UA_TcpHelloMessage_deleteMembers (&hello);
-
-    /* Encode the message header at offset 0 */
-    UA_TcpMessageHeader messageHeader;
-    messageHeader.messageTypeAndChunkType = UA_CHUNKTYPE_FINAL + UA_MESSAGETYPE_HEL;
-    messageHeader.messageSize = (UA_UInt32) ((uintptr_t)bufPos - (uintptr_t)message.data);
-    bufPos = message.data;
-    retval = UA_TcpMessageHeader_encodeBinary(&messageHeader, &bufPos, bufEnd);
-    if(retval != UA_STATUSCODE_GOOD) {
-        conn->releaseSendBuffer(conn, &message);
-        return retval;
-    }
-
-    /* Send the HEL message */
-    message.length = messageHeader.messageSize;
-    retval = conn->send (conn, &message);
-
-    if(retval == UA_STATUSCODE_GOOD) {
-        UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Sent HEL message");
-    } else {
-        UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_NETWORK, "Sending HEL failed");
-    }
-    return retval;
-}
-
 static void
 processDecodedOPNResponseAsync(void *application, UA_SecureChannel *channel,
-                                UA_MessageType messageType,
-                                UA_UInt32 requestId,
-                                const UA_ByteString *message) {
+                               UA_MessageType messageType, UA_UInt32 requestId,
+                               const UA_ByteString *message) {
     /* Does the request id match? */
     UA_Client *client = (UA_Client*)application;
     if(requestId != client->requestId) {
@@ -225,86 +146,7 @@ openSecureChannelAsync(UA_Client *client/*, UA_Boolean renew*/) {
     return retval;
 }
 
-static void
-responseActivateSession(UA_Client *client, void *userdata, UA_UInt32 requestId,
-                        void *response) {
-    UA_ActivateSessionResponse *activateResponse =
-            (UA_ActivateSessionResponse *) response;
-    if(activateResponse->responseHeader.serviceResult) {
-        UA_LOG_ERROR(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                     "ActivateSession failed with error code %s",
-                     UA_StatusCode_name(activateResponse->responseHeader.serviceResult));
-    }
-    client->connection.state = UA_CONNECTION_ESTABLISHED;
-    setClientState(client, UA_CLIENTSTATE_SESSION);
 
-#ifdef UA_ENABLE_SUBSCRIPTIONS
-    /* A new session has been created. We need to clean up the subscriptions */
-    UA_Client_Subscriptions_clean(client);
-#endif
-
-     /* Call onConnect (client_async.c) callback */
-    if(client->asyncConnectCall.callback)
-        client->asyncConnectCall.callback(client, client->asyncConnectCall.userdata,
-                                          requestId + 1,
-                                          &activateResponse->responseHeader.serviceResult);
-}
-
-static UA_StatusCode
-requestActivateSession (UA_Client *client, UA_UInt32 *requestId) {
-    UA_ActivateSessionRequest request;
-    UA_ActivateSessionRequest_init(&request);
-    request.requestHeader.requestHandle = ++client->requestHandle;
-    request.requestHeader.timestamp = UA_DateTime_now ();
-    request.requestHeader.timeoutHint = 600000;
-    UA_StatusCode retval =
-        UA_ExtensionObject_copy(&client->config.userIdentityToken, &request.userIdentityToken);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
-
-    /* If not token is set, use anonymous */
-    if(request.userIdentityToken.encoding == UA_EXTENSIONOBJECT_ENCODED_NOBODY) {
-        UA_AnonymousIdentityToken *t = UA_AnonymousIdentityToken_new();
-        if(!t) {
-            UA_ActivateSessionRequest_deleteMembers(&request);
-            return UA_STATUSCODE_BADOUTOFMEMORY;
-        }
-        request.userIdentityToken.content.decoded.data = t;
-        request.userIdentityToken.content.decoded.type = &UA_TYPES[UA_TYPES_ANONYMOUSIDENTITYTOKEN];
-        request.userIdentityToken.encoding = UA_EXTENSIONOBJECT_DECODED;
-    }
-
-    /* Set the policy-Id from the endpoint. Every IdentityToken starts with a
-     * string. */
-    retval = UA_String_copy(&client->config.userTokenPolicy.policyId,
-                            (UA_String*)request.userIdentityToken.content.decoded.data);
-
-#ifdef UA_ENABLE_ENCRYPTION
-    /* Encrypt the UserIdentityToken */
-    const UA_String *userTokenPolicy = &client->channel.securityPolicy->policyUri;
-    if(client->config.userTokenPolicy.securityPolicyUri.length > 0)
-        userTokenPolicy = &client->config.userTokenPolicy.securityPolicyUri;
-    retval |= encryptUserIdentityToken(client, userTokenPolicy, &request.userIdentityToken);
-
-    /* This function call is to prepare a client signature */
-    retval |= signActivateSessionRequest(&client->channel, &request);
-#endif
-
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_ActivateSessionRequest_deleteMembers(&request);
-        client->connectStatus = retval;
-        return retval;
-    }
-
-    retval = UA_Client_sendAsyncRequest (
-            client, &request, &UA_TYPES[UA_TYPES_ACTIVATESESSIONREQUEST],
-            (UA_ClientAsyncServiceCallback) responseActivateSession,
-            &UA_TYPES[UA_TYPES_ACTIVATESESSIONRESPONSE], NULL, requestId);
-
-    UA_ActivateSessionRequest_deleteMembers(&request);
-    client->connectStatus = retval;
-    return retval;
-}
 
 /* Combination of UA_Client_getEndpointsInternal and getEndpoints */
 static void
@@ -416,92 +258,6 @@ requestGetEndpoints(UA_Client *client, UA_UInt32 *requestId) {
     UA_GetEndpointsRequest_deleteMembers(&request);
     return client->connectStatus;
 
-}
-
-static void
-responseSessionCallback(UA_Client *client, void *userdata, UA_UInt32 requestId,
-                        void *response) {
-    UA_CreateSessionResponse *sessionResponse =
-            (UA_CreateSessionResponse *)response;
-    UA_NodeId_copy(&sessionResponse->authenticationToken,
-                   &client->authenticationToken);
-    requestActivateSession(client, &requestId);
-}
-
-static UA_StatusCode
-requestSession(UA_Client *client, UA_UInt32 *requestId) {
-    UA_CreateSessionRequest request;
-    UA_CreateSessionRequest_init(&request);
-
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    if(client->channel.securityMode == UA_MESSAGESECURITYMODE_SIGN ||
-       client->channel.securityMode == UA_MESSAGESECURITYMODE_SIGNANDENCRYPT) {
-        if(client->channel.localNonce.length != UA_SESSION_LOCALNONCELENGTH) {
-           UA_ByteString_deleteMembers(&client->channel.localNonce);
-            retval = UA_ByteString_allocBuffer(&client->channel.localNonce,
-                                               UA_SESSION_LOCALNONCELENGTH);
-            if(retval != UA_STATUSCODE_GOOD)
-                return retval;
-        }
-
-        retval = client->channel.securityPolicy->symmetricModule.
-                 generateNonce(client->channel.securityPolicy, &client->channel.localNonce);
-        if(retval != UA_STATUSCODE_GOOD)
-            return retval;
-    }
-
-    request.requestHeader.requestHandle = ++client->requestHandle;
-    request.requestHeader.timestamp = UA_DateTime_now();
-    request.requestHeader.timeoutHint = 10000;
-    UA_ByteString_copy(&client->channel.localNonce, &request.clientNonce);
-    request.requestedSessionTimeout = client->config.requestedSessionTimeout;
-    request.maxResponseMessageSize = UA_INT32_MAX;
-    UA_String_copy(&client->config.endpoint.endpointUrl, &request.endpointUrl);
-
-    UA_ApplicationDescription_copy(&client->config.clientDescription,
-                                   &request.clientDescription);
-
-    retval = UA_Client_sendAsyncRequest (
-            client, &request, &UA_TYPES[UA_TYPES_CREATESESSIONREQUEST],
-            (UA_ClientAsyncServiceCallback) responseSessionCallback,
-            &UA_TYPES[UA_TYPES_CREATESESSIONRESPONSE], NULL, requestId);
-    UA_CreateSessionRequest_deleteMembers(&request);
-    client->connectStatus = retval;
-    return client->connectStatus;
-}
-
-
-static void
-clientProcessSecureChannelMessage(void *application, UA_SecureChannel *channel,
-                                  UA_MessageType messagetype, UA_UInt32 requestId,
-                                  const UA_ByteString *message) {
-    UA_Client *client = (UA_Client*)client;
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    switch(messagetype) {
-    case UA_MESSAGETYPE_OPN:
-        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel,
-                             "Process an OPN on an open channel");
-        retval = processOPN(server, channel, requestId, message);
-        break;
-    case UA_MESSAGETYPE_MSG:
-        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process a MSG");
-        retval = processMSG(server, channel, requestId, message);
-        break;
-    case UA_MESSAGETYPE_CLO:
-        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process a CLO");
-        Service_CloseSecureChannel(server, channel);
-        break;
-    default:
-        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Invalid message type");
-        retval = UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
-        break;
-    }
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
-                            "Processing the message failed with StatusCode %s. "
-                            "Closing the channel.", UA_StatusCode_name(retval));
-        UA_Client_close(client);
-    }
 }
 
 UA_StatusCode
@@ -628,7 +384,6 @@ sendCloseSessionAsync(UA_Client *client, UA_UInt32 *requestId) {
             client, &request, &UA_TYPES[UA_TYPES_CLOSESESSIONREQUEST],
             (UA_ClientAsyncServiceCallback) sendCloseSecureChannelAsync,
             &UA_TYPES[UA_TYPES_CLOSESESSIONRESPONSE], NULL, requestId);
-
 }
 
 UA_StatusCode

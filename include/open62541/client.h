@@ -61,8 +61,10 @@ UA_Client UA_EXPORT *
 UA_Client_newWithConfig(const UA_ClientConfig *config);
 
 /* Get the client connection status */
-UA_ClientState UA_EXPORT
-UA_Client_getState(UA_Client *client);
+void UA_EXPORT
+UA_Client_getState(UA_Client *client,
+                   UA_SecureChannelState *channelState,
+                   UA_SessionState *sessionState);
 
 /* Get the client configuration */
 UA_EXPORT UA_ClientConfig *

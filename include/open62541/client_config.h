@@ -40,16 +40,6 @@ typedef struct UA_Client UA_Client;
  *
  * The :ref:`tutorials` provide a good starting point for this. */
 
-typedef enum {
-    UA_CLIENTSTATE_DISCONNECTED,         /* The client is disconnected */
-    UA_CLIENTSTATE_WAITING_FOR_ACK,      /* The Client has sent HEL and waiting */
-    UA_CLIENTSTATE_CONNECTED,            /* A TCP connection to the server is open */
-    UA_CLIENTSTATE_SECURECHANNEL,        /* A SecureChannel to the server is open */
-    UA_CLIENTSTATE_SESSION,              /* A session with the server is open */
-    UA_CLIENTSTATE_SESSION_DISCONNECTED, /* Disconnected vs renewed? */
-    UA_CLIENTSTATE_SESSION_RENEWED       /* A session with the server is open (renewed) */
-} UA_ClientState;
-
 typedef struct {
     /* Basic client configuration */
     void *clientContext; /* User-defined data attached to the client */
@@ -114,7 +104,9 @@ typedef struct {
     void (*pollConnectionFunc)(UA_Client *client, void *context);
 
     /* Callback for state changes */
-    void (*stateCallback)(UA_Client *client, UA_ClientState clientState);
+    void (*stateCallback)(UA_Client *client,
+                          UA_SecureChannelState *channelState,
+                          UA_SessionState *sessionState);
 
     /* When connectivityCheckInterval is greater than 0, every
      * connectivityCheckInterval (in ms), a async read request is performed on

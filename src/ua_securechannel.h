@@ -62,18 +62,6 @@ typedef struct UA_Message {
     UA_Boolean final; /* All chunks for the message have been received */
 } UA_Message;
 
-typedef enum {
-    UA_SECURECHANNELSTATE_FRESH,
-    UA_SECURECHANNELSTATE_HEL_SENT,
-    UA_SECURECHANNELSTATE_HEL_RECEIVED,
-    UA_SECURECHANNELSTATE_ACK_SENT,
-    UA_SECURECHANNELSTATE_ACK_RECEIVED,
-    UA_SECURECHANNELSTATE_OPN_SENT,
-    UA_SECURECHANNELSTATE_OPN_RECEIVED,
-    UA_SECURECHANNELSTATE_OPEN,
-    UA_SECURECHANNELSTATE_CLOSED
-} UA_SecureChannelState;
-
 typedef TAILQ_HEAD(UA_MessageQueue, UA_Message) UA_MessageQueue;
 
 struct UA_SecureChannel {
@@ -226,6 +214,24 @@ processSequenceNumberAsym(UA_SecureChannel *channel, UA_UInt32 sequenceNumber);
 UA_StatusCode
 checkAsymHeader(UA_SecureChannel *channel,
                 const UA_AsymmetricAlgorithmSecurityHeader *asymHeader);
+
+void
+padChunkAsym(UA_SecureChannel *channel, const UA_ByteString *const buf,
+             size_t securityHeaderLength, UA_Byte **buf_pos);
+
+void
+padChunkSym(UA_MessageContext *messageContext, size_t bodyLength);
+
+UA_StatusCode
+signAndEncryptAsym(UA_SecureChannel *const channel, size_t preSignLength,
+                   UA_ByteString *buf, size_t securityHeaderLength,
+                   size_t totalLength);
+
+UA_StatusCode
+signChunkSym(UA_MessageContext *const messageContext, size_t preSigLength);
+
+UA_StatusCode
+encryptChunkSym(UA_MessageContext *const messageContext, size_t totalLength);
 
 UA_StatusCode
 decryptAndVerifyChunk(const UA_SecureChannel *channel,

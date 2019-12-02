@@ -144,6 +144,36 @@ typedef enum {
     UA_ORDER_MORE = 1
 } UA_Order;
 
+/**
+ * SecureChannel and Session State
+ * -------------------------------
+ *
+ * SecureChannels and Sessions can exist independent of one another. But a
+ * Session needs to be activated on an open SecureChannel to be used. Sessions
+ * can be transferred between SecureChannels.
+ */
+
+typedef enum {
+    UA_SECURECHANNELSTATE_FRESH,
+    UA_SECURECHANNELSTATE_HEL_SENT,
+    UA_SECURECHANNELSTATE_HEL_RECEIVED,
+    UA_SECURECHANNELSTATE_ACK_SENT,
+    UA_SECURECHANNELSTATE_ACK_RECEIVED,
+    UA_SECURECHANNELSTATE_OPN_SENT,
+    UA_SECURECHANNELSTATE_OPN_RECEIVED,
+    UA_SECURECHANNELSTATE_OPEN,
+    UA_SECURECHANNELSTATE_CLOSED
+} UA_SecureChannelState;
+
+typedef enum {
+    UA_SESSIONSTATE_FRESH,
+    UA_SESSIONSTATE_CREATE_REQUESTED,
+    UA_SESSIONSTATE_CREATED,
+    UA_SESSIONSTATE_ACTIVATE_REQUESTED,
+    UA_SESSIONSTATE_ACTIVATED, /* On the current SecureChannel */
+    UA_SESSIONSTATE_CLOSED
+} UA_SessionState;
+
 _UA_END_DECLS
 
 #endif /* UA_CONSTANTS_H_ */
