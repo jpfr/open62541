@@ -276,7 +276,8 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
         goto error;
 
 #ifdef UA_ENABLE_ENCRYPTION
-    retval = signAndEncryptAsym(channel, pre_sig_length, &buf, securityHeaderLength, total_length);
+    retval = signAndEncryptAsym(channel, pre_sig_length, &buf,
+                                securityHeaderLength, total_length);
     if(retval != UA_STATUSCODE_GOOD)
         goto error;
 #endif
@@ -478,7 +479,8 @@ processMessage(UA_SecureChannel *channel, const UA_Message *message,
     /* No need to combine chunks */
     if(message->chunkPayloadsSize == 1) {
         UA_ChunkPayload *cp = SIMPLEQ_FIRST(&message->chunkPayloads);
-        callback(application, channel, message->messageType, message->requestId, &cp->bytes);
+        callback(application, channel, message->messageType,
+                 message->requestId, &cp->bytes);
         return UA_STATUSCODE_GOOD;
     }
 
@@ -486,7 +488,8 @@ processMessage(UA_SecureChannel *channel, const UA_Message *message,
     UA_ByteString bytes;
     bytes.data = (UA_Byte *)UA_malloc(message->messageSize);
     if(!bytes.data) {
-        UA_LOG_ERROR(channel->securityPolicy->logger, UA_LOGCATEGORY_SECURECHANNEL,
+        UA_LOG_ERROR(channel->securityPolicy->logger,
+                     UA_LOGCATEGORY_SECURECHANNEL,
                      "Could not allocate the memory to assemble the message");
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
@@ -501,7 +504,8 @@ processMessage(UA_SecureChannel *channel, const UA_Message *message,
     }
 
     /* Process the message */
-    callback(application, channel, message->messageType, message->requestId, &bytes);
+    callback(application, channel, message->messageType,
+             message->requestId, &bytes);
     UA_ByteString_deleteMembers(&bytes);
     return UA_STATUSCODE_GOOD;
 }
