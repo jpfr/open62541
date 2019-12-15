@@ -13,26 +13,45 @@ UA_StatusCode
 UA_Client_getEndpoints(UA_Client *client, const char *serverUrl,
                        size_t* endpointDescriptionsSize,
                        UA_EndpointDescription** endpointDescriptions) {
-    UA_Boolean connected = (client->state > UA_CLIENTSTATE_DISCONNECTED);
-    /* Client is already connected to a different server */
+    /* Client is already connected to a different server? */
+    UA_Boolean connected = (client->channel.state > UA_SECURECHANNELSTATE_FRESH);
     if(connected && strncmp((const char*)client->config.endpoint.endpointUrl.data, serverUrl,
                             client->config.endpoint.endpointUrl.length) != 0) {
         return UA_STATUSCODE_BADINVALIDARGUMENT;
     }
 
-    UA_StatusCode retval;
-    const UA_String url = UA_STRING((char*)(uintptr_t)serverUrl);
-    if(!connected) {
-        retval = UA_Client_connectTCPSecureChannel(client, url);
-        if(retval != UA_STATUSCODE_GOOD)
-            return retval;
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    if(client->channel.state != UA_SECURECHANNELSTATE_OPEN) {
+        res = UA_Client_connect_noSession(client, serverUrl);
+        if(res != UA_STATUSCODE_GOOD)
+            return res;
     }
-    retval = UA_Client_getEndpointsInternal(client, url, endpointDescriptionsSize,
-                                            endpointDescriptions);
+
+    UA_GetEndpointsRequest request;
+    UA_GetEndpointsRequest_init(&request);
+    request.requestHeader.timestamp = UA_DateTime_now();
+    request.requestHeader.timeoutHint = 10000;
+    request.endpointUrl = UA_STRING((char*)(uintptr_t)serverUrl);
+    UA_GetEndpointsResponse response;
+    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_GETENDPOINTSREQUEST],
+                        &response, &UA_TYPES[UA_TYPES_GETENDPOINTSRESPONSE]);
+
+    /* Process the response */
+    res = response.responseHeader.serviceResult;
+    if(res == UA_STATUSCODE_GOOD) {
+        *endpointDescriptionsSize = response.endpointsSize;
+        *endpointDescriptions = response.endpoints;
+        response.endpointsSize = 0;
+        response.endpoints = NULL;
+    } else {
+        *endpointDescriptionsSize = 0;
+        *endpointDescriptions = NULL;
+    }
+    UA_GetEndpointsResponse_clear(&response);
 
     if(!connected)
         UA_Client_disconnect(client);
-    return retval;
+    return res;
 }
 
 UA_StatusCode
@@ -41,19 +60,18 @@ UA_Client_findServers(UA_Client *client, const char *serverUrl,
                       size_t localeIdsSize, UA_String *localeIds,
                       size_t *registeredServersSize,
                       UA_ApplicationDescription **registeredServers) {
-    UA_Boolean connected = (client->state > UA_CLIENTSTATE_DISCONNECTED);
-    /* Client is already connected to a different server */
+    /* Client is already connected to a different server? */
+    UA_Boolean connected = (client->channel.state > UA_SECURECHANNELSTATE_FRESH);
     if(connected && strncmp((const char*)client->config.endpoint.endpointUrl.data, serverUrl,
                             client->config.endpoint.endpointUrl.length) != 0) {
         return UA_STATUSCODE_BADINVALIDARGUMENT;
     }
 
-    UA_StatusCode retval;
-    const UA_String url = UA_STRING((char*)(uintptr_t)serverUrl);
-    if(!connected) {
-        retval = UA_Client_connectTCPSecureChannel(client, url);
-        if(retval != UA_STATUSCODE_GOOD)
-            return retval;
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    if(client->channel.state != UA_SECURECHANNELSTATE_OPEN) {
+        res = UA_Client_connect_noSession(client, serverUrl);
+        if(res != UA_STATUSCODE_GOOD)
+            return res;
     }
 
     /* Prepare the request */
@@ -70,8 +88,8 @@ UA_Client_findServers(UA_Client *client, const char *serverUrl,
                         &response, &UA_TYPES[UA_TYPES_FINDSERVERSRESPONSE]);
 
     /* Process the response */
-    retval = response.responseHeader.serviceResult;
-    if(retval == UA_STATUSCODE_GOOD) {
+    res = response.responseHeader.serviceResult;
+    if(res == UA_STATUSCODE_GOOD) {
         *registeredServersSize = response.serversSize;
         *registeredServers = response.servers;
         response.serversSize = 0;
@@ -80,12 +98,11 @@ UA_Client_findServers(UA_Client *client, const char *serverUrl,
         *registeredServersSize = 0;
         *registeredServers = NULL;
     }
-
-    /* Clean up */
     UA_FindServersResponse_deleteMembers(&response);
+
     if(!connected)
         UA_Client_disconnect(client);
-    return retval;
+    return res;
 }
 
 #ifdef UA_ENABLE_DISCOVERY
@@ -95,19 +112,18 @@ UA_Client_findServersOnNetwork(UA_Client *client, const char *serverUrl,
                                UA_UInt32 startingRecordId, UA_UInt32 maxRecordsToReturn,
                                size_t serverCapabilityFilterSize, UA_String *serverCapabilityFilter,
                                size_t *serverOnNetworkSize, UA_ServerOnNetwork **serverOnNetwork) {
-    UA_Boolean connected = (client->state > UA_CLIENTSTATE_DISCONNECTED);
-    /* Client is already connected to a different server */
+    /* Client is already connected to a different server? */
+    UA_Boolean connected = (client->channel.state > UA_SECURECHANNELSTATE_FRESH);
     if(connected && strncmp((const char*)client->config.endpoint.endpointUrl.data, serverUrl,
                             client->config.endpoint.endpointUrl.length) != 0) {
         return UA_STATUSCODE_BADINVALIDARGUMENT;
     }
 
-    UA_StatusCode retval;
-    const UA_String url = UA_STRING((char*)(uintptr_t)serverUrl);
-    if(!connected) {
-        retval = UA_Client_connectTCPSecureChannel(client, url);
-        if(retval != UA_STATUSCODE_GOOD)
-            return retval;
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    if(client->channel.state != UA_SECURECHANNELSTATE_OPEN) {
+        res = UA_Client_connect_noSession(client, serverUrl);
+        if(res != UA_STATUSCODE_GOOD)
+            return res;
     }
 
     /* Prepare the request */
@@ -124,8 +140,8 @@ UA_Client_findServersOnNetwork(UA_Client *client, const char *serverUrl,
                         &response, &UA_TYPES[UA_TYPES_FINDSERVERSONNETWORKRESPONSE]);
 
     /* Process the response */
-    retval = response.responseHeader.serviceResult;
-    if(retval == UA_STATUSCODE_GOOD) {
+    res = response.responseHeader.serviceResult;
+    if(res == UA_STATUSCODE_GOOD) {
         *serverOnNetworkSize = response.serversSize;
         *serverOnNetwork = response.servers;
         response.serversSize = 0;
@@ -134,12 +150,11 @@ UA_Client_findServersOnNetwork(UA_Client *client, const char *serverUrl,
         *serverOnNetworkSize = 0;
         *serverOnNetwork = NULL;
     }
-
-    /* Clean up */
     UA_FindServersOnNetworkResponse_deleteMembers(&response);
+
     if(!connected)
         UA_Client_disconnect(client);
-    return retval;
+    return res;
 }
 
 #endif

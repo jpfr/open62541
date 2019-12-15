@@ -129,7 +129,7 @@ START_TEST(SecureChannel_reconnect) {
     UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     
-    client->state = UA_CLIENTSTATE_CONNECTED;
+    client->sessionState = UA_SESSIONSTATE_ACTIVATED;
 
     retval = UA_Client_disconnect(client);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
@@ -169,7 +169,8 @@ START_TEST(SecureChannel_cableunplugged) {
     retval = UA_Client_readValueAttribute(client, nodeId, &val);
     ck_assert_uint_eq(retval, UA_STATUSCODE_BADCONNECTIONCLOSED);
 
-    ck_assert(UA_Client_getState(client) == UA_CLIENTSTATE_DISCONNECTED);
+    ck_assert(client->sessionState == UA_SESSIONSTATE_CREATED);
+    ck_assert(client->channel.state == UA_SECURECHANNELSTATE_CLOSED);
 
     UA_Client_recvTesting_result = UA_STATUSCODE_GOOD;
 

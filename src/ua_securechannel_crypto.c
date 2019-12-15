@@ -40,7 +40,6 @@ UA_SecureChannel_setSecurityPolicy(UA_SecureChannel *channel, const UA_SecurityP
     if(sp->certificateVerification != NULL) {
         retval = sp->certificateVerification->
             verifyCertificate(sp->certificateVerification->context, remoteCertificate);
-
         if(retval != UA_STATUSCODE_GOOD) {
             UA_LOG_WARNING(sp->logger, UA_LOGCATEGORY_SECURITYPOLICY,
                            "Could not verify the remote certificate");

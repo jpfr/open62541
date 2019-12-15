@@ -105,8 +105,8 @@ typedef struct {
 
     /* Callback for state changes */
     void (*stateCallback)(UA_Client *client,
-                          UA_SecureChannelState *channelState,
-                          UA_SessionState *sessionState);
+                          UA_SecureChannelState channelState,
+                          UA_SessionState sessionState);
 
     /* When connectivityCheckInterval is greater than 0, every
      * connectivityCheckInterval (in ms), a async read request is performed on

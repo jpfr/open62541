@@ -127,7 +127,7 @@ UA_Client_Subscriptions_create_async(
     }
 
     /* Send the request as asynchronous service call */
-    return __UA_Client_AsyncService(
+    return UA_Client_sendAsyncRequest(
         client, &request, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONREQUEST],
         __Subscriptions_create_handler, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONRESPONSE],
         cc, requestId);
@@ -207,7 +207,7 @@ UA_Client_Subscriptions_modify_async(UA_Client *client,
     cc->userData = userdata;
     cc->userCallback = callback;
 
-    return __UA_Client_AsyncService(
+    return UA_Client_sendAsyncRequest(
         client, &request, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONREQUEST],
         __Subscriptions_modify_handler, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONRESPONSE],
         cc, requestId);
@@ -339,7 +339,7 @@ UA_Client_Subscriptions_delete_async(UA_Client *client,
     cc->userCallback = callback;
     cc->userData = userdata;
 
-    return __UA_Client_AsyncService(
+    return UA_Client_sendAsyncRequest(
         client, &request, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSREQUEST],
         __Subscriptions_delete_handler, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSRESPONSE],
         cc, requestId);
@@ -670,7 +670,7 @@ __UA_Client_MonitoredItems_createDataChanges_async(
     if(retval != UA_STATUSCODE_GOOD)
         goto cleanup;
 
-    return __UA_Client_AsyncService(
+    return UA_Client_sendAsyncRequest(
         client, data->request, &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSREQUEST],
         __MonitoredItems_create_handler, &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSRESPONSE],
         cc, requestId);
@@ -868,7 +868,7 @@ UA_Client_MonitoredItems_delete_async(UA_Client *client,
     cc->userCallback = callback;
     cc->userData = userdata;
 
-    return __UA_Client_AsyncService(
+    return UA_Client_sendAsyncRequest(
         client, &request, &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSREQUEST],
         __MonitoredItems_delete_handler, &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSRESPONSE],
         cc, requestId);
@@ -1118,14 +1118,12 @@ UA_Client_Subscriptions_processPublishResponse(UA_Client *client, UA_PublishRequ
     }
 
     if(response->responseHeader.serviceResult == UA_STATUSCODE_BADSESSIONCLOSED) {
-        if(client->state >= UA_CLIENTSTATE_SESSION) {
-            UA_LOG_WARNING(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                           "Received Publish Response with code %s",
-                            UA_StatusCode_name(response->responseHeader.serviceResult));
-            UA_Client_Subscription* sub = findSubscription(client, response->subscriptionId);
-            if (sub != NULL)
-              UA_Client_Subscription_deleteInternal(client, sub);
-        }
+        UA_LOG_WARNING(&client->config.logger, UA_LOGCATEGORY_CLIENT,
+                       "Received Publish Response with code %s",
+                       UA_StatusCode_name(response->responseHeader.serviceResult));
+        UA_Client_Subscription* sub = findSubscription(client, response->subscriptionId);
+        if(sub != NULL)
+            UA_Client_Subscription_deleteInternal(client, sub);
         return;
     }
 
@@ -1236,7 +1234,7 @@ UA_Client_Subscriptions_clean(UA_Client *client) {
 
 void
 UA_Client_Subscriptions_backgroundPublishInactivityCheck(UA_Client *client) {
-    if(client->state < UA_CLIENTSTATE_SESSION)
+    if(client->sessionState != UA_SESSIONSTATE_ACTIVATED)
         return;
 
     /* Is the lack of responses the client's fault? */
@@ -1263,7 +1261,7 @@ UA_Client_Subscriptions_backgroundPublishInactivityCheck(UA_Client *client) {
 
 UA_StatusCode
 UA_Client_Subscriptions_backgroundPublish(UA_Client *client) {
-    if(client->state < UA_CLIENTSTATE_SESSION)
+    if(client->sessionState != UA_SESSIONSTATE_ACTIVATED)
         return UA_STATUSCODE_BADSERVERNOTCONNECTED;
 
     /* The session must have at least one subscription */

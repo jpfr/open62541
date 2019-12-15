@@ -36,11 +36,8 @@ static void
 UA_Client_init(UA_Client* client) {
     UA_SecureChannel_init(&client->channel);
     if(client->config.stateCallback)
-        client->config.stateCallback(client, false, false);
-
-    /* Catch error during async connection */
-    client->connectStatus = UA_STATUSCODE_GOOD;
-
+        client->config.stateCallback(client, UA_SECURECHANNELSTATE_FRESH,
+                                     UA_SESSIONSTATE_FRESH);
     UA_Timer_init(&client->timer);
     UA_WorkQueue_init(&client->workQueue);
 }
@@ -91,8 +88,8 @@ static void
 UA_Client_deleteMembers(UA_Client *client) {
     UA_Client_disconnect(client);
     /* Commented as UA_SecureChannel_deleteMembers already done
-     * in UA_Client_disconnect function */
-    //UA_SecureChannel_deleteMembersCleanup(&client->channel);
+     * in UA_Client_disconnect function
+     * UA_SecureChannel_deleteMembersCleanup(&client->channel); */
     if(client->connection.free)
         client->connection.free(&client->connection);
     UA_NodeId_deleteMembers(&client->authenticationToken);
@@ -233,7 +230,8 @@ processAsyncResponse(UA_Client *client, UA_UInt32 requestId, const UA_NodeId *re
     }
 
     /* Decode the response */
-    retval = UA_decodeBinary(responseMessage, offset, response, responseType, client->config.customDataTypes);
+    retval = UA_decodeBinary(responseMessage, offset, response, responseType,
+                             client->config.customDataTypes);
 
  process:
     if(retval != UA_STATUSCODE_GOOD) {
@@ -263,43 +261,34 @@ processAsyncResponse(UA_Client *client, UA_UInt32 requestId, const UA_NodeId *re
  * decoding the message and returning it "upwards" in the
  * SyncResponseDescription. */
 static void
-processServiceResponse(void *application, UA_SecureChannel *channel,
-                       UA_MessageType messageType, UA_UInt32 requestId,
-                       UA_ByteString *message) {
-    SyncResponseDescription *rd = (SyncResponseDescription*)application;
-
-    /* Must be OPN or MSG */
-    if(messageType != UA_MESSAGETYPE_OPN &&
-       messageType != UA_MESSAGETYPE_MSG) {
-        UA_LOG_TRACE_CHANNEL(&rd->client->config.logger, channel,
-                             "Invalid message type");
-        return;
-    }
-
-    /* Forward declaration for the goto */
-    UA_NodeId expectedNodeId = UA_NODEID_NULL;
-
+UA_Client_processMSG(SyncResponseDescription *rd,
+                     UA_UInt32 requestId, UA_ByteString *message) {
     /* Decode the data type identifier of the response */
     size_t offset = 0;
     UA_NodeId responseId;
     UA_StatusCode retval = UA_NodeId_decodeBinary(message, &offset, &responseId);
     if(retval != UA_STATUSCODE_GOOD)
-        goto finish;
+        goto cleanup;
 
     /* Got an asynchronous response. Don't expected a synchronous response
      * (responseType NULL) or the id does not match. */
     if(!rd->responseType || requestId != rd->requestId) {
         retval = processAsyncResponse(rd->client, requestId, &responseId, message, &offset);
-        goto finish;
-    }
+    } else {
+        /* Got the synchronous response */
+        rd->received = true;
 
-    /* Got the synchronous response */
-    rd->received = true;
+        /* Check that the response type matches */
+        UA_NodeId expectedNodeId = UA_NODEID_NUMERIC(0, rd->responseType->binaryEncodingId);
+        if(!UA_NodeId_equal(&responseId, &expectedNodeId)) {
+            if(!UA_NodeId_equal(&responseId, &serviceFaultId)) {
+                /* Close the connection */
+                UA_LOG_ERROR(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
+                             "Reply contains the wrong service response");
+                retval = UA_STATUSCODE_BADCOMMUNICATIONERROR;
+                goto cleanup;
+            }
 
-    /* Check that the response type matches */
-    expectedNodeId = UA_NODEID_NUMERIC(0, rd->responseType->binaryEncodingId);
-    if(!UA_NodeId_equal(&responseId, &expectedNodeId)) {
-        if(UA_NodeId_equal(&responseId, &serviceFaultId)) {
             UA_init(rd->response, rd->responseType);
             retval = UA_decodeBinary(message, &offset, rd->response,
                                      &UA_TYPES[UA_TYPES_SERVICEFAULT],
@@ -309,28 +298,23 @@ processServiceResponse(void *application, UA_SecureChannel *channel,
             UA_LOG_INFO(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
                         "Received a ServiceFault response with StatusCode %s",
                         UA_StatusCode_name(((UA_ResponseHeader*)rd->response)->serviceResult));
-        } else {
-            /* Close the connection */
-            UA_LOG_ERROR(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
-                         "Reply contains the wrong service response");
-            retval = UA_STATUSCODE_BADCOMMUNICATIONERROR;
+            goto cleanup;
         }
-        goto finish;
-    }
 
 #ifdef UA_ENABLE_TYPEDESCRIPTION
-    UA_LOG_DEBUG(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
-                 "Decode a message of type %s", rd->responseType->typeName);
+        UA_LOG_DEBUG(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
+                     "Decode a message of type %s", rd->responseType->typeName);
 #else
-    UA_LOG_DEBUG(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
-                 "Decode a message of type %u", responseId.identifier.numeric);
+        UA_LOG_DEBUG(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
+                     "Decode a message of type %u", responseId.identifier.numeric);
 #endif
 
-    /* Decode the response */
-    retval = UA_decodeBinary(message, &offset, rd->response, rd->responseType,
-                             rd->client->config.customDataTypes);
+        /* Decode the synchronous response */
+        retval = UA_decodeBinary(message, &offset, rd->response, rd->responseType,
+                                 rd->client->config.customDataTypes);
+    }
 
-finish:
+ cleanup:
     UA_NodeId_deleteMembers(&responseId);
     if(retval != UA_STATUSCODE_GOOD) {
         if(retval == UA_STATUSCODE_BADENCODINGLIMITSEXCEEDED)
@@ -338,7 +322,6 @@ finish:
         UA_LOG_INFO(&rd->client->config.logger, UA_LOGCATEGORY_CLIENT,
                     "Error receiving the response with status code %s",
                     UA_StatusCode_name(retval));
-
         if(rd->response) {
             UA_ResponseHeader *respHeader = (UA_ResponseHeader*)rd->response;
             respHeader->serviceResult = retval;
@@ -346,9 +329,65 @@ finish:
     }
 }
 
+static void
+processServiceResponse(void *application, UA_SecureChannel *channel,
+                       UA_MessageType messageType, UA_UInt32 requestId,
+                       UA_ByteString *message) {
+    SyncResponseDescription *rd = (SyncResponseDescription*)application;
+    UA_Client *client = rd->client;
+
+    switch(messageType) {
+    case UA_MESSAGETYPE_ACK:
+        if(client->channel.state != UA_SECURECHANNELSTATE_HEL_SENT) {
+            UA_LOG_WARNING_CHANNEL(&client->config.logger, channel,
+                                   "Received an unexpected ACK message");
+            closeSecureChannel(client);
+            break;
+        }
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process an ACK message");
+        UA_Client_processACK(client, message);
+        break;
+
+    case UA_MESSAGETYPE_ERR:
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process an ERR message");
+        UA_Client_processERR(client, message);
+        break;
+
+    case UA_MESSAGETYPE_OPN:
+        if(client->channel.state != UA_SECURECHANNELSTATE_OPN_SENT) {
+            UA_LOG_WARNING_CHANNEL(&client->config.logger, channel,
+                                   "Received an unexpected OPN message");
+            closeSecureChannel(client);
+            break;
+        }
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel,
+                             "Process an OPN response message");
+        UA_Client_processOPN(client, message, false);
+        break;
+
+    case UA_MESSAGETYPE_MSG:
+        if(client->channel.state != UA_SECURECHANNELSTATE_OPEN) {
+            UA_LOG_WARNING_CHANNEL(&client->config.logger, channel,
+                                   "Received an unexpected MSG message");
+            closeSecureChannel(client);
+            break;
+        }
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel,
+                             "Process an MSG response message");
+        UA_Client_processMSG(rd, requestId, message);
+        break;
+
+    default:
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel,
+                             "Received an unexpected message type");
+        closeSecureChannel(client);
+        break;
+    }
+}
+
 /* Receive and process messages until a synchronous message arrives or the
  * timout finishes */
-UA_StatusCode
+static UA_StatusCode
 receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *responseType,
                        UA_DateTime maxDate, const UA_UInt32 *synchronousRequestId) {
     /* Prepare the response and the structure we give into processServiceResponse */
@@ -414,24 +453,6 @@ __UA_Client_Service(UA_Client *client, const void *request,
     }
     if(retval != UA_STATUSCODE_GOOD)
         respHeader->serviceResult = retval;
-}
-
-UA_StatusCode
-receiveServiceResponseAsync(UA_Client *client, void *response,
-                             const UA_DataType *responseType) {
-    SyncResponseDescription rd = { client, false, 0, response, responseType };
-
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    retval |= UA_SecureChannel_receiveChunksNonBlocking(&client->channel);
-    retval |= UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
-                                                       processServiceResponse);
-
-    /* Let client run when non critical timeout */
-    if(retval != UA_STATUSCODE_GOOD &&
-       retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
-        UA_Client_disconnect(client);
-    }
-    return retval;
 }
 
 void
@@ -526,4 +547,110 @@ UA_Client_changeRepeatedCallbackInterval(UA_Client *client, UA_UInt64 callbackId
 void
 UA_Client_removeCallback(UA_Client *client, UA_UInt64 callbackId) {
     UA_Timer_removeCallback(&client->timer, callbackId);
+}
+
+static void
+asyncServiceTimeoutCheck(UA_Client *client) {
+    UA_DateTime now = UA_DateTime_nowMonotonic();
+
+    /* Timeout occurs, remove the callback */
+    AsyncServiceCall *ac, *ac_tmp;
+    LIST_FOREACH_SAFE(ac, &client->asyncServiceCalls, pointers, ac_tmp) {
+        if(!ac->timeout)
+           continue;
+
+        if(ac->start + (UA_DateTime)(ac->timeout * UA_DATETIME_MSEC) <= now) {
+            LIST_REMOVE(ac, pointers);
+            UA_Client_AsyncService_cancel(client, ac, UA_STATUSCODE_BADTIMEOUT);
+            UA_free(ac);
+        }
+    }
+}
+
+static void
+backgroundConnectivityCallback(UA_Client *client, void *userdata,
+                               UA_UInt32 requestId, const UA_ReadResponse *response) {
+    if(response->responseHeader.serviceResult == UA_STATUSCODE_BADTIMEOUT) {
+        if (client->config.inactivityCallback)
+            client->config.inactivityCallback(client);
+    }
+    client->pendingConnectivityCheck = false;
+    client->lastConnectivityCheck = UA_DateTime_nowMonotonic();
+}
+
+static UA_StatusCode
+UA_Client_backgroundConnectivity(UA_Client *client) {
+    if(!client->config.connectivityCheckInterval)
+        return UA_STATUSCODE_GOOD;
+
+    if(client->pendingConnectivityCheck)
+        return UA_STATUSCODE_GOOD;
+
+    UA_DateTime now = UA_DateTime_nowMonotonic();
+    UA_DateTime nextDate = client->lastConnectivityCheck +
+        (UA_DateTime)(client->config.connectivityCheckInterval * UA_DATETIME_MSEC);
+    if(now <= nextDate)
+        return UA_STATUSCODE_GOOD;
+
+    UA_ReadValueId rvid;
+    UA_ReadValueId_init(&rvid);
+    rvid.attributeId = UA_ATTRIBUTEID_VALUE;
+    rvid.nodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER_SERVERSTATUS_STATE);
+
+    UA_ReadRequest request;
+    UA_ReadRequest_init(&request);
+    request.nodesToRead = &rvid;
+    request.nodesToReadSize = 1;
+
+    UA_StatusCode retval =
+        UA_Client_sendAsyncRequest(client, &request, &UA_TYPES[UA_TYPES_READREQUEST],
+                                   (UA_ClientAsyncServiceCallback)backgroundConnectivityCallback,
+                                   &UA_TYPES[UA_TYPES_READRESPONSE], NULL, NULL);
+    client->pendingConnectivityCheck = true;
+    return retval;
+}
+
+static void
+clientExecuteRepeatedCallback(UA_Client *client, UA_ApplicationCallback cb,
+                              void *callbackApplication, void *data) {
+    cb(callbackApplication, data);
+    /* TODO: Use workers in the client
+     * UA_WorkQueue_enqueue(&client->workQueue, cb, callbackApplication, data); */
+}
+
+UA_StatusCode
+UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
+#ifdef UA_ENABLE_SUBSCRIPTIONS
+    UA_StatusCode retvalPublish = UA_Client_Subscriptions_backgroundPublish(client);
+    if(retvalPublish != UA_STATUSCODE_GOOD)
+        return retvalPublish;
+#endif
+
+    UA_DateTime now = UA_DateTime_nowMonotonic();
+    UA_Timer_process(&client->timer, now,
+                     (UA_TimerExecutionCallback)clientExecuteRepeatedCallback, client);
+
+    /* TODO: Make this a repeated callback */
+    retval = UA_Client_backgroundConnectivity(client);
+    if(retval != UA_STATUSCODE_GOOD)
+        return retval;
+
+    UA_DateTime maxDate = now + (timeout * UA_DATETIME_MSEC);
+    retval = receiveServiceResponse(client, NULL, NULL, maxDate, NULL);
+    if(retval == UA_STATUSCODE_GOODNONCRITICALTIMEOUT)
+        retval = UA_STATUSCODE_GOOD;
+
+#ifdef UA_ENABLE_SUBSCRIPTIONS
+    /* The inactivity check must be done after receiveServiceResponse*/
+    UA_Client_Subscriptions_backgroundPublishInactivityCheck(client);
+#endif
+    asyncServiceTimeoutCheck(client);
+
+#if UA_MULTITHREADING < 200
+    /* Process delayed callbacks when all callbacks and network events are
+     * done */
+    UA_WorkQueue_manuallyProcessDelayed(&client->workQueue);
+#endif
+    return retval;
 }

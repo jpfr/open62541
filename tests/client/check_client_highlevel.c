@@ -53,12 +53,6 @@ static void teardown(void) {
     UA_Server_delete(server);
 }
 
-START_TEST(Misc_State) {
-    UA_ClientState state = UA_Client_getState(client);
-    ck_assert_uint_eq(state, UA_CLIENTSTATE_SESSION);
-}
-END_TEST
-
 START_TEST(Misc_NamespaceGetIndex) {
     UA_UInt16 idx;
     UA_String ns = UA_STRING(CUSTOM_NS);
@@ -1033,7 +1027,6 @@ static Suite *testSuite_Client(void) {
     Suite *s = suite_create("Client Highlevel");
     TCase *tc_misc = tcase_create("Client Highlevel Misc");
     tcase_add_checked_fixture(tc_misc, setup, teardown);
-    tcase_add_test(tc_misc, Misc_State);
     tcase_add_test(tc_misc, Misc_NamespaceGetIndex);
     suite_add_tcase(s, tc_misc);
 

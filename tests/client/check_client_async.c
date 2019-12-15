@@ -122,7 +122,7 @@ START_TEST(Client_read_async) {
 
         /* Send 100 requests */
         for (size_t i = 0; i < 100; i++) {
-            retval = __UA_Client_AsyncService(client, &rr,
+            retval = UA_Client_sendAsyncRequest(client, &rr,
                     &UA_TYPES[UA_TYPES_READREQUEST],
                     (UA_ClientAsyncServiceCallback) asyncReadCallback,
                     &UA_TYPES[UA_TYPES_READRESPONSE], &asyncCounter, NULL);

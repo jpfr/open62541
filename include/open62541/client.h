@@ -101,9 +101,7 @@ UA_StatusCode UA_EXPORT
 UA_Client_connect(UA_Client *client, const char *endpointUrl);
 
 UA_StatusCode UA_EXPORT
-UA_Client_connect_async(UA_Client *client, const char *endpointUrl,
-                        UA_ClientAsyncServiceCallback callback,
-                        void *userdata);
+UA_Client_connect_async(UA_Client *client, const char *endpointUrl);
 
 /* Connect to the server without creating a session
  *
@@ -419,16 +417,11 @@ UA_Client_Service_queryNext(UA_Client *client,
  *
  * The userdata and requestId arguments can be NULL. */
 UA_StatusCode UA_EXPORT
-__UA_Client_AsyncService(UA_Client *client, const void *request,
-                         const UA_DataType *requestType,
-                         UA_ClientAsyncServiceCallback callback,
-                         const UA_DataType *responseType,
-                         void *userdata, UA_UInt32 *requestId);
-
-UA_StatusCode UA_EXPORT
 UA_Client_sendAsyncRequest(UA_Client *client, const void *request,
-        const UA_DataType *requestType, UA_ClientAsyncServiceCallback callback,
-        const UA_DataType *responseType, void *userdata, UA_UInt32 *requestId);
+                           const UA_DataType *requestType,
+                           UA_ClientAsyncServiceCallback callback,
+                           const UA_DataType *responseType,
+                           void *userdata, UA_UInt32 *requestId);
 
 /* Listen on the network and process arriving asynchronous responses in the
  * background. Internal housekeeping, renewal of SecureChannels and subscription
