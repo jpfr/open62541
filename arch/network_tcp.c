@@ -120,7 +120,7 @@ connection_recv(UA_Connection *connection, UA_ByteString *response,
     }
 
     /* Get the received packet(s) */
-    ssize_t ret = UA_recv(connection->sockfd, (char*)&response->data, response->length, 0);
+    ssize_t ret = UA_recv(connection->sockfd, (char*)response->data, response->length, 0);
 
     /* The remote side closed the connection */
     if(ret == 0) {
