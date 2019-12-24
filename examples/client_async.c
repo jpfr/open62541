@@ -6,6 +6,7 @@
 #include <open62541/client_subscriptions.h>
 #include <open62541/plugin/log_stdout.h>
 #include <open62541/server_config_default.h>
+#include "open62541/constants.h"
 
 #include <stdlib.h>
 
@@ -13,10 +14,24 @@
 /* async connection callback, it only gets called after the completion of the whole
  * connection process*/
 static void
-onConnect(UA_Client *client, void *userdata, UA_UInt32 requestId,
-          void *status) {
-    printf("Async connect returned with status code %s\n",
-           UA_StatusCode_name(*(UA_StatusCode *) status));
+stateCallback(UA_Client *client, UA_SecureChannelState channelState,
+              UA_SessionState sessionState) {
+    switch(sessionState) {
+    case UA_SESSIONSTATE_CREATED:
+        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND, "Session created");
+        break;
+
+    case UA_SESSIONSTATE_ACTIVATED:
+        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND, "Session activated");
+        break;
+
+    case UA_SESSIONSTATE_CLOSED:
+        UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND, "Session closed");
+        break;
+
+    default:
+        break;
+    }
 }
 
 static
@@ -106,7 +121,10 @@ translateCalled(UA_Client *client, void *userdata, UA_UInt32 requestId,
 int
 main(int argc, char *argv[]) {
     UA_Client *client = UA_Client_new();
-    UA_ClientConfig_setDefault(UA_Client_getConfig(client));
+    UA_ClientConfig *cc = UA_Client_getConfig(client);
+    UA_ClientConfig_setDefault(cc);
+    cc->stateCallback = stateCallback;
+
     UA_UInt32 reqId = 0;
     UA_String userdata = UA_STRING("userdata");
 
@@ -118,7 +136,7 @@ main(int argc, char *argv[]) {
     bReq.nodesToBrowse[0].nodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_OBJECTSFOLDER);
     bReq.nodesToBrowse[0].resultMask = UA_BROWSERESULTMASK_ALL; /* return everything */
 
-    UA_Client_connect_async(client, "opc.tcp://localhost:4840", onConnect, NULL);
+    UA_Client_connect_async(client, "opc.tcp://localhost:4840");
 
     /*Windows needs time to response*/
     UA_sleep_ms(100);
@@ -128,8 +146,11 @@ main(int argc, char *argv[]) {
 
     UA_DateTime startTime = UA_DateTime_nowMonotonic();
     do {
-        /*TODO: fix memory-related bugs if condition not checked*/
-        if(UA_Client_getState(client) == UA_CLIENTSTATE_SESSION) {
+        UA_SecureChannelState channelState;
+        UA_SessionState sessionState;
+        UA_Client_getState(client, &channelState, &sessionState);
+        if(channelState == UA_SECURECHANNELSTATE_OPEN &&
+           sessionState == UA_SESSIONSTATE_ACTIVATED) {
             /* If not connected requests are not sent */
             UA_Client_sendAsyncBrowseRequest(client, &bReq, fileBrowsed, &userdata, &reqId);
         }
@@ -152,7 +173,11 @@ main(int argc, char *argv[]) {
     UA_Variant_init(&input);
 
     for(UA_UInt16 i = 0; i < 5; i++) {
-        if(UA_Client_getState(client) == UA_CLIENTSTATE_SESSION) {
+        UA_SecureChannelState channelState;
+        UA_SessionState sessionState;
+        UA_Client_getState(client, &channelState, &sessionState);
+        if(channelState == UA_SECURECHANNELSTATE_OPEN &&
+           sessionState == UA_SESSIONSTATE_ACTIVATED) {
             /* writing and reading value 1 to 5 */
             UA_Variant_setScalarCopy(&myVariant, &value, &UA_TYPES[UA_TYPES_INT32]);
             value++;

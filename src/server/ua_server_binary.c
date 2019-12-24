@@ -324,7 +324,7 @@ processHEL(UA_Server *server, UA_SecureChannel *channel,
     /* Get the send buffer from the network layer */
     UA_ByteString ack_msg;
     UA_ByteString_init(&ack_msg);
-    retval = connection->getSendBuffer(connection, channel->config.sendBufferSize, &ack_msg);
+    retval = connection->getSendBuffer(connection, ackHeader.messageSize, &ack_msg);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
@@ -332,18 +332,15 @@ processHEL(UA_Server *server, UA_SecureChannel *channel,
     UA_Byte *bufPos = ack_msg.data;
     const UA_Byte *bufEnd = &ack_msg.data[ack_msg.length];
 
-    retval = UA_TcpMessageHeader_encodeBinary(&ackHeader, &bufPos, bufEnd);
+    retval |= UA_TcpMessageHeader_encodeBinary(&ackHeader, &bufPos, bufEnd);
+    retval |= UA_TcpAcknowledgeMessage_encodeBinary(&ackMessage, &bufPos, bufEnd);
     if(retval != UA_STATUSCODE_GOOD) {
         connection->releaseSendBuffer(connection, &ack_msg);
         return retval;
     }
 
-    retval = UA_TcpAcknowledgeMessage_encodeBinary(&ackMessage, &bufPos, bufEnd);
-    if(retval != UA_STATUSCODE_GOOD) {
-        connection->releaseSendBuffer(connection, &ack_msg);
-        return retval;
-    }
-    ack_msg.length = ackHeader.messageSize;
+    UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel, "Send the ACK message");
+
     return connection->send(connection, &ack_msg);
 }
 
@@ -420,6 +417,9 @@ processOPN(UA_Server *server, UA_SecureChannel *channel,
 
     UA_OpenSecureChannelResponse openScResponse;
     UA_OpenSecureChannelResponse_init(&openScResponse);
+
+    /* Reset the offset for the decrypted content */
+    offset = 0;
 
     /* Decode the request */
     UA_OpenSecureChannelRequest openSecureChannelRequest;
@@ -742,31 +742,31 @@ processSecureChannelMessage(void *application, UA_SecureChannel *channel,
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     switch(messagetype) {
     case UA_MESSAGETYPE_HEL:
-        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
                              "Process a HEL message");
         retval = processHEL(server, channel, message);
         if(retval == UA_STATUSCODE_GOOD)
             channel->state = UA_SECURECHANNELSTATE_ACK_SENT;
         break;
     case UA_MESSAGETYPE_OPN:
-        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
                              "Process an OPN message");
         retval = processOPN(server, channel, message);
         if(retval == UA_STATUSCODE_GOOD)
             channel->state = UA_SECURECHANNELSTATE_OPEN;
         break;
     case UA_MESSAGETYPE_MSG:
-        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
                              "Process a MSG message");
         retval = processMSG(server, channel, requestId, message);
         break;
     case UA_MESSAGETYPE_CLO:
-        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
                              "Process a CLO message");
         Service_CloseSecureChannel(server, channel);
         break;
     default:
-        UA_LOG_TRACE_CHANNEL(&server->config.logger, channel,
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
                              "Received an invalid message type");
         retval = UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
         break;

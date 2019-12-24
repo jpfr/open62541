@@ -8,6 +8,7 @@
  *    Copyright 2017 (c) Thomas Stalder, Blue Time Concept SA
  */
 
+#include "open62541/types.h"
 #define UA_INTERNAL
 
 #include <open62541/network_tcp.h>
@@ -113,11 +114,10 @@ connection_recv(UA_Connection *connection, UA_ByteString *response,
         }
     }
 
-    response->data = (UA_Byte*)UA_malloc(UA_RECVSIZE);
-    if(!response->data) {
-        response->length = 0;
-        return UA_STATUSCODE_BADOUTOFMEMORY; /* not enough memory retry */
-    }
+    UA_StatusCode status =
+        UA_ByteString_allocBuffer(response, UA_RECVSIZE);
+    if(status != UA_STATUSCODE_GOOD)
+        return status;
 
     /* Get the received packet(s) */
     ssize_t ret = UA_recv(connection->sockfd, (char*)response->data, response->length, 0);
@@ -143,7 +143,6 @@ connection_recv(UA_Connection *connection, UA_ByteString *response,
     response->length = (size_t)ret;
     return UA_STATUSCODE_GOOD;
 }
-
 
 /***************************/
 /* Server NetworkLayer TCP */
@@ -175,7 +174,7 @@ ServerNetworkLayerTCP_freeConnection(UA_Connection *connection) {
  * socket is returned from select. */
 static void
 ServerNetworkLayerTCP_close(UA_Connection *connection) {
-    if (connection->state == UA_CONNECTION_CLOSED)
+    if(connection->state == UA_CONNECTION_CLOSED)
         return;
     UA_shutdown((UA_SOCKET)connection->sockfd, 2);
     connection->state = UA_CONNECTION_CLOSED;
@@ -185,26 +184,25 @@ static UA_StatusCode
 ServerNetworkLayerTCP_add(UA_ServerNetworkLayer *nl, ServerNetworkLayerTCP *layer,
                           UA_Int32 newsockfd, struct sockaddr_storage *remote) {
     /* Set nonblocking */
-    UA_socket_set_nonblocking(newsockfd);//TODO: check return value
+    UA_StatusCode retval = UA_socket_set_nonblocking(newsockfd);
+    if(retval != UA_STATUSCODE_GOOD)
+        return retval;
 
     /* Do not merge packets on the socket (disable Nagle's algorithm) */
     int dummy = 1;
-    if(UA_setsockopt(newsockfd, IPPROTO_TCP, TCP_NODELAY,
-               (const char *)&dummy, sizeof(dummy)) < 0) {
-        UA_LOG_SOCKET_ERRNO_WRAP(
-                UA_LOG_ERROR(layer->logger, UA_LOGCATEGORY_NETWORK,
-                             "Cannot set socket option TCP_NODELAY. Error: %s",
-                             errno_str));
+    int res = UA_setsockopt(newsockfd, IPPROTO_TCP, TCP_NODELAY,
+                            (const char *)&dummy, sizeof(dummy));
+    if(res < 0) {
+        UA_LOG_SOCKET_ERRNO_WRAP(UA_LOG_ERROR(layer->logger, UA_LOGCATEGORY_NETWORK,
+                             "Cannot set socket option TCP_NODELAY. Error: %s", errno_str));
         return UA_STATUSCODE_BADUNEXPECTEDERROR;
     }
 
 #if defined(UA_getnameinfo)
     /* Get the peer name for logging */
     char remote_name[100];
-    int res = UA_getnameinfo((struct sockaddr*)remote,
-                          sizeof(struct sockaddr_storage),
-                          remote_name, sizeof(remote_name),
-                          NULL, 0, NI_NUMERICHOST);
+    res = UA_getnameinfo((struct sockaddr*)remote, sizeof(struct sockaddr_storage),
+                          remote_name, sizeof(remote_name), NULL, 0, NI_NUMERICHOST);
     if(res == 0) {
         UA_LOG_INFO(layer->logger, UA_LOGCATEGORY_NETWORK,
                     "Connection %i | New connection over TCP from %s",

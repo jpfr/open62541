@@ -34,7 +34,8 @@
 
 static void
 UA_Client_init(UA_Client* client) {
-    UA_SecureChannel_init(&client->channel);
+    UA_SecureChannel_init(&client->channel,
+                          &client->config.localConnectionConfig);
     if(client->config.stateCallback)
         client->config.stateCallback(client, UA_SECURECHANNELSTATE_FRESH,
                                      UA_SESSIONSTATE_FRESH);

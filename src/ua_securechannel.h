@@ -105,7 +105,8 @@ struct UA_SecureChannel {
                                     * streaming protocol) is stored here */
 };
 
-void UA_SecureChannel_init(UA_SecureChannel *channel);
+void UA_SecureChannel_init(UA_SecureChannel *channel,
+                           const UA_ConnectionConfig *config);
 
 void UA_SecureChannel_close(UA_SecureChannel *channel);
 

@@ -15,6 +15,7 @@
 #include <open62541/transport_generated_handling.h>
 #include <open62541/types_generated_encoding_binary.h>
 #include <open62541/types_generated_handling.h>
+#include "open62541/constants.h"
 
 #include "ua_securechannel.h"
 #include "ua_types_encoding_binary.h"
@@ -36,11 +37,13 @@ static void
 UA_MessageQueue_deleteMessage(UA_Message *me);
 
 void
-UA_SecureChannel_init(UA_SecureChannel *channel) {
+UA_SecureChannel_init(UA_SecureChannel *channel,
+                      const UA_ConnectionConfig *config) {
     /* Linked lists are also initialized by zeroing out */
     memset(channel, 0, sizeof(UA_SecureChannel));
     channel->state = UA_SECURECHANNELSTATE_FRESH;
     TAILQ_INIT(&channel->messages);
+    channel->config = *config;
 }
 
 void
@@ -66,7 +69,8 @@ UA_SecureChannel_clear(UA_SecureChannel *channel) {
         UA_MessageQueue_deleteMessage(me);
     }
 
-    UA_SecureChannel_init(channel);
+    UA_ConnectionConfig oldConfig = channel->config;
+    UA_SecureChannel_init(channel, &oldConfig);
 }
 
 void
@@ -614,7 +618,9 @@ processIndividualChunk(UA_SecureChannel *channel, UA_Byte **posp,
         return UA_STATUSCODE_GOOD;
     }
 
-    /* Decode the header out of the first 8 byte */
+    /* Decode the header out of the first 12 byte. A HEL message only has a
+     * header of 8 byte. But the version-field afterwards is 4 bytes. So we use
+     * the same code-path everywhere. */
     UA_ByteString temp = { 12, (UA_Byte*)(uintptr_t)pos };
     size_t offset = 0;
     UA_SecureConversationMessageHeader scmh;
@@ -648,12 +654,16 @@ processIndividualChunk(UA_SecureChannel *channel, UA_Byte **posp,
         return UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
 
     /* Move received full chunks into the MessageQueue. The chunk content begins
-     * after the SecureConversationMessageHeader. */
+     * after the SecureConversationMessageHeader. For a HEL message, only 8 byte
+     * headers are used. */
     *posp += scmh.messageHeader.messageSize;
     *done = false;
+    size_t contentOffset = UA_SECURE_CONVERSATION_MESSAGE_HEADER_LENGTH;
+    if(channel->state == UA_SECURECHANNELSTATE_FRESH ||
+       channel->state == UA_SECURECHANNELSTATE_HEL_SENT)
+        contentOffset -= 4;
     UA_ByteString chunkContent =
-        {scmh.messageHeader.messageSize - UA_SECURE_CONVERSATION_MESSAGE_HEADER_LENGTH,
-         (UA_Byte*)pos + UA_SECURE_CONVERSATION_MESSAGE_HEADER_LENGTH};
+        {scmh.messageHeader.messageSize - contentOffset, (UA_Byte*)&pos[contentOffset]};
 
     /* Dispatch on the message type */
     UA_MessageType msgType = (UA_MessageType)
