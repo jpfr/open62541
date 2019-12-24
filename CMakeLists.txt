@@ -134,6 +134,7 @@ option(UA_ENABLE_NODEMANAGEMENT "Enable dynamic addition and removal of nodes at
 option(UA_ENABLE_SUBSCRIPTIONS "Enable subscriptions support." ON)
 option(UA_ENABLE_SUBSCRIPTIONS_EVENTS "Enable the use of event subscriptions" OFF)
 option(UA_ENABLE_DISCOVERY "Enable Discovery Service (LDS)" ON)
+option(UA_ENABLE_SUBSCRIPTIONS_ALARMS_CONDITIONS "Enable the use of A&C. (EXPERIMENTAL)" OFF)
 option(UA_ENABLE_DISCOVERY_MULTICAST "Enable Discovery Service with multicast support (LDS-ME)" OFF)
 option(UA_ENABLE_ENCRYPTION "Enable encryption support (uses mbedTLS)" OFF)
 option(UA_ENABLE_DA "Enable OPC UA DataAccess (Part 8) definitions" ON)
@@ -176,6 +177,11 @@ endif()
 #if((UA_ENABLE_SUBSCRIPTIONS_EVENTS) AND (NOT (UA_ENABLE_SUBSCRIPTIONS AND UA_NAMESPACE_ZERO STREQUAL "FULL")))
 #    message(FATAL_ERROR "Unable to enable events without UA_ENABLE_SUBSCRIPTIONS and full namespace 0")
 #endif()
+
+# It should not be possible to enable Alarms and Condition without enabling Events and full ns0
+if((UA_ENABLE_SUBSCRIPTIONS_ALARMS_CONDITIONS) AND (NOT (UA_ENABLE_SUBSCRIPTIONS_EVENTS AND UA_NAMESPACE_ZERO STREQUAL "FULL")))
+    message(FATAL_ERROR "Unable to enable A&C without UA_ENABLE_SUBSCRIPTIONS_EVENTS and full namespace 0")
+endif()
 
 if(UA_ENABLE_COVERAGE)
   set(CMAKE_BUILD_TYPE DEBUG)
@@ -376,6 +382,10 @@ endif()
 # Warn if experimental features are enabled
 if(UA_MULTITHREADING GREATER 199)
     MESSAGE(WARNING "UA_MULTITHREADING >= 200. Internal threads of the server are an EXPERIMENTAL feature. Expect bugs")
+endif()
+
+if(UA_ENABLE_SUBSCRIPTIONS_ALARMS_CONDITIONS)
+    MESSAGE(WARNING "UA_ENABLE_SUBSCRIPTIONS_ALARMS_CONDITIONS is enabled. The feature is under development and marked as EXPERIMENTAL")
 endif()
 
 ########################
@@ -817,6 +827,9 @@ if(UA_ENABLE_SUBSCRIPTIONS)
                             ${PROJECT_SOURCE_DIR}/src/server/ua_subscription_datachange.c)
     if(UA_ENABLE_SUBSCRIPTIONS_EVENTS)
         list(APPEND lib_sources ${PROJECT_SOURCE_DIR}/src/server/ua_subscription_events.c)
+        if(UA_ENABLE_SUBSCRIPTIONS_ALARMS_CONDITIONS)
+            list(APPEND lib_sources ${PROJECT_SOURCE_DIR}/src/server/ua_subscription_alarms_conditions.c)
+        endif()
     endif()
 endif()
 
@@ -1070,6 +1083,10 @@ else()
     target_compile_definitions(open62541-plugins PRIVATE -DUA_DYNAMIC_LINKING_EXPORT)
     set_target_properties(open62541-plugins PROPERTIES FOLDER "open62541/lib")
 
+    if(UA_PACK_DEBIAN)
+        add_library(open62541-static STATIC $<TARGET_OBJECTS:open62541-object> $<TARGET_OBJECTS:open62541-plugins>)
+        set_target_properties(open62541-static PROPERTIES OUTPUT_NAME open62541)
+    endif()
     add_library(open62541 $<TARGET_OBJECTS:open62541-object> $<TARGET_OBJECTS:open62541-plugins>)
 
     if(UA_COMPILE_AS_CXX)
@@ -1245,7 +1262,12 @@ if(UA_ENABLE_DISCOVERY_MULTICAST)
 endif()
 
 # export library (either static or shared depending on BUILD_SHARED_LIBS)
-install(TARGETS open62541
+if(UA_PACK_DEBIAN)
+    set(EXTRATARGETS "open62541-static")
+else()
+    set(EXTRATARGETS "")
+endif()
+install(TARGETS open62541 ${EXTRATARGETS}
         EXPORT open62541Targets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -1315,6 +1337,19 @@ install(DIRECTORY ${UA_install_tools_dirs}
     )
 
 install(FILES ${UA_install_tools_files} DESTINATION ${open62541_install_tools_dir})
+
+if (UA_PACK_DEBIAN)
+    set(UA_install_examples_dirs "examples/"
+        "examples/access_control"
+        "examples/custom_datatype"
+        "examples/discovery"
+        "examples/encryption"
+        "examples/nodeset"
+        "examples/pubsub")
+
+    set(open62541_install_examples_dir share/open62541/examples)
+    install(DIRECTORY ${UA_install_examples_dirs} COMPONENT examples DESTINATION ${open62541_install_examples_dir} USE_SOURCE_PERMISSIONS)
+endif()
 
 if(NOT UA_ENABLE_AMALGAMATION)
     # Recreate the include folder structure from the source also in /usr/lib/include/open62541

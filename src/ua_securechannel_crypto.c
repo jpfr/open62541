@@ -629,14 +629,14 @@ decodeChunkPaddingSize(const UA_SecureChannel *channel,
     /* Is padding used? */
     if(channel->securityMode != UA_MESSAGESECURITYMODE_SIGNANDENCRYPT &&
        !(messageType == UA_MESSAGETYPE_OPN &&
-         channel->securityMode > UA_MESSAGESECURITYMODE_NONE))
+         !UA_String_equal(&cryptoModule->encryptionAlgorithm.uri, &UA_STRING_NULL)))
         return 0;
 
     size_t paddingSize = chunk->data[chunkSizeAfterDecryption - sigsize - 1];
 
     /* Extra padding size */
     size_t keyLength = cryptoModule->encryptionAlgorithm.
-        getRemoteKeyLength(channel->securityPolicy, channel->channelContext);
+        getLocalKeyLength(channel->securityPolicy, channel->channelContext);
     if(keyLength > 2048) {
         paddingSize <<= 8u;
         paddingSize += 1;
