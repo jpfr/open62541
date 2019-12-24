@@ -175,8 +175,14 @@ sendSymmetricServiceRequest(UA_Client *client, const void *request,
 
     /* Send the request */
     UA_UInt32 rqId = ++client->requestId;
-    UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                 "Sending a request of type %i", requestType->typeId.identifier.numeric);
+#ifdef UA_ENABLE_TYPEDESCRIPTION
+    UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
+                         "Sending a request of type %s", requestType->typeName);
+#else
+    UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
+                         "Sending a request of type %i",
+                         requestType->typeId.identifier.numeric);
+#endif
 
     if (client->channel.nextSecurityToken.tokenId != 0) // Change to the new security token if the secure channel has been renewed.
         UA_SecureChannel_revolveTokens(&client->channel);
@@ -263,7 +269,7 @@ processAsyncResponse(UA_Client *client, UA_UInt32 requestId, const UA_NodeId *re
  * SyncResponseDescription. */
 static void
 UA_Client_processMSG(SyncResponseDescription *rd,
-                     UA_UInt32 requestId, UA_ByteString *message) {
+                     UA_UInt32 requestId, const UA_ByteString *message) {
     /* Decode the data type identifier of the response */
     size_t offset = 0;
     UA_NodeId responseId;
@@ -333,18 +339,12 @@ UA_Client_processMSG(SyncResponseDescription *rd,
 static void
 processServiceResponse(void *application, UA_SecureChannel *channel,
                        UA_MessageType messageType, UA_UInt32 requestId,
-                       UA_ByteString *message) {
+                       const UA_ByteString *message) {
     SyncResponseDescription *rd = (SyncResponseDescription*)application;
     UA_Client *client = rd->client;
 
     switch(messageType) {
     case UA_MESSAGETYPE_ACK:
-        if(client->channel.state != UA_SECURECHANNELSTATE_HEL_SENT) {
-            UA_LOG_WARNING_CHANNEL(&client->config.logger, channel,
-                                   "Received an unexpected ACK message");
-            closeSecureChannel(client);
-            break;
-        }
         UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process an ACK message");
         UA_Client_processACK(client, message);
         break;
@@ -354,33 +354,20 @@ processServiceResponse(void *application, UA_SecureChannel *channel,
         UA_Client_processERR(client, message);
         break;
 
-    case UA_MESSAGETYPE_OPN:
-        if(client->channel.state != UA_SECURECHANNELSTATE_OPN_SENT) {
-            UA_LOG_WARNING_CHANNEL(&client->config.logger, channel,
-                                   "Received an unexpected OPN message");
-            closeSecureChannel(client);
-            break;
-        }
-        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel,
-                             "Process an OPN response message");
-        UA_Client_processOPN(client, message, false);
+    case UA_MESSAGETYPE_OPN: {
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process an OPN response message");
+        UA_ByteString editableMessage = *message; /* In situ edits for decryption */
+        UA_Client_processOPN(client, &editableMessage, false);
         break;
+    }
 
     case UA_MESSAGETYPE_MSG:
-        if(client->channel.state != UA_SECURECHANNELSTATE_OPEN) {
-            UA_LOG_WARNING_CHANNEL(&client->config.logger, channel,
-                                   "Received an unexpected MSG message");
-            closeSecureChannel(client);
-            break;
-        }
-        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel,
-                             "Process an MSG response message");
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process an MSG response message");
         UA_Client_processMSG(rd, requestId, message);
         break;
 
     default:
-        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel,
-                             "Received an unexpected message type");
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Received an unexpected message type");
         closeSecureChannel(client);
         break;
     }
@@ -399,28 +386,37 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
     if(synchronousRequestId)
         rd.requestId = *synchronousRequestId;
 
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    do {
-        UA_DateTime now = UA_DateTime_nowMonotonic();
+    /* >= avoid timeout to be set to 0 */
+    UA_DateTime now = UA_DateTime_nowMonotonic();
+    if(now >= maxDate)
+        return UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
 
-        /* >= avoid timeout to be set to 0 */
-        if(now >= maxDate)
-            return UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
+    /* round always to upper value to avoid timeout to be set to 0
+     * if(maxDate - now) < (UA_DATETIME_MSEC/2) */
+    UA_UInt32 timeout = (UA_UInt32)(((maxDate - now) + (UA_DATETIME_MSEC - 1)) / UA_DATETIME_MSEC);
 
-        /* round always to upper value to avoid timeout to be set to 0
-         * if(maxDate - now) < (UA_DATETIME_MSEC/2) */
-        UA_UInt32 timeout = (UA_UInt32)(((maxDate - now) + (UA_DATETIME_MSEC - 1)) / UA_DATETIME_MSEC);
-
-        retval |= UA_SecureChannel_receiveChunksBlocking(&client->channel, timeout);
-        retval |= UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
-                                                           processServiceResponse);
-
-        if(retval != UA_STATUSCODE_GOOD && retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
-            UA_Client_disconnect(client);
-            break;
+    UA_LOG_TRACE_CHANNEL(&client->config.logger, &client->channel,
+                         "Receive blocking with a timout of %u msec", timeout);
+    UA_StatusCode retval = UA_SecureChannel_receiveChunksBlocking(&client->channel, timeout);
+    if(retval != UA_STATUSCODE_GOOD) {
+        if(retval == UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
+            UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
+                                 "Timeout during recv");
+        } else {
+            UA_LOG_WARNING_CHANNEL(&client->config.logger, &client->channel,
+                                   "Could not receive blocking with status %s",
+                                   UA_StatusCode_name(retval));
         }
-    } while(!rd.received);
+        return retval;
+    }
 
+    retval = UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
+                                                      processServiceResponse);
+    if(retval != UA_STATUSCODE_GOOD) {
+        UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_CLIENT,
+                     "Could not process messages with status %s",
+                     UA_StatusCode_name(retval));
+    }
     return retval;
 }
 

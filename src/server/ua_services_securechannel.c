@@ -48,10 +48,12 @@ Service_OpenSecureChannel(UA_Server *server, UA_SecureChannel *channel,
     /* Logging */
     if(response->responseHeader.serviceResult == UA_STATUSCODE_GOOD) {
         UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
-                            "Opened SecureChannel");
+                            "Opened SecureChannel with SecurityPolicy %.*s",
+                            (int)channel->securityPolicy->policyUri.length,
+                            channel->securityPolicy->policyUri.data);
     } else {
-        UA_LOG_INFO_CHANNEL(&server->config.logger, channel,
-                            "Opening a SecureChannel failed");
+        UA_LOG_WARNING_CHANNEL(&server->config.logger, channel,
+                               "Opening a SecureChannel failed");
     }
 }
 

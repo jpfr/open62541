@@ -1261,8 +1261,9 @@ UA_Client_Subscriptions_backgroundPublishInactivityCheck(UA_Client *client) {
 
 UA_StatusCode
 UA_Client_Subscriptions_backgroundPublish(UA_Client *client) {
+    /* Report no problem if there is no active session */
     if(client->sessionState != UA_SESSIONSTATE_ACTIVATED)
-        return UA_STATUSCODE_BADSERVERNOTCONNECTED;
+        return UA_STATUSCODE_GOOD;
 
     /* The session must have at least one subscription */
     if(!LIST_FIRST(&client->subscriptions))

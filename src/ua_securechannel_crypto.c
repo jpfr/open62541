@@ -719,8 +719,8 @@ decryptAndVerifyChunk(const UA_SecureChannel *channel,
     payload->data = chunk->data + offset;
     payload->length = chunkSizeAfterDecryption - offset - sigsize - paddingSize;
     UA_LOG_TRACE_CHANNEL(channel->securityPolicy->logger, channel,
-                         "Decrypted and verified chunk with request id %u and "
-                         "sequence number %u", *requestId, *sequenceNumber);
+                         "Decrypted and verified chunk with RequestId %u and "
+                         "SequenceNumber %u", *requestId, *sequenceNumber);
     return UA_STATUSCODE_GOOD;
 }
 

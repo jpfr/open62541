@@ -737,32 +737,30 @@ processMSG(UA_Server *server, UA_SecureChannel *channel,
 static void
 processSecureChannelMessage(void *application, UA_SecureChannel *channel,
                             UA_MessageType messagetype, UA_UInt32 requestId,
-                            UA_ByteString *message) {
+                            const UA_ByteString *message) {
     UA_Server *server = (UA_Server*)application;
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     switch(messagetype) {
     case UA_MESSAGETYPE_HEL:
-        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
-                             "Process a HEL message");
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel, "Process a HEL message");
         retval = processHEL(server, channel, message);
         if(retval == UA_STATUSCODE_GOOD)
             channel->state = UA_SECURECHANNELSTATE_ACK_SENT;
         break;
-    case UA_MESSAGETYPE_OPN:
-        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
-                             "Process an OPN message");
-        retval = processOPN(server, channel, message);
+    case UA_MESSAGETYPE_OPN: {
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel, "Process an OPN message");
+        UA_ByteString editableMessage = *message; /* In situ edits for decryption */
+        retval = processOPN(server, channel, &editableMessage);
         if(retval == UA_STATUSCODE_GOOD)
             channel->state = UA_SECURECHANNELSTATE_OPEN;
         break;
+    }
     case UA_MESSAGETYPE_MSG:
-        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
-                             "Process a MSG message");
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel, "Process a MSG message");
         retval = processMSG(server, channel, requestId, message);
         break;
     case UA_MESSAGETYPE_CLO:
-        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel,
-                             "Process a CLO message");
+        UA_LOG_DEBUG_CHANNEL(&server->config.logger, channel, "Process a CLO message");
         Service_CloseSecureChannel(server, channel);
         break;
     default:

@@ -638,11 +638,16 @@ processIndividualChunk(UA_SecureChannel *channel, UA_Byte **posp,
         return UA_STATUSCODE_GOOD;
     }
 
-    /* The wrong ChannelId. Non-opened channels have the id zero. */
 #if !defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
-    if(scmh.secureChannelId != channel->securityToken.channelId &&
-       channel->state != UA_SECURECHANNELSTATE_FRESH)
+    /* The wrong ChannelId. Non-opened channels have the id zero. */
+    if(channel->state == UA_SECURECHANNELSTATE_OPEN &&
+       scmh.secureChannelId != channel->securityToken.channelId)
         return UA_STATUSCODE_BADSECURECHANNELIDINVALID;
+
+    /* Set the channel id when the OPN response is received */
+    if(channel->state == UA_SECURECHANNELSTATE_OPN_SENT &&
+       channel->securityToken.channelId == 0)
+        channel->securityToken.channelId = scmh.secureChannelId;
 #endif
 
     /* Check the chunk type */
@@ -708,16 +713,16 @@ processIndividualChunk(UA_SecureChannel *channel, UA_Byte **posp,
             return UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
         if(channel->state != UA_SECURECHANNELSTATE_OPEN)
             channel->state = UA_SECURECHANNELSTATE_OPN_RECEIVED;
-        /* Attention! Don't add messages to the queue directly after an OPN.
-         * First the OPN message has to be processed. This can switch out
-         * encryption keys for the following messages. So we set "done" to
-         * true. */
-        *done = true;
         break;
 
     default:
         return UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
     }
+
+     /* Attention! Don't add more message to the queue after a non-MSG chunk.
+      * First the HEL/ACK/OPN message has to be processed. This can switch the
+      * channel state for the following messages. So we set "done" to true. */
+    *done = true;
 
     return UA_MessageQueue_addChunkPayload(channel, 0, msgType, &chunkContent, true);
 }

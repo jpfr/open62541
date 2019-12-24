@@ -297,7 +297,7 @@ UA_SecureChannel_receiveChunksNonBlocking(UA_SecureChannel *channel);
 typedef void
 (UA_ProcessMessageCallback)(void *application, UA_SecureChannel *channel,
                             UA_MessageType messageType, UA_UInt32 requestId,
-                            UA_ByteString *message);
+                            const UA_ByteString *message);
 
 /* Process received complete messages in-order. The callback function is called
  * with the complete message body if the message is complete. The message is
