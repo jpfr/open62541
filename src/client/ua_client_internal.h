@@ -172,13 +172,8 @@ UA_Client_findCustomCallback(UA_Client *client, UA_UInt32 requestId) {
 UA_StatusCode
 connectSessionAsync(UA_Client *client);
 
-UA_StatusCode
-processOPNHeader(UA_SecureChannel *channel, void *application,
-                 const UA_AsymmetricAlgorithmSecurityHeader *asymHeader);
-
-UA_StatusCode
-processOPNResponse(UA_Client *client, UA_ByteString *message,
-                   UA_Boolean renew);
+void
+closeSecureChannel(UA_Client *client);
 
 UA_StatusCode
 UA_Client_processACK(UA_Client *client, const UA_ByteString *payload);
@@ -187,27 +182,7 @@ void
 UA_Client_processERR(UA_Client *client, const UA_ByteString *message);
 
 UA_StatusCode
-UA_Client_processOPN(UA_Client *client, UA_ByteString *message,
-                     UA_Boolean renew);
-
-void
-closeSecureChannel(UA_Client *client);
-
-UA_StatusCode
-signActivateSessionRequest(UA_SecureChannel *channel,
-                           UA_ActivateSessionRequest *request);
-
-void
-setUserIdentityPolicyId(const UA_EndpointDescription *endpoint,
-                        const UA_DataType *tokenType,
-                        UA_String *policyId, UA_String *securityPolicyUri);
-
-UA_SecurityPolicy *
-getSecurityPolicy(UA_Client *client, UA_String policyUri);
-
-UA_StatusCode
-encryptUserIdentityToken(UA_Client *client, const UA_String *userTokenSecurityPolicy,
-                         UA_ExtensionObject *userIdentityToken);
+UA_Client_processOPN(UA_Client *client, UA_ByteString *message, UA_Boolean renew);
 
 _UA_END_DECLS
 

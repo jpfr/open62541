@@ -211,7 +211,7 @@ UA_Client_processACK(UA_Client *client, const UA_ByteString *payload) {
     return sendOPN(client, false);
 }
 
-UA_SecurityPolicy *
+static UA_SecurityPolicy *
 getSecurityPolicy(UA_Client *client, UA_String policyUri) {
     for(size_t i = 0; i < client->config.securityPoliciesSize; i++) {
         if(UA_String_equal(&policyUri, &client->config.securityPolicies[i].policyUri))
@@ -441,7 +441,7 @@ closeSessionAsync(UA_Client *client) {
 
 /* Function to create a signature using remote certificate and nonce */
 #ifdef UA_ENABLE_ENCRYPTION
-UA_StatusCode
+static UA_StatusCode
 signActivateSessionRequest(UA_SecureChannel *channel,
                            UA_ActivateSessionRequest *request) {
     if(channel->securityMode != UA_MESSAGESECURITYMODE_SIGN &&
@@ -486,7 +486,7 @@ signActivateSessionRequest(UA_SecureChannel *channel,
     return retval;
 }
 
-UA_StatusCode
+static UA_StatusCode
 encryptUserIdentityToken(UA_Client *client, const UA_String *userTokenSecurityPolicy,
                          UA_ExtensionObject *userIdentityToken) {
     UA_IssuedIdentityToken *iit = NULL;
