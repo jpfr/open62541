@@ -129,8 +129,8 @@ START_TEST(Client_endpoints_empty) {
     request.requestHeader.timeoutHint = 10000;
 
     UA_GetEndpointsResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_GETENDPOINTSREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_GETENDPOINTSRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_GETENDPOINTSREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_GETENDPOINTSRESPONSE]);
 
     ck_assert_uint_eq(response.responseHeader.serviceResult, UA_STATUSCODE_GOOD);
 

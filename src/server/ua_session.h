@@ -68,7 +68,7 @@ void UA_Session_deleteMembersCleanup(UA_Session *session, UA_Server *server);
 UA_StatusCode UA_Session_attachToSecureChannel(UA_Session *session,
                                                UA_SecureChannel *channel);
 /* Detach the SecureChannel from the session and close it */
-void UA_Session_detachCloseSecureChannel(UA_Session *session);
+void UA_Session_detachSecureChannel(UA_Session *session);
 UA_StatusCode UA_Session_generateNonce(UA_Session *session);
 
 /* If any activity on a session happens, the timeout is extended */

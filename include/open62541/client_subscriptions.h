@@ -104,9 +104,8 @@ static UA_INLINE UA_SetPublishingModeResponse
 UA_Client_Subscriptions_setPublishingMode(UA_Client *client,
                                           const UA_SetPublishingModeRequest request) {
     UA_SetPublishingModeResponse response;
-    __UA_Client_Service(client, &request,
-                        &UA_TYPES[UA_TYPES_SETPUBLISHINGMODEREQUEST], &response,
-                        &UA_TYPES[UA_TYPES_SETPUBLISHINGMODERESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_SETPUBLISHINGMODEREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_SETPUBLISHINGMODERESPONSE]);
     return response;
 }
 
@@ -224,9 +223,8 @@ static UA_INLINE UA_SetMonitoringModeResponse
 UA_Client_MonitoredItems_setMonitoringMode(UA_Client *client,
                                            const UA_SetMonitoringModeRequest request) {
     UA_SetMonitoringModeResponse response;
-    __UA_Client_Service(client,
-                        &request, &UA_TYPES[UA_TYPES_SETMONITORINGMODEREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_SETMONITORINGMODERESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_SETMONITORINGMODEREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_SETMONITORINGMODERESPONSE]);
     return response;
 }
 
@@ -234,9 +232,8 @@ static UA_INLINE UA_SetTriggeringResponse
 UA_Client_MonitoredItems_setTriggering(UA_Client *client,
                                        const UA_SetTriggeringRequest request) {
     UA_SetTriggeringResponse response;
-    __UA_Client_Service(client,
-                        &request, &UA_TYPES[UA_TYPES_SETTRIGGERINGREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_SETTRIGGERINGRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_SETTRIGGERINGREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_SETTRIGGERINGRESPONSE]);
     return response;
 }
 
@@ -245,10 +242,10 @@ UA_Client_MonitoredItems_modify_async(UA_Client *client,
                                       const UA_ModifyMonitoredItemsRequest request,
                                       UA_ClientAsyncServiceCallback callback,
                                       void *userdata, UA_UInt32 *requestId) {
-    return UA_Client_sendAsyncRequest(client, &request,
-                                      &UA_TYPES[UA_TYPES_MODIFYMONITOREDITEMSREQUEST], callback,
-                                      &UA_TYPES[UA_TYPES_MODIFYMONITOREDITEMSRESPONSE],
-                                      userdata, requestId);
+    return UA_Client_AsyncService(client, &request,
+                                  &UA_TYPES[UA_TYPES_MODIFYMONITOREDITEMSREQUEST], callback,
+                                  &UA_TYPES[UA_TYPES_MODIFYMONITOREDITEMSRESPONSE],
+                                  userdata, requestId);
 }
 
 static UA_INLINE UA_StatusCode
@@ -256,10 +253,10 @@ UA_Client_MonitoredItems_setMonitoringMode_async(UA_Client *client,
                                                  const UA_SetMonitoringModeRequest request,
                                                  UA_ClientAsyncServiceCallback callback,
                                                  void *userdata, UA_UInt32 *requestId) {
-    return UA_Client_sendAsyncRequest(client, &request,
-                                      &UA_TYPES[UA_TYPES_SETMONITORINGMODEREQUEST], callback,
-                                      &UA_TYPES[UA_TYPES_SETMONITORINGMODERESPONSE],
-                                      userdata, requestId);
+    return UA_Client_AsyncService(client, &request,
+                                  &UA_TYPES[UA_TYPES_SETMONITORINGMODEREQUEST], callback,
+                                  &UA_TYPES[UA_TYPES_SETMONITORINGMODERESPONSE],
+                                  userdata, requestId);
 }
 
 static UA_INLINE UA_StatusCode
@@ -267,10 +264,10 @@ UA_Client_MonitoredItems_setTriggering_async(UA_Client *client,
                                              const UA_SetTriggeringRequest request,
                                              UA_ClientAsyncServiceCallback callback,
                                              void *userdata, UA_UInt32 *requestId) {
-    return UA_Client_sendAsyncRequest(client, &request,
-                                      &UA_TYPES[UA_TYPES_SETTRIGGERINGREQUEST], callback,
-                                      &UA_TYPES[UA_TYPES_SETTRIGGERINGRESPONSE],
-                                      userdata, requestId);
+    return UA_Client_AsyncService(client, &request,
+                                  &UA_TYPES[UA_TYPES_SETTRIGGERINGREQUEST], callback,
+                                  &UA_TYPES[UA_TYPES_SETTRIGGERINGRESPONSE],
+                                  userdata, requestId);
 }
 
 #endif

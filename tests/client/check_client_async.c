@@ -122,7 +122,7 @@ START_TEST(Client_read_async) {
 
         /* Send 100 requests */
         for (size_t i = 0; i < 100; i++) {
-            retval = UA_Client_sendAsyncRequest(client, &rr,
+            retval = UA_Client_AsyncService(client, &rr,
                     &UA_TYPES[UA_TYPES_READREQUEST],
                     (UA_ClientAsyncServiceCallback) asyncReadCallback,
                     &UA_TYPES[UA_TYPES_READRESPONSE], &asyncCounter, NULL);
@@ -164,7 +164,7 @@ START_TEST(Client_read_async_timed) {
         rr.nodesToRead = &rvid;
         rr.nodesToReadSize = 1;
 
-        retval = __UA_Client_AsyncServiceEx(client, &rr,
+        retval = UA_Client_AsyncService_customTimeout(client, &rr,
                 &UA_TYPES[UA_TYPES_READREQUEST],
                 (UA_ClientAsyncServiceCallback) asyncReadCallback,
                 &UA_TYPES[UA_TYPES_READRESPONSE], &asyncCounter, NULL, 999);
@@ -178,7 +178,7 @@ START_TEST(Client_read_async_timed) {
         /* Simulate network cable unplugged (no response from server) */
         UA_Client_recvTesting_result = UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
 
-        retval = __UA_Client_AsyncServiceEx(client, &rr,
+        retval = UA_Client_AsyncService_customTimeout(client, &rr,
                 &UA_TYPES[UA_TYPES_READREQUEST],
                 (UA_ClientAsyncServiceCallback) asyncReadCallback,
                 &UA_TYPES[UA_TYPES_READRESPONSE], &asyncCounter, NULL, 100);

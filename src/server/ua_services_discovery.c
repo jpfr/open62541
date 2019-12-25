@@ -599,12 +599,7 @@ periodicServerRegister(UA_Server *server, void *data) {
         channelState != UA_SECURECHANNELSTATE_CLOSED) ||
        (sessionState != UA_SESSIONSTATE_FRESH &&
         sessionState != UA_SESSIONSTATE_CLOSED)) {
-        UA_StatusCode retval1 = UA_Client_disconnect(cb->client);
-        if(retval1 != UA_STATUSCODE_GOOD) {
-            UA_LOG_WARNING(&server->config.logger, UA_LOGCATEGORY_SERVER,
-                         "Could not disconnect client from register server. StatusCode %s",
-                         UA_StatusCode_name(retval));
-        }
+        UA_Client_disconnect(cb->client);
     }
     /* Registering failed */
     if(retval != UA_STATUSCODE_GOOD) {

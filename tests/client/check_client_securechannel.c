@@ -131,8 +131,7 @@ START_TEST(SecureChannel_reconnect) {
     
     client->sessionState = UA_SESSIONSTATE_ACTIVATED;
 
-    retval = UA_Client_disconnect(client);
-    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    UA_Client_disconnect(client);
 
     UA_ClientConfig *cconfig = UA_Client_getConfig(client);
     UA_fakeSleep(cconfig->secureChannelLifeTime + 1);

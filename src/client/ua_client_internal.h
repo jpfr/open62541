@@ -131,6 +131,7 @@ struct UA_Client {
     UA_DateTime nextChannelRenewal;
 
     /* Session */
+    UA_Boolean autoConnectSession; /* Restore or create a session automatically */
     UA_Boolean endpointsRequested;
     UA_SessionState sessionState;
     UA_NodeId authenticationToken;
@@ -169,6 +170,9 @@ UA_Client_findCustomCallback(UA_Client *client, UA_UInt32 requestId) {
 }
 
 UA_StatusCode
+connectSessionAsync(UA_Client *client);
+
+UA_StatusCode
 processOPNHeader(UA_SecureChannel *channel, void *application,
                  const UA_AsymmetricAlgorithmSecurityHeader *asymHeader);
 
@@ -176,7 +180,7 @@ UA_StatusCode
 processOPNResponse(UA_Client *client, UA_ByteString *message,
                    UA_Boolean renew);
 
-void
+UA_StatusCode
 UA_Client_processACK(UA_Client *client, const UA_ByteString *payload);
 
 void

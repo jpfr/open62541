@@ -204,8 +204,7 @@ START_TEST(Service_TranslateBrowsePathsToNodeIds) {
 
     UA_BrowsePath_deleteMembers(&browsePath);
     UA_TranslateBrowsePathsToNodeIdsResponse_deleteMembers(&response);
-    retVal = UA_Client_disconnect(client);
-    ck_assert_int_eq(retVal, UA_STATUSCODE_GOOD);
+    UA_Client_disconnect(client);
     UA_Client_delete(client);
 }
 END_TEST

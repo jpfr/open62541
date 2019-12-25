@@ -542,8 +542,8 @@ START_TEST(Client_subscription_keepAlive) {
     pr.subscriptionAcknowledgementsSize = 0;
     UA_PublishResponse presponse;
     UA_PublishResponse_init(&presponse);
-    __UA_Client_Service(client, &pr, &UA_TYPES[UA_TYPES_PUBLISHREQUEST],
-                        &presponse, &UA_TYPES[UA_TYPES_PUBLISHRESPONSE]);
+    UA_Client_Service(client, &pr, &UA_TYPES[UA_TYPES_PUBLISHREQUEST],
+                      &presponse, &UA_TYPES[UA_TYPES_PUBLISHRESPONSE]);
     ck_assert_uint_eq(presponse.responseHeader.serviceResult, UA_STATUSCODE_GOOD);
     ck_assert_uint_eq(presponse.notificationMessage.notificationDataSize, 1);
     UA_PublishResponse_deleteMembers(&presponse);
@@ -554,8 +554,8 @@ START_TEST(Client_subscription_keepAlive) {
     UA_PublishRequest_init(&pr);
     pr.subscriptionAcknowledgementsSize = 0;
     UA_PublishResponse_init(&presponse);
-    __UA_Client_Service(client, &pr, &UA_TYPES[UA_TYPES_PUBLISHREQUEST],
-                        &presponse, &UA_TYPES[UA_TYPES_PUBLISHRESPONSE]);
+    UA_Client_Service(client, &pr, &UA_TYPES[UA_TYPES_PUBLISHREQUEST],
+                      &presponse, &UA_TYPES[UA_TYPES_PUBLISHRESPONSE]);
 
     ck_assert_uint_eq(presponse.responseHeader.serviceResult, UA_STATUSCODE_GOOD);
     ck_assert_uint_eq(presponse.notificationMessage.notificationDataSize, 0);

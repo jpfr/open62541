@@ -33,8 +33,8 @@ UA_Client_getEndpoints(UA_Client *client, const char *serverUrl,
     request.requestHeader.timeoutHint = 10000;
     request.endpointUrl = UA_STRING((char*)(uintptr_t)serverUrl);
     UA_GetEndpointsResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_GETENDPOINTSREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_GETENDPOINTSRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_GETENDPOINTSREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_GETENDPOINTSRESPONSE]);
 
     /* Process the response */
     res = response.responseHeader.serviceResult;
@@ -84,8 +84,8 @@ UA_Client_findServers(UA_Client *client, const char *serverUrl,
 
     /* Send the request */
     UA_FindServersResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_FINDSERVERSREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_FINDSERVERSRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_FINDSERVERSREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_FINDSERVERSRESPONSE]);
 
     /* Process the response */
     res = response.responseHeader.serviceResult;
@@ -136,8 +136,8 @@ UA_Client_findServersOnNetwork(UA_Client *client, const char *serverUrl,
 
     /* Send the request */
     UA_FindServersOnNetworkResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_FINDSERVERSONNETWORKREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_FINDSERVERSONNETWORKRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_FINDSERVERSONNETWORKREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_FINDSERVERSONNETWORKRESPONSE]);
 
     /* Process the response */
     res = response.responseHeader.serviceResult;

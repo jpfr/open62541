@@ -555,7 +555,7 @@ UA_SecureChannel_processCompleteMessages(UA_SecureChannel *channel, void *applic
 
 static UA_StatusCode
 MSGToMessageQueue(UA_SecureChannel *channel, UA_ByteString *chunkContent,
-                  UA_ChunkType chunkType) {
+                  UA_MessageType messageType, UA_ChunkType chunkType) {
     /* Decode and check the symmetric security header (tokenId) */
     size_t offset = 0;
     UA_SymmetricAlgorithmSecurityHeader symmetricSecurityHeader;
@@ -596,7 +596,7 @@ MSGToMessageQueue(UA_SecureChannel *channel, UA_ByteString *chunkContent,
     switch(chunkType) {
     case UA_CHUNKTYPE_INTERMEDIATE:
     case UA_CHUNKTYPE_FINAL:
-        return UA_MessageQueue_addChunkPayload(channel, requestId, UA_MESSAGETYPE_MSG,
+        return UA_MessageQueue_addChunkPayload(channel, requestId, messageType,
                                                chunkContent, chunkType == UA_CHUNKTYPE_FINAL); 
     case UA_CHUNKTYPE_ABORT:
         UA_MessageQueue_deleteLatestMessage(channel, requestId);
@@ -679,7 +679,7 @@ processIndividualChunk(UA_SecureChannel *channel, UA_Byte **posp,
        msgType == UA_MESSAGETYPE_CLO) {
         if(channel->state != UA_SECURECHANNELSTATE_OPEN)
             return UA_STATUSCODE_BADTCPMESSAGETYPEINVALID;
-        return MSGToMessageQueue(channel, &chunkContent, chunkType);
+        return MSGToMessageQueue(channel, &chunkContent, msgType, chunkType);
     }
 
     /* No chunking allowed for the remaining chunk types */

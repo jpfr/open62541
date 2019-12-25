@@ -73,26 +73,23 @@ UA_Client_getConfig(UA_Client *client);
 /* Get the client context */
 static UA_INLINE void *
 UA_Client_getContext(UA_Client *client) {
-    UA_ClientConfig *config = UA_Client_getConfig(client); /* Cannot fail */
-    return config->clientContext;
+    return UA_Client_getConfig(client)->clientContext;
 }
 
-/* Reset a client */
 void UA_EXPORT
 UA_Client_reset(UA_Client *client);
 
-/* Delete a client */
 void UA_EXPORT
 UA_Client_delete(UA_Client *client);
 
 /**
- * Connect to a Server
- * ------------------- */
+ * Client Connection
+ * ----------------- */
 
-typedef void (*UA_ClientAsyncServiceCallback)(UA_Client *client, void *userdata,
-        UA_UInt32 requestId, void *response);
-
-/* Connect to the server
+/* Connect to a server. If no endpoint is set in the client configuration, then
+ * a valid endpoint (SecurityPolicy and session credentials) is selected
+ * automatically. Filter criteria for valid endpoints are also in the client
+ * config.
  *
  * @param client to use
  * @param endpointURL to connect (for example "opc.tcp://localhost:4840")
@@ -100,39 +97,50 @@ typedef void (*UA_ClientAsyncServiceCallback)(UA_Client *client, void *userdata,
 UA_StatusCode UA_EXPORT
 UA_Client_connect(UA_Client *client, const char *endpointUrl);
 
-UA_StatusCode UA_EXPORT
-UA_Client_connect_async(UA_Client *client, const char *endpointUrl);
-
-/* Connect to the server without creating a session
- *
- * @param client to use
- * @param endpointURL to connect (for example "opc.tcp://localhost:4840")
- * @return Indicates whether the operation succeeded or returns an error code */
+/* Connect to the server, but open only a SecureChannel (no session).
+ * Does nothing if a SecureChannel is already open. */
 UA_StatusCode UA_EXPORT
 UA_Client_connect_noSession(UA_Client *client, const char *endpointUrl);
 
-/* Connect to the selected server with the given username and password
- *
- * @param client to use
- * @param endpointURL to connect (for example "opc.tcp://localhost:4840")
- * @param username
- * @param password
- * @return Indicates whether the operation succeeded or returns an error code */
+/* Connect async, i.e. without waiting for the connection to finish. Use
+ * UA_Client_run_iterate to complete the connection of SecureChannel and
+ * Session. The config->stateCallback can be used to track the client state. */
 UA_StatusCode UA_EXPORT
+UA_Client_connect_async(UA_Client *client, const char *endpointUrl);
+
+/* Connect async without opening a session */
+UA_StatusCode UA_EXPORT
+UA_Client_connect_async_noSession(UA_Client *client, const char *endpointUrl);
+
+/* Connect to the selected server with the given username and password */
+static UA_INLINE UA_StatusCode
 UA_Client_connect_username(UA_Client *client, const char *endpointUrl,
-                           const char *username, const char *password);
+                           const char *username, const char *password) {
+    UA_UserNameIdentityToken* identityToken = UA_UserNameIdentityToken_new();
+    if(!identityToken)
+        return UA_STATUSCODE_BADOUTOFMEMORY;
+    identityToken->userName = UA_STRING_ALLOC(username);
+    identityToken->password = UA_STRING_ALLOC(password);
+    UA_ClientConfig *cc = UA_Client_getConfig(client);
+    UA_ExtensionObject_deleteMembers(&cc->userIdentityToken);
+    cc->userIdentityToken.encoding = UA_EXTENSIONOBJECT_DECODED;
+    cc->userIdentityToken.content.decoded.type = &UA_TYPES[UA_TYPES_USERNAMEIDENTITYTOKEN];
+    cc->userIdentityToken.content.decoded.data = identityToken;
+    return UA_Client_connect(client, endpointUrl);
+}
 
 /* Disconnect and close a connection to the selected server */
-UA_StatusCode UA_EXPORT
+void UA_EXPORT
 UA_Client_disconnect(UA_Client *client);
 
-UA_StatusCode UA_EXPORT
-UA_Client_disconnect_async(UA_Client *client, UA_UInt32 *requestId);
+void UA_EXPORT
+UA_Client_disconnect_async(UA_Client *client);
 
 /* Close a connection to the selected server */
 UA_DEPRECATED static UA_INLINE UA_StatusCode
 UA_Client_close(UA_Client *client) {
-    return UA_Client_disconnect(client);
+    UA_Client_disconnect(client);
+    return UA_STATUSCODE_GOOD;
 }
 
 /**
@@ -215,11 +223,11 @@ UA_Client_findServersOnNetwork(UA_Client *client, const char *serverUrl,
  * The raw OPC UA services are exposed to the client. But most of them time, it
  * is better to use the convenience functions from ``ua_client_highlevel.h``
  * that wrap the raw services. */
-/* Don't use this function. Use the type versions below instead. */
+
 void UA_EXPORT
-__UA_Client_Service(UA_Client *client, const void *request,
-                    const UA_DataType *requestType, void *response,
-                    const UA_DataType *responseType);
+UA_Client_Service(UA_Client *client, const void *request,
+                  const UA_DataType *requestType, void *response,
+                  const UA_DataType *responseType);
 
 /*
  * Attribute Service Set
@@ -227,16 +235,16 @@ __UA_Client_Service(UA_Client *client, const void *request,
 static UA_INLINE UA_ReadResponse
 UA_Client_Service_read(UA_Client *client, const UA_ReadRequest request) {
     UA_ReadResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_READREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_READRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_READREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_READRESPONSE]);
     return response;
 }
 
 static UA_INLINE UA_WriteResponse
 UA_Client_Service_write(UA_Client *client, const UA_WriteRequest request) {
     UA_WriteResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_WRITEREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_WRITERESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_WRITEREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_WRITERESPONSE]);
     return response;
 }
 
@@ -247,16 +255,16 @@ UA_Client_Service_write(UA_Client *client, const UA_WriteRequest request) {
 static UA_INLINE UA_HistoryReadResponse
 UA_Client_Service_historyRead(UA_Client *client, const UA_HistoryReadRequest request) {
     UA_HistoryReadResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_HISTORYREADREQUEST],
-        &response, &UA_TYPES[UA_TYPES_HISTORYREADRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_HISTORYREADREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_HISTORYREADRESPONSE]);
     return response;
 }
 
 static UA_INLINE UA_HistoryUpdateResponse
 UA_Client_Service_historyUpdate(UA_Client *client, const UA_HistoryUpdateRequest request) {
     UA_HistoryUpdateResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_HISTORYUPDATEREQUEST],
-        &response, &UA_TYPES[UA_TYPES_HISTORYUPDATERESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_HISTORYUPDATEREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_HISTORYUPDATERESPONSE]);
     return response;
 }
 #endif
@@ -268,8 +276,8 @@ UA_Client_Service_historyUpdate(UA_Client *client, const UA_HistoryUpdateRequest
 static UA_INLINE UA_CallResponse
 UA_Client_Service_call(UA_Client *client, const UA_CallRequest request) {
     UA_CallResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_CALLREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_CALLRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_CALLREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_CALLRESPONSE]);
     return response;
 }
 #endif
@@ -280,8 +288,8 @@ UA_Client_Service_call(UA_Client *client, const UA_CallRequest request) {
 static UA_INLINE UA_AddNodesResponse
 UA_Client_Service_addNodes(UA_Client *client, const UA_AddNodesRequest request) {
     UA_AddNodesResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_ADDNODESREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_ADDNODESRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_ADDNODESREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_ADDNODESRESPONSE]);
     return response;
 }
 
@@ -289,8 +297,8 @@ static UA_INLINE UA_AddReferencesResponse
 UA_Client_Service_addReferences(UA_Client *client,
                                 const UA_AddReferencesRequest request) {
     UA_AddReferencesResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_ADDREFERENCESREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_ADDREFERENCESRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_ADDREFERENCESREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_ADDREFERENCESRESPONSE]);
     return response;
 }
 
@@ -298,8 +306,8 @@ static UA_INLINE UA_DeleteNodesResponse
 UA_Client_Service_deleteNodes(UA_Client *client,
                               const UA_DeleteNodesRequest request) {
     UA_DeleteNodesResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_DELETENODESREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_DELETENODESRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_DELETENODESREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_DELETENODESRESPONSE]);
     return response;
 }
 
@@ -307,8 +315,8 @@ static UA_INLINE UA_DeleteReferencesResponse
 UA_Client_Service_deleteReferences(UA_Client *client,
                                    const UA_DeleteReferencesRequest request) {
     UA_DeleteReferencesResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_DELETEREFERENCESREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_DELETEREFERENCESRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_DELETEREFERENCESREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_DELETEREFERENCESRESPONSE]);
     return response;
 }
 
@@ -318,8 +326,8 @@ UA_Client_Service_deleteReferences(UA_Client *client,
 static UA_INLINE UA_BrowseResponse
 UA_Client_Service_browse(UA_Client *client, const UA_BrowseRequest request) {
     UA_BrowseResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_BROWSEREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_BROWSERESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_BROWSEREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_BROWSERESPONSE]);
     return response;
 }
 
@@ -327,8 +335,8 @@ static UA_INLINE UA_BrowseNextResponse
 UA_Client_Service_browseNext(UA_Client *client,
                              const UA_BrowseNextRequest request) {
     UA_BrowseNextResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_BROWSENEXTREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_BROWSENEXTRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_BROWSENEXTREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_BROWSENEXTRESPONSE]);
     return response;
 }
 
@@ -336,10 +344,10 @@ static UA_INLINE UA_TranslateBrowsePathsToNodeIdsResponse
 UA_Client_Service_translateBrowsePathsToNodeIds(UA_Client *client,
                         const UA_TranslateBrowsePathsToNodeIdsRequest request) {
     UA_TranslateBrowsePathsToNodeIdsResponse response;
-    __UA_Client_Service(client, &request,
-                        &UA_TYPES[UA_TYPES_TRANSLATEBROWSEPATHSTONODEIDSREQUEST],
-                        &response,
-                        &UA_TYPES[UA_TYPES_TRANSLATEBROWSEPATHSTONODEIDSRESPONSE]);
+    UA_Client_Service(client, &request,
+                      &UA_TYPES[UA_TYPES_TRANSLATEBROWSEPATHSTONODEIDSREQUEST],
+                      &response,
+                      &UA_TYPES[UA_TYPES_TRANSLATEBROWSEPATHSTONODEIDSRESPONSE]);
     return response;
 }
 
@@ -347,8 +355,8 @@ static UA_INLINE UA_RegisterNodesResponse
 UA_Client_Service_registerNodes(UA_Client *client,
                                 const UA_RegisterNodesRequest request) {
     UA_RegisterNodesResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_REGISTERNODESREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_REGISTERNODESRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_REGISTERNODESREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_REGISTERNODESRESPONSE]);
     return response;
 }
 
@@ -356,9 +364,9 @@ static UA_INLINE UA_UnregisterNodesResponse
 UA_Client_Service_unregisterNodes(UA_Client *client,
                                   const UA_UnregisterNodesRequest request) {
     UA_UnregisterNodesResponse response;
-    __UA_Client_Service(client, &request,
-                        &UA_TYPES[UA_TYPES_UNREGISTERNODESREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_UNREGISTERNODESRESPONSE]);
+    UA_Client_Service(client, &request,
+                      &UA_TYPES[UA_TYPES_UNREGISTERNODESREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_UNREGISTERNODESRESPONSE]);
     return response;
 }
 
@@ -371,8 +379,8 @@ static UA_INLINE UA_QueryFirstResponse
 UA_Client_Service_queryFirst(UA_Client *client,
                              const UA_QueryFirstRequest request) {
     UA_QueryFirstResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_QUERYFIRSTREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_QUERYFIRSTRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_QUERYFIRSTREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_QUERYFIRSTRESPONSE]);
     return response;
 }
 
@@ -380,8 +388,8 @@ static UA_INLINE UA_QueryNextResponse
 UA_Client_Service_queryNext(UA_Client *client,
                             const UA_QueryNextRequest request) {
     UA_QueryNextResponse response;
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_QUERYFIRSTREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_QUERYFIRSTRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_QUERYFIRSTREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_QUERYFIRSTRESPONSE]);
     return response;
 }
 
@@ -396,38 +404,60 @@ UA_Client_Service_queryNext(UA_Client *client,
  * be made without waiting for a response first. Responess may come in a
  * different ordering. */
 
-/* Use the type versions of this method. See below. However, the general
- * mechanism of async service calls is explained here.
+typedef void (*UA_ClientAsyncServiceCallback)(UA_Client *client, void *userdata,
+                                              UA_UInt32 requestId, void *response);
+
+/* Call a service without waiting for the response. Use UA_Client_run_iterate to
+ * process the response later via the provided callback function.
  *
- * We say that an async service call has been dispatched once this method
- * returns UA_STATUSCODE_GOOD. If there is an error after an async service has
- * been dispatched, the callback is called with an "empty" response where the
+ * The async service call has been dispatched once this method returns
+ * UA_STATUSCODE_GOOD. If there is an error after an async service has been
+ * dispatched, the callback is called with an "empty" response where the
  * statusCode has been set accordingly. This is also done if the client is
  * shutting down and the list of dispatched async services is emptied.
  *
  * The statusCode received when the client is shutting down is
  * UA_STATUSCODE_BADSHUTDOWN.
  *
- * The statusCode received when the client don't receive response
- * after specified config->timeout (in ms) is
- * UA_STATUSCODE_BADTIMEOUT.
+ * The statusCode received when the client does not receive response after
+ * config->timeout (in ms) is UA_STATUSCODE_BADTIMEOUT.
  *
- * Instead, you can use __UA_Client_AsyncServiceEx to specify
- * a custom timeout
+ * The context argument is forwarded to the callback. It can be NULL.
  *
- * The userdata and requestId arguments can be NULL. */
+ * If the requestId argument is non-NULL, the identifier will be set if
+ * dispatching is successful. */
 UA_StatusCode UA_EXPORT
-UA_Client_sendAsyncRequest(UA_Client *client, const void *request,
-                           const UA_DataType *requestType,
-                           UA_ClientAsyncServiceCallback callback,
-                           const UA_DataType *responseType,
-                           void *userdata, UA_UInt32 *requestId);
+UA_Client_AsyncService(UA_Client *client, const void *request,
+                       const UA_DataType *requestType,
+                       UA_ClientAsyncServiceCallback callback,
+                       const UA_DataType *responseType,
+                       void *context, UA_UInt32 *requestId);
+
+/* The same as above, but with a custom timeout (in ms) */
+UA_StatusCode UA_EXPORT
+UA_Client_AsyncService_customTimeout(UA_Client *client, const void *request,
+                                     const UA_DataType *requestType,
+                                     UA_ClientAsyncServiceCallback callback,
+                                     const UA_DataType *responseType,
+                                     void *context, UA_UInt32 *requestId,
+                                     UA_UInt32 timeout);
 
 /* Listen on the network and process arriving asynchronous responses in the
  * background. Internal housekeeping, renewal of SecureChannels and subscription
- * management is done as well. */
+ * management is done as well.
+ *
+ * The timeout is in ms.
+ *
+ * Returns immediately after activity on the network was processed.
+ *
+ * Returns UA_STATUSCODE_GOODNONCRITICALTIMEOUT if no activity on the network
+ * occured during the timeout duration. */
 UA_StatusCode UA_EXPORT
 UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout);
+
+/* Run background tasks as long as *running is true */
+UA_StatusCode UA_EXPORT
+UA_Client_run(UA_Client *client, const volatile UA_Boolean *running);
 
 UA_DEPRECATED static UA_INLINE UA_StatusCode
 UA_Client_runAsync(UA_Client *client, UA_UInt16 timeout) {
@@ -438,33 +468,6 @@ UA_DEPRECATED static UA_INLINE UA_StatusCode
 UA_Client_manuallyRenewSecureChannel(UA_Client *client) {
     return UA_Client_run_iterate(client, 0);
 }
-
-/* Use the type versions of this method. See below. However, the general
- * mechanism of async service calls is explained here.
- *
- * We say that an async service call has been dispatched once this method
- * returns UA_STATUSCODE_GOOD. If there is an error after an async service has
- * been dispatched, the callback is called with an "empty" response where the
- * statusCode has been set accordingly. This is also done if the client is
- * shutting down and the list of dispatched async services is emptied.
- *
- * The statusCode received when the client is shutting down is
- * UA_STATUSCODE_BADSHUTDOWN.
- *
- * The statusCode received when the client don't receive response
- * after specified timeout (in ms) is
- * UA_STATUSCODE_BADTIMEOUT.
- *
- * The timeout can be disabled by setting timeout to 0
- *
- * The userdata and requestId arguments can be NULL. */
-UA_StatusCode UA_EXPORT
-__UA_Client_AsyncServiceEx(UA_Client *client, const void *request,
-                           const UA_DataType *requestType,
-                           UA_ClientAsyncServiceCallback callback,
-                           const UA_DataType *responseType,
-                           void *userdata, UA_UInt32 *requestId,
-                           UA_UInt32 timeout);
 
 /**
  * Timed Callbacks

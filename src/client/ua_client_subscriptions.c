@@ -95,9 +95,8 @@ UA_Client_Subscriptions_create(UA_Client *client,
     }
 
     /* Send the request as a synchronous service call */
-    __UA_Client_Service(client,
-                        &request, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONRESPONSE]);
 
     __Subscriptions_create_handler(client, &cc, 0, &response);
 
@@ -127,10 +126,10 @@ UA_Client_Subscriptions_create_async(
     }
 
     /* Send the request as asynchronous service call */
-    return UA_Client_sendAsyncRequest(
-        client, &request, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONREQUEST],
-        __Subscriptions_create_handler, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONRESPONSE],
-        cc, requestId);
+    return UA_Client_AsyncService(client, &request, &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONREQUEST],
+                                  __Subscriptions_create_handler,
+                                  &UA_TYPES[UA_TYPES_CREATESUBSCRIPTIONRESPONSE],
+                                  cc, requestId);
 cleanup:
     if(cc->clientData)
         UA_free(cc->clientData);
@@ -178,9 +177,8 @@ UA_Client_Subscriptions_modify(UA_Client *client, const UA_ModifySubscriptionReq
     }
     
     /* Call the service */
-    __UA_Client_Service(client,
-                        &request, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONRESPONSE]);
 
     /* Adjust the internal representation */
     sub->publishingInterval = response.revisedPublishingInterval;
@@ -207,10 +205,10 @@ UA_Client_Subscriptions_modify_async(UA_Client *client,
     cc->userData = userdata;
     cc->userCallback = callback;
 
-    return UA_Client_sendAsyncRequest(
-        client, &request, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONREQUEST],
-        __Subscriptions_modify_handler, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONRESPONSE],
-        cc, requestId);
+    return UA_Client_AsyncService(client, &request, &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONREQUEST],
+                                  __Subscriptions_modify_handler,
+                                  &UA_TYPES[UA_TYPES_MODIFYSUBSCRIPTIONRESPONSE],
+                                  cc, requestId);
 }
 
 static void
@@ -339,10 +337,10 @@ UA_Client_Subscriptions_delete_async(UA_Client *client,
     cc->userCallback = callback;
     cc->userData = userdata;
 
-    return UA_Client_sendAsyncRequest(
-        client, &request, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSREQUEST],
-        __Subscriptions_delete_handler, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSRESPONSE],
-        cc, requestId);
+    return UA_Client_AsyncService(client, &request, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSREQUEST],
+                                  __Subscriptions_delete_handler,
+                                  &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSRESPONSE],
+                                  cc, requestId);
 cleanup:
     __Subscriptions_DeleteData_free(data);
     UA_free(cc);
@@ -371,8 +369,8 @@ UA_Client_Subscriptions_delete(UA_Client *client,
     /* Send the request */
     UA_DeleteSubscriptionsResponse response;
 
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_DELETESUBSCRIPTIONSRESPONSE]);
 
     __Subscriptions_delete_handler(client, &cc, 0, &response);
     return response;
@@ -600,8 +598,8 @@ __UA_Client_MonitoredItems_create(UA_Client *client,
     }
 
     /* Call the service */
-    __UA_Client_Service(client, request, &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSREQUEST],
-                        response, &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSRESPONSE]);
+    UA_Client_Service(client, request, &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSREQUEST],
+                      response, &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSRESPONSE]);
 
     __MonitoredItems_create_handler(client, &cc, 0, response);
     return;
@@ -670,10 +668,11 @@ __UA_Client_MonitoredItems_createDataChanges_async(
     if(retval != UA_STATUSCODE_GOOD)
         goto cleanup;
 
-    return UA_Client_sendAsyncRequest(
-        client, data->request, &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSREQUEST],
-        __MonitoredItems_create_handler, &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSRESPONSE],
-        cc, requestId);
+    return UA_Client_AsyncService(client, data->request,
+                                  &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSREQUEST],
+                                  __MonitoredItems_create_handler,
+                                  &UA_TYPES[UA_TYPES_CREATEMONITOREDITEMSRESPONSE],
+                                  cc, requestId);
 cleanup:
     MonitoredItems_CreateData_deleteItems(data, client);
     MonitoredItems_CreateData_free(data);
@@ -840,8 +839,8 @@ UA_Client_MonitoredItems_delete(UA_Client *client,
 #endif
     cc.clientData = (void *)(uintptr_t)&request;
 
-    __UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSRESPONSE]);
+    UA_Client_Service(client, &request, &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSRESPONSE]);
 
     __MonitoredItems_delete_handler(client, &cc, 0, &response);
     return response;
@@ -862,16 +861,18 @@ UA_Client_MonitoredItems_delete_async(UA_Client *client,
         UA_free(cc);
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
+
     UA_DeleteMonitoredItemsRequest_copy(&request, req_copy);
     cc->isAsync = true;
     cc->clientData = req_copy;
     cc->userCallback = callback;
     cc->userData = userdata;
 
-    return UA_Client_sendAsyncRequest(
-        client, &request, &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSREQUEST],
-        __MonitoredItems_delete_handler, &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSRESPONSE],
-        cc, requestId);
+    return UA_Client_AsyncService(client, &request,
+                                  &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSREQUEST],
+                                  __MonitoredItems_delete_handler,
+                                  &UA_TYPES[UA_TYPES_DELETEMONITOREDITEMSRESPONSE],
+                                  cc, requestId);
 }
 
 UA_StatusCode
@@ -932,9 +933,8 @@ UA_Client_MonitoredItems_modify(UA_Client *client,
         }
     }
 
-    __UA_Client_Service(client,
-                        &modifiedRequest, &UA_TYPES[UA_TYPES_MODIFYMONITOREDITEMSREQUEST],
-                        &response, &UA_TYPES[UA_TYPES_MODIFYMONITOREDITEMSRESPONSE]);
+    UA_Client_Service(client, &modifiedRequest, &UA_TYPES[UA_TYPES_MODIFYMONITOREDITEMSREQUEST],
+                      &response, &UA_TYPES[UA_TYPES_MODIFYMONITOREDITEMSRESPONSE]);
 
     UA_ModifyMonitoredItemsRequest_deleteMembers(&modifiedRequest);
     return response;
@@ -1285,10 +1285,11 @@ UA_Client_Subscriptions_backgroundPublish(UA_Client *client) {
         client->currentlyOutStandingPublishRequests++;
 
         /* Disable the timeout, it is treat in UA_Client_Subscriptions_backgroundPublishInactivityCheck */
-        retval = __UA_Client_AsyncServiceEx(client, request, &UA_TYPES[UA_TYPES_PUBLISHREQUEST],
-                                            processPublishResponseAsync,
-                                            &UA_TYPES[UA_TYPES_PUBLISHRESPONSE],
-                                            (void*)request, &requestId, 0);
+        retval = UA_Client_AsyncService_customTimeout(client, request,
+                                                      &UA_TYPES[UA_TYPES_PUBLISHREQUEST],
+                                                      processPublishResponseAsync,
+                                                      &UA_TYPES[UA_TYPES_PUBLISHRESPONSE],
+                                                      (void*)request, &requestId, 0);
         if(retval != UA_STATUSCODE_GOOD) {
             UA_PublishRequest_delete(request);
             return retval;

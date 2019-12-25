@@ -814,9 +814,8 @@ __UA_Client_readAttribute_async(UA_Client *client, const UA_NodeId *nodeId,
     request.nodesToRead = &item;
     request.nodesToReadSize = 1;
 
-    UA_Client_sendAsyncRequest(client, &request, &UA_TYPES[UA_TYPES_READREQUEST],
-                               ValueAttributeRead, &UA_TYPES[UA_TYPES_READRESPONSE], NULL,
-                               reqId);
+    UA_Client_AsyncService(client, &request, &UA_TYPES[UA_TYPES_READREQUEST],
+                           ValueAttributeRead, &UA_TYPES[UA_TYPES_READRESPONSE], NULL, reqId);
 
     CustomCallback *cc = (CustomCallback*) UA_malloc(sizeof(CustomCallback));
     if (!cc)
@@ -864,9 +863,8 @@ UA_StatusCode __UA_Client_writeAttribute_async(UA_Client *client,
     wReq.nodesToWrite = &wValue;
     wReq.nodesToWriteSize = 1;
 
-    return UA_Client_sendAsyncRequest(client, &wReq, &UA_TYPES[UA_TYPES_WRITEREQUEST],
-                                      callback, &UA_TYPES[UA_TYPES_WRITERESPONSE],
-                                      userdata, reqId);
+    return UA_Client_AsyncService(client, &wReq, &UA_TYPES[UA_TYPES_WRITEREQUEST], callback,
+                                  &UA_TYPES[UA_TYPES_WRITERESPONSE], userdata, reqId);
 }
 
 /*Node Management*/
@@ -894,10 +892,9 @@ __UA_Client_addNode_async(UA_Client *client, const UA_NodeClass nodeClass,
     item.nodeAttributes.content.decoded.data = (void*) (uintptr_t) attr; // hack. is not written into.
     request.nodesToAdd = &item;
     request.nodesToAddSize = 1;
-
-    return UA_Client_sendAsyncRequest(client, &request,
-                                      &UA_TYPES[UA_TYPES_ADDNODESREQUEST], callback,
-                                      &UA_TYPES[UA_TYPES_ADDNODESRESPONSE], userdata, reqId);
+    return UA_Client_AsyncService(client, &request, &UA_TYPES[UA_TYPES_ADDNODESREQUEST],
+                                  callback, &UA_TYPES[UA_TYPES_ADDNODESRESPONSE],
+                                  userdata, reqId);
 
 }
 
@@ -907,7 +904,6 @@ UA_StatusCode __UA_Client_call_async(UA_Client *client,
         const UA_NodeId objectId, const UA_NodeId methodId, size_t inputSize,
         const UA_Variant *input, UA_ClientAsyncServiceCallback callback,
         void *userdata, UA_UInt32 *reqId) {
-
     UA_CallRequest request;
     UA_CallRequest_init(&request);
     UA_CallMethodRequest item;
@@ -918,10 +914,9 @@ UA_StatusCode __UA_Client_call_async(UA_Client *client,
     item.inputArgumentsSize = inputSize;
     request.methodsToCall = &item;
     request.methodsToCallSize = 1;
-
-    return UA_Client_sendAsyncRequest(client, &request,
-            &UA_TYPES[UA_TYPES_CALLREQUEST], callback,
-            &UA_TYPES[UA_TYPES_CALLRESPONSE], userdata, reqId);
+    return UA_Client_AsyncService(client, &request, &UA_TYPES[UA_TYPES_CALLREQUEST],
+                                  callback, &UA_TYPES[UA_TYPES_CALLRESPONSE],
+                                  userdata, reqId);
 }
 #endif
 
@@ -944,10 +939,11 @@ UA_StatusCode __UA_Client_translateBrowsePathsToNodeIds_async(UA_Client *client,
     request.browsePaths = &browsePath;
     request.browsePathsSize = 1;
 
-    UA_StatusCode retval = UA_Client_sendAsyncRequest(client, &request,
-            &UA_TYPES[UA_TYPES_TRANSLATEBROWSEPATHSTONODEIDSREQUEST], callback,
-            &UA_TYPES[UA_TYPES_TRANSLATEBROWSEPATHSTONODEIDSRESPONSE], userdata,
-            reqId);
+    UA_StatusCode retval =
+        UA_Client_AsyncService(client, &request,
+                               &UA_TYPES[UA_TYPES_TRANSLATEBROWSEPATHSTONODEIDSREQUEST], callback,
+                               &UA_TYPES[UA_TYPES_TRANSLATEBROWSEPATHSTONODEIDSRESPONSE], userdata,
+                               reqId);
     if (retval != UA_STATUSCODE_GOOD) {
         UA_Array_delete(browsePath.relativePath.elements,
                 browsePath.relativePath.elementsSize,

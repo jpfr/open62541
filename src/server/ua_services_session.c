@@ -345,6 +345,8 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
         return;
     }
 
+    const UA_DataType *tokenType = request->userIdentityToken.content.decoded.type;
+
     /* Find the matching endpoint */
     const UA_EndpointDescription *ed = NULL;
     for(size_t i = 0; ed == NULL && i < server->config.endpointsSize; ++i) {
@@ -364,17 +366,17 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
             if(u->tokenType == UA_USERTOKENTYPE_ANONYMOUS) {
                 /* Part 4, Section 5.6.3.2, Table 17: A NULL or empty
                  * UserIdentityToken should be treated as Anonymous */
-                if(request->userIdentityToken.content.decoded.type != &UA_TYPES[UA_TYPES_ANONYMOUSIDENTITYTOKEN] &&
+                if(tokenType != &UA_TYPES[UA_TYPES_ANONYMOUSIDENTITYTOKEN] &&
                    request->userIdentityToken.encoding != UA_EXTENSIONOBJECT_ENCODED_NOBODY)
                     continue;
             } else if(u->tokenType == UA_USERTOKENTYPE_USERNAME) {
-                if(request->userIdentityToken.content.decoded.type != &UA_TYPES[UA_TYPES_USERNAMEIDENTITYTOKEN])
+                if(tokenType != &UA_TYPES[UA_TYPES_USERNAMEIDENTITYTOKEN])
                     continue;
             } else if(u->tokenType == UA_USERTOKENTYPE_CERTIFICATE) {
-                if(request->userIdentityToken.content.decoded.type != &UA_TYPES[UA_TYPES_X509IDENTITYTOKEN])
+                if(tokenType != &UA_TYPES[UA_TYPES_X509IDENTITYTOKEN])
                     continue;
             } else if(u->tokenType == UA_USERTOKENTYPE_ISSUEDTOKEN) {
-                if(request->userIdentityToken.content.decoded.type != &UA_TYPES[UA_TYPES_ISSUEDIDENTITYTOKEN])
+                if(tokenType != &UA_TYPES[UA_TYPES_ISSUEDIDENTITYTOKEN])
                     continue;
             } else {
                 response->responseHeader.serviceResult = UA_STATUSCODE_BADIDENTITYTOKENINVALID;
@@ -385,7 +387,6 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
             ed = e;
             break;
         }
-
     }
 
     /* No matching endpoint found */
@@ -495,7 +496,7 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
         UA_LOG_INFO_SESSION(&server->config.logger, session,
                             "ActivateSession: Detach from old channel");
         /* Detach the old SecureChannel and attach the new */
-        UA_Session_detachCloseSecureChannel(session);
+        UA_Session_detachSecureChannel(session);
         UA_Session_attachToSecureChannel(session, channel);
     }
 
@@ -508,7 +509,7 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
     response->responseHeader.serviceResult |=
         UA_ByteString_copy(&session->serverNonce, &response->serverNonce);
     if(response->responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
-        UA_Session_detachCloseSecureChannel(session);
+        UA_Session_detachSecureChannel(session);
         session->activated = false;
         UA_LOG_INFO_SESSION(&server->config.logger, session,
                             "ActivateSession: Could not generate a server nonce");

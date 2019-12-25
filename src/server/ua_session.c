@@ -24,7 +24,7 @@ void UA_Session_init(UA_Session *session) {
 
 void UA_Session_deleteMembersCleanup(UA_Session *session, UA_Server* server) {
     UA_LOCK_ASSERT(server->serviceMutex, 1);
-    UA_Session_detachCloseSecureChannel(session);
+    UA_Session_detachSecureChannel(session);
     UA_ApplicationDescription_deleteMembers(&session->clientDescription);
     UA_NodeId_deleteMembers(&session->header.authenticationToken);
     UA_NodeId_deleteMembers(&session->sessionId);
@@ -49,10 +49,9 @@ UA_Session_attachToSecureChannel(UA_Session *session, UA_SecureChannel *channel)
     return UA_STATUSCODE_GOOD;
 }
 
-void UA_Session_detachCloseSecureChannel(UA_Session *session) {
+void UA_Session_detachSecureChannel(UA_Session *session) {
     if(!session->header.channel)
         return;
-    UA_SecureChannel_close(session->header.channel);
 }
 
 UA_StatusCode
