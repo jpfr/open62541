@@ -169,20 +169,11 @@ UA_Client_findCustomCallback(UA_Client *client, UA_UInt32 requestId) {
     return cc;
 }
 
-UA_StatusCode
-connectSessionAsync(UA_Client *client);
-
-void
-closeSecureChannel(UA_Client *client);
-
-UA_StatusCode
-UA_Client_processACK(UA_Client *client, const UA_ByteString *payload);
-
-void
-UA_Client_processERR(UA_Client *client, const UA_ByteString *message);
-
-UA_StatusCode
-UA_Client_processOPN(UA_Client *client, UA_ByteString *message, UA_Boolean renew);
+UA_StatusCode UA_Client_processACK(UA_Client *client, const UA_ByteString *payload);
+void UA_Client_processERR(UA_Client *client, const UA_ByteString *message);
+UA_StatusCode UA_Client_processOPN(UA_Client *client, UA_ByteString *message, UA_Boolean renew);
+void closeSecureChannel(UA_Client *client);
+UA_StatusCode connectSessionAsync(UA_Client *client);
 
 _UA_END_DECLS
 
