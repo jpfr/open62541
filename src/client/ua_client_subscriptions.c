@@ -1135,8 +1135,6 @@ UA_Client_Subscriptions_processPublishResponse(UA_Client *client, UA_PublishRequ
     }
 
     if(response->responseHeader.serviceResult == UA_STATUSCODE_BADTIMEOUT) {
-        if (client->config.inactivityCallback)
-            client->config.inactivityCallback(client);
         UA_LOG_WARNING(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                        "Received Timeout for Publish Response");
         return;

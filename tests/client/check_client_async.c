@@ -193,8 +193,11 @@ START_TEST(Client_read_async_timed) {
 
 static UA_Boolean inactivityCallbackTriggered = false;
 
-static void inactivityCallback(UA_Client *client) {
-    inactivityCallbackTriggered = true;
+static void
+stateCallback(UA_Client *client,
+              UA_SecureChannelState channelState,
+              UA_SessionState sessionState) {
+    inactivityCallbackTriggered = (channelState != UA_SECURECHANNELSTATE_OPEN);
 }
 
 START_TEST(Client_connectivity_check) {
@@ -202,7 +205,7 @@ START_TEST(Client_connectivity_check) {
         UA_ClientConfig *clientConfig = UA_Client_getConfig(client);
         UA_ClientConfig_setDefault(clientConfig);
         clientConfig->outStandingPublishRequests = 0;
-        clientConfig->inactivityCallback = inactivityCallback;
+        clientConfig->stateCallback = stateCallback;
         clientConfig->connectivityCheckInterval = 1000;
 
         UA_StatusCode retval = UA_Client_connect(client, "opc.tcp://localhost:4840");

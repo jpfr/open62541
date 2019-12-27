@@ -251,10 +251,6 @@ void
 setBufPos(UA_MessageContext *mc);
 
 UA_StatusCode
-decodeOPNHeader(UA_SecureChannel *channel, void *application,
-                UA_ByteString *chunkContent, size_t *offset);
-
-UA_StatusCode
 UA_SecureChannel_generateRemoteKeys(const UA_SecureChannel *channel,
                                     const UA_SecurityPolicy *securityPolicy);
 

@@ -16,8 +16,10 @@ static void stopHandler(int sign) {
 }
 
 static void
-inactivityCallback (UA_Client *client) {
-    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND, "Server Inactivity");
+stateCallback(UA_Client *client,
+              UA_SecureChannelState channelState,
+              UA_SessionState sessionState) {
+    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND, "Connection status changed");
 }
 
 int main(void) {
@@ -27,7 +29,7 @@ int main(void) {
     UA_ClientConfig *cc = UA_Client_getConfig(client);
     UA_ClientConfig_setDefault(cc);
 
-    cc->inactivityCallback = inactivityCallback; /* Set stateCallback */
+    cc->stateCallback = stateCallback; /* Set stateCallback */
     cc->connectivityCheckInterval = 2000; /* Perform a connectivity check every 2 seconds */
 
     /* Endless loop runAsync */

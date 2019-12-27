@@ -133,12 +133,8 @@ sendHEL(UA_Client *client) {
     return res;
 }
 
-static UA_StatusCode
-sendOPN(UA_Client *client, UA_Boolean renew) {
-    /* Check if sc is still valid */
-    if(renew && client->nextChannelRenewal > UA_DateTime_nowMonotonic())
-        return UA_STATUSCODE_GOOD;;
-
+UA_StatusCode
+UA_Client_sendOPN(UA_Client *client, UA_Boolean renew) {
     /* Generate clientNonce. */
     UA_StatusCode res = UA_SecureChannel_generateLocalNonce(&client->channel);
     if(res != UA_STATUSCODE_GOOD) {
@@ -178,7 +174,8 @@ sendOPN(UA_Client *client, UA_Boolean renew) {
     }
 
     UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel, "OPN message sent");
-    UA_Client_setChannelState(client, UA_SECURECHANNELSTATE_OPN_SENT);
+    if(!renew)
+        UA_Client_setChannelState(client, UA_SECURECHANNELSTATE_OPN_SENT);
 
     return UA_STATUSCODE_GOOD;
 }
@@ -208,7 +205,7 @@ UA_Client_processACK(UA_Client *client, const UA_ByteString *payload) {
     UA_Client_setChannelState(client, UA_SECURECHANNELSTATE_ACK_RECEIVED);
 
     /* Send OPN message */
-    return sendOPN(client, false);
+    return UA_Client_sendOPN(client, false);
 }
 
 static UA_SecurityPolicy *
@@ -370,7 +367,7 @@ UA_Client_startConnect(UA_Client *client, const UA_String endpointUrl) {
 /* Close Session */
 /*****************/
 
-static void
+void
 UA_Client_setSessionState(UA_Client *client, UA_SessionState state) {
     if(client->sessionState == state)
         return;

@@ -108,13 +108,6 @@ typedef struct {
                           UA_SecureChannelState channelState,
                           UA_SessionState sessionState);
 
-    /* When connectivityCheckInterval is greater than 0, every
-     * connectivityCheckInterval (in ms), a async read request is performed on
-     * the server. inactivityCallback is called when the client receive no
-     * response for this read request The connection can be closed, this in an
-     * attempt to recreate a healthy connection. */
-    void (*inactivityCallback)(UA_Client *client);
-
 #ifdef UA_ENABLE_SUBSCRIPTIONS
     /* Number of PublishResponse queued up in the server */
     UA_UInt16 outStandingPublishRequests;

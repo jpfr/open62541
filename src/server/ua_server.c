@@ -632,11 +632,11 @@ UA_Server_run_iterate(UA_Server *server, UA_Boolean waitInternal) {
     UA_PubSubConnection *connection;
     TAILQ_FOREACH(connection, &server->pubSubManager.connections, listEntry){
         UA_PubSubConnection *ps = connection;
-        if(ps && ps->channel->yield){
+        if(ps && ps->channel->yield)
             ps->channel->yield(ps->channel, timeout);
-        }
     }
 #endif
+
 #if defined(UA_ENABLE_DISCOVERY_MULTICAST) && (UA_MULTITHREADING < 200)
     if(server->config.discovery.mdnsEnable) {
         // TODO multicastNextRepeat does not consider new input data (requests)

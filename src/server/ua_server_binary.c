@@ -312,6 +312,9 @@ processHEL(UA_Server *server, UA_SecureChannel *channel,
         return retval;
     }
 
+    /* Set connection as established */
+    channel->connection->state = UA_CONNECTION_ESTABLISHED;
+
     /* Build acknowledge response */
     UA_TcpAcknowledgeMessage ackMessage;
     memcpy(&ackMessage, &channel->config, sizeof(UA_TcpAcknowledgeMessage)); /* Same struct layout.. */

@@ -727,11 +727,9 @@ UA_ClientConfig_setDefault(UA_ClientConfig *config) {
 
     config->customDataTypes = NULL;
     config->stateCallback = NULL;
-    config->connectivityCheckInterval = 0;
+    config->connectivityCheckInterval = 10000; /* Every 10 seconds */
 
     config->requestedSessionTimeout = 1200000; /* requestedSessionTimeout */
-
-    config->inactivityCallback = NULL;
     config->clientContext = NULL;
 
 #ifdef UA_ENABLE_SUBSCRIPTIONS

@@ -172,19 +172,28 @@ sendSymmetricServiceRequest(UA_Client *client, const void *request,
 #endif
 
     /* Change to the new security token if the secure channel has been renewed */
-    if(client->channel.nextSecurityToken.tokenId != 0)
-        UA_SecureChannel_revolveTokens(&client->channel);
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    if(client->channel.nextSecurityToken.tokenId != 0) {
+        UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
+                             "Revolving the token");
+        res = UA_SecureChannel_revolveTokens(&client->channel);
+        if(res != UA_STATUSCODE_GOOD) {
+            UA_LOG_ERROR_CHANNEL(&client->config.logger, &client->channel,
+                                 "Could not revolve the tokens with StatusCode %s",
+                                 UA_StatusCode_name(res));
+            return res;
+        }
+    }
 
-    UA_StatusCode retval =
-        UA_SecureChannel_sendSymmetricMessage(&client->channel, rqId,
-                                              UA_MESSAGETYPE_MSG, rr, requestType);
+    res = UA_SecureChannel_sendSymmetricMessage(&client->channel, rqId,
+                                                UA_MESSAGETYPE_MSG, rr, requestType);
 
     /* Do not return the token to the user */
     UA_NodeId_init(&rr->authenticationToken);
 
-    if(retval == UA_STATUSCODE_GOOD)
+    if(res == UA_STATUSCODE_GOOD)
         *requestId = rqId;
-    return retval;
+    return res;
 }
 
 /* Processes the received service response. Either with an async callback or by
@@ -306,7 +315,8 @@ processServiceResponse(void *application, UA_SecureChannel *channel,
     case UA_MESSAGETYPE_OPN: {
         UA_LOG_TRACE_CHANNEL(&client->config.logger, channel, "Process an OPN response message");
         UA_ByteString editableMessage = *message; /* In situ edits for decryption */
-        res = UA_Client_processOPN(client, &editableMessage, false);
+        UA_Boolean renew = (channel->state == UA_SECURECHANNELSTATE_OPEN);
+        res = UA_Client_processOPN(client, &editableMessage, renew);
         break;
     }
 
@@ -337,35 +347,48 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
     /* Prepare the response and the structure we give into processServiceResponse */
     SyncResponseDescription rd = { client, false, 0, response, responseType };
 
-    /* Return upon receiving the synchronized response. All other responses are
-     * processed with a callback "in the background". */
+    /* Do we expect a synchronous response? */
     if(synchronousRequestId)
         rd.requestId = *synchronousRequestId;
 
-    /* >= avoid timeout to be set to 0 */
+    /* Process messages until the synchronous response is received (if there is one) */
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
     UA_DateTime now = UA_DateTime_nowMonotonic();
-    if(now >= maxDate)
-        return UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
+    while(true) {
+        if(now > maxDate)
+            return UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
 
-    /* round always to upper value to avoid timeout to be set to 0
-     * if(maxDate - now) < (UA_DATETIME_MSEC/2) */
-    UA_UInt32 timeout = (UA_UInt32)(((maxDate - now) + (UA_DATETIME_MSEC - 1)) / UA_DATETIME_MSEC);
+        /* Avoid timeout to be set to 0 */
+        UA_UInt32 timeout = (UA_UInt32)((maxDate - now) / UA_DATETIME_MSEC);
+        if(timeout == 0)
+            timeout = 1;
 
-    UA_LOG_TRACE_CHANNEL(&client->config.logger, &client->channel,
-                         "Receive blocking with a timout of %u msec", timeout);
-    UA_StatusCode retval = UA_SecureChannel_receiveBlocking(&client->channel, &rd,
-                                                            processServiceResponse, timeout);
-    if(retval != UA_STATUSCODE_GOOD) {
-        if(retval == UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
-            UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
-                                 "Timeout during recv");
-        } else {
-            UA_LOG_WARNING_CHANNEL(&client->config.logger, &client->channel,
-                                   "Could not receive blocking with StatusCode %s",
-                                   UA_StatusCode_name(retval));
+        /* Receive */
+        UA_LOG_TRACE_CHANNEL(&client->config.logger, &client->channel,
+                             "Receive blocking with a timout of %u msec", timeout);
+        res = UA_SecureChannel_receiveBlocking(&client->channel, &rd,
+                                               processServiceResponse, timeout);
+
+        /* A problem has come up */
+        if(res != UA_STATUSCODE_GOOD) {
+            if(res == UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
+                UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
+                                     "Timeout during recv");
+            } else {
+                UA_LOG_WARNING_CHANNEL(&client->config.logger, &client->channel,
+                                       "Could not receive blocking with StatusCode %s",
+                                       UA_StatusCode_name(res));
+            }
+            return res;
         }
+
+        /* The synchronous response has been received */
+        if(!synchronousRequestId || rd.received)
+            break;
+
+        now = UA_DateTime_nowMonotonic();
     }
-    return retval;
+    return res;
 }
 
 void
@@ -516,26 +539,47 @@ static void
 backgroundConnectivityCallback(UA_Client *client, void *userdata,
                                UA_UInt32 requestId, const UA_ReadResponse *response) {
     if(response->responseHeader.serviceResult == UA_STATUSCODE_BADTIMEOUT) {
-        if (client->config.inactivityCallback)
-            client->config.inactivityCallback(client);
+        UA_LOG_WARNING_CHANNEL(&client->config.logger, &client->channel,
+                               "Closed session. The server is unresponsive.");
+        UA_Client_setSessionState(client, UA_SESSIONSTATE_CLOSED);
     }
     client->pendingConnectivityCheck = false;
     client->lastConnectivityCheck = UA_DateTime_nowMonotonic();
 }
 
-static UA_StatusCode
+static void
 UA_Client_backgroundConnectivity(UA_Client *client) {
-    if(!client->config.connectivityCheckInterval)
-        return UA_STATUSCODE_GOOD;
+    UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
+                         "Background connectivity check");
 
-    if(client->pendingConnectivityCheck)
-        return UA_STATUSCODE_GOOD;
+    /* No open channel */
+    if(client->channel.state != UA_SECURECHANNELSTATE_OPEN)
+        return;
 
+    /* Renew the channel */
     UA_DateTime now = UA_DateTime_nowMonotonic();
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    if(client->nextChannelRenewal <= now) {
+        res = UA_Client_sendOPN(client, true);
+        if(res != UA_STATUSCODE_GOOD)
+            return;
+    }
+
+    /* A read request is already in transit */
+    if(client->pendingConnectivityCheck)
+        return;
+
+    /* Nothing to do */
+    if(client->sessionState != UA_SESSIONSTATE_ACTIVATED)
+        return;
+    
+    /* The next timeout is not yet reached */
     UA_DateTime nextDate = client->lastConnectivityCheck +
         (UA_DateTime)(client->config.connectivityCheckInterval * UA_DATETIME_MSEC);
     if(now <= nextDate)
-        return UA_STATUSCODE_GOOD;
+        return;
+
+    /* Send a read request on the server state to see if the session is open */
 
     UA_ReadValueId rvid;
     UA_ReadValueId_init(&rvid);
@@ -547,12 +591,11 @@ UA_Client_backgroundConnectivity(UA_Client *client) {
     request.nodesToRead = &rvid;
     request.nodesToReadSize = 1;
 
-    UA_StatusCode retval =
-        UA_Client_AsyncService(client, &request, &UA_TYPES[UA_TYPES_READREQUEST],
-                               (UA_ClientAsyncServiceCallback)backgroundConnectivityCallback,
-                               &UA_TYPES[UA_TYPES_READRESPONSE], NULL, NULL);
-    client->pendingConnectivityCheck = true;
-    return retval;
+    res = UA_Client_AsyncService(client, &request, &UA_TYPES[UA_TYPES_READREQUEST],
+                                 (UA_ClientAsyncServiceCallback)backgroundConnectivityCallback,
+                                 &UA_TYPES[UA_TYPES_READRESPONSE], NULL, NULL);
+    if(res == UA_STATUSCODE_GOOD)
+        client->pendingConnectivityCheck = true;
 }
 
 static void
@@ -585,9 +628,7 @@ UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
                      (UA_TimerExecutionCallback)clientExecuteRepeatedCallback, client);
 
     /* TODO: Make this a repeated callback */
-    retval = UA_Client_backgroundConnectivity(client);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+    UA_Client_backgroundConnectivity(client);
 
     UA_DateTime maxDate = now + (timeout * UA_DATETIME_MSEC);
     retval = receiveServiceResponse(client, NULL, NULL, maxDate, NULL);

@@ -199,8 +199,7 @@ START_TEST(Client_renewSecureChannelWithActiveSubscription) {
     UA_CreateSubscriptionRequest request = UA_CreateSubscriptionRequest_default();
     /* Force the server to send keep alive responses every second to trigg
      * the client to send new publish requests. Requests from the client
-     * will make the server to change to the new SecurityToken after renewal.
-     */
+     * will make the server to change to the new SecurityToken after renewal. */
     request.requestedPublishingInterval = 1000;
     request.requestedMaxKeepAliveCount = 1;
     UA_CreateSubscriptionResponse response = UA_Client_Subscriptions_create(client, request,
