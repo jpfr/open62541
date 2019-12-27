@@ -52,6 +52,8 @@ UA_Session_attachToSecureChannel(UA_Session *session, UA_SecureChannel *channel)
 void UA_Session_detachSecureChannel(UA_Session *session) {
     if(!session->header.channel)
         return;
+    session->header.channel->session = NULL;
+    session->header.channel = NULL;
 }
 
 UA_StatusCode

@@ -353,7 +353,8 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
 
     UA_LOG_TRACE_CHANNEL(&client->config.logger, &client->channel,
                          "Receive blocking with a timout of %u msec", timeout);
-    UA_StatusCode retval = UA_SecureChannel_receiveChunksBlocking(&client->channel, timeout);
+    UA_StatusCode retval = UA_SecureChannel_receiveBlocking(&client->channel, &rd,
+                                                            processServiceResponse, timeout);
     if(retval != UA_STATUSCODE_GOOD) {
         if(retval == UA_STATUSCODE_GOODNONCRITICALTIMEOUT) {
             UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
@@ -363,15 +364,6 @@ receiveServiceResponse(UA_Client *client, void *response, const UA_DataType *res
                                    "Could not receive blocking with StatusCode %s",
                                    UA_StatusCode_name(retval));
         }
-        return retval;
-    }
-
-    retval = UA_SecureChannel_processCompleteMessages(&client->channel, &rd,
-                                                      processServiceResponse);
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_DEBUG(&client->config.logger, UA_LOGCATEGORY_CLIENT,
-                     "Could not process messages with StatusCode %s",
-                     UA_StatusCode_name(retval));
     }
     return retval;
 }
@@ -573,10 +565,13 @@ UA_StatusCode
 UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
     /* The channel is open, we want a session, no session in progress -> start
      * the handshake */
+    UA_StatusCode retval = UA_STATUSCODE_GOOD;
     if(client->channel.state == UA_SECURECHANNELSTATE_OPEN &&
        client->sessionState == UA_SESSIONSTATE_FRESH &&
        client->autoConnectSession) {
-        connectSessionAsync(client);
+        retval = connectSessionAsync(client);
+        if(retval != UA_STATUSCODE_GOOD)
+            return retval;
     }
 
 #ifdef UA_ENABLE_SUBSCRIPTIONS
@@ -590,7 +585,7 @@ UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
                      (UA_TimerExecutionCallback)clientExecuteRepeatedCallback, client);
 
     /* TODO: Make this a repeated callback */
-    UA_StatusCode retval = UA_Client_backgroundConnectivity(client);
+    retval = UA_Client_backgroundConnectivity(client);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
@@ -608,6 +603,10 @@ UA_Client_run_iterate(UA_Client *client, UA_UInt16 timeout) {
      * done */
     UA_WorkQueue_manuallyProcessDelayed(&client->workQueue);
 #endif
+
+    if(retval == UA_STATUSCODE_GOOD &&
+       client->connectionResult != UA_STATUSCODE_GOOD)
+        retval = client->connectionResult;
     return retval;
 }
 

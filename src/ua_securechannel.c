@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- *    Copyright 2014-2018 (c) Fraunhofer IOSB (Author: Julius Pfrommer)
+ *    Copyright 2014-2019 (c) Fraunhofer IOSB (Author: Julius Pfrommer)
  *    Copyright 2014, 2016-2017 (c) Florian Palm
  *    Copyright 2015-2016 (c) Sten Grüner
  *    Copyright 2015 (c) Oleksiy Vasylyev
@@ -46,6 +46,16 @@ UA_SecureChannel_init(UA_SecureChannel *channel,
     channel->config = *config;
 }
 
+static void
+removeBuffered(UA_SecureChannel *channel) {
+    UA_ByteString_deleteMembers(&channel->incompleteChunk);
+    UA_Message *me, *me_tmp;
+    TAILQ_FOREACH_SAFE(me, &channel->messages, pointers, me_tmp) {
+        TAILQ_REMOVE(&channel->messages, me, pointers);
+        UA_MessageQueue_deleteMessage(me);
+    }
+}
+
 void
 UA_SecureChannel_clear(UA_SecureChannel *channel) {
     /* Delete members */
@@ -62,13 +72,9 @@ UA_SecureChannel_clear(UA_SecureChannel *channel) {
     }
 
     /* Remove the buffered messages */
-    UA_ByteString_deleteMembers(&channel->incompleteChunk);
-    UA_Message *me, *me_tmp;
-    TAILQ_FOREACH_SAFE(me, &channel->messages, pointers, me_tmp) {
-        TAILQ_REMOVE(&channel->messages, me, pointers);
-        UA_MessageQueue_deleteMessage(me);
-    }
+    removeBuffered(channel);
 
+    /* Keep the config across "resets". TODO: Reset completely in client/server */
     UA_ConnectionConfig oldConfig = channel->config;
     UA_SecureChannel_init(channel, &oldConfig);
 }
@@ -371,6 +377,7 @@ sendSymmetricEncodingCallback(void *data, UA_Byte **buf_pos, const UA_Byte **buf
     UA_SecureChannel *channel = mc->channel;
     if(!channel)
         return UA_STATUSCODE_BADINTERNALERROR;
+
     UA_Connection *connection = mc->channel->connection;
     if(!connection)
         return UA_STATUSCODE_BADINTERNALERROR;
@@ -446,7 +453,7 @@ UA_StatusCode
 UA_SecureChannel_sendSymmetricMessage(UA_SecureChannel *channel, UA_UInt32 requestId,
                                       UA_MessageType messageType, void *payload,
                                       const UA_DataType *payloadType) {
-    if(!channel || !channel->connection || !payload || !payloadType)
+    if(!channel->connection)
         return UA_STATUSCODE_BADINTERNALERROR;
 
     if(channel->connection->state == UA_CONNECTION_CLOSED)
@@ -514,9 +521,9 @@ processMessage(UA_SecureChannel *channel, const UA_Message *message,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_StatusCode
-UA_SecureChannel_processCompleteMessages(UA_SecureChannel *channel, void *application,
-                                         UA_ProcessMessageCallback callback) {
+static UA_StatusCode
+processCompleteMessages(UA_SecureChannel *channel, void *application,
+                        UA_ProcessMessageCallback callback) {
     UA_Message *message, *tmp_message;
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     TAILQ_FOREACH_SAFE(message, &channel->messages, pointers, tmp_message) {
@@ -596,8 +603,8 @@ MSGToMessageQueue(UA_SecureChannel *channel, UA_ByteString *chunkContent,
     switch(chunkType) {
     case UA_CHUNKTYPE_INTERMEDIATE:
     case UA_CHUNKTYPE_FINAL:
-        return UA_MessageQueue_addChunkPayload(channel, requestId, messageType,
-                                               chunkContent, chunkType == UA_CHUNKTYPE_FINAL); 
+        return UA_MessageQueue_addChunkPayload(channel, requestId, messageType, chunkContent,
+                                               chunkType == UA_CHUNKTYPE_FINAL);
     case UA_CHUNKTYPE_ABORT:
         UA_MessageQueue_deleteLatestMessage(channel, requestId);
         return UA_STATUSCODE_GOOD;
@@ -740,9 +747,28 @@ bufferIncompleteChunk(UA_SecureChannel *channel,
     return UA_STATUSCODE_GOOD;
 }
 
+static UA_StatusCode
+persistIncompleteMessages(UA_SecureChannel *channel) {
+    UA_Message *me;
+    TAILQ_FOREACH(me, &channel->messages, pointers) {
+        UA_ChunkPayload *cp;
+        SIMPLEQ_FOREACH(cp, &me->chunkPayloads, pointers) {
+            if(cp->copied)
+                continue;
+            UA_ByteString copy;
+            UA_StatusCode retval = UA_ByteString_copy(&cp->bytes, &copy);
+            if(retval != UA_STATUSCODE_GOOD)
+                return retval;
+            cp->bytes = copy;
+            cp->copied = true;
+        }
+    }
+    return UA_STATUSCODE_GOOD;
+}
+
 UA_StatusCode
-UA_SecureChannel_processPacket(UA_SecureChannel *channel,
-                               const UA_ByteString *packet) {
+UA_SecureChannel_processPacket(UA_SecureChannel *channel, const UA_ByteString *packet,
+                               void *application, UA_ProcessMessageCallback callback) {
     /* Has the SecureChannel timed out? */
     if(channel->state == UA_SECURECHANNELSTATE_CLOSED)
         return UA_STATUSCODE_BADSECURECHANNELCLOSED;
@@ -764,10 +790,11 @@ UA_SecureChannel_processPacket(UA_SecureChannel *channel,
         memcpy(&t[appended.length], pos, packet->length);
         appended.data = t;
         appended.length += packet->length;
-        pos = t;
-        end = &t[appended.length];
+        pos = appended.data;
+        end = &appended.data[appended.length];
     }
 
+    /* Nothing buffered in the channel at this point */
     UA_assert(channel->incompleteChunk.length == 0);
 
     /* Loop over the received chunks. pos is increased with each chunk. */
@@ -775,102 +802,55 @@ UA_SecureChannel_processPacket(UA_SecureChannel *channel,
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     while(!done) {
         retval = processIndividualChunk(channel, &pos, end, &done);
-        /* If an irrecoverable error happens: do not buffer incomplete chunk */
         if(retval != UA_STATUSCODE_GOOD)
             goto cleanup;
     }
 
+    /* Process complete messages */
+    retval = processCompleteMessages(channel, application, callback);
+    if(retval != UA_STATUSCODE_GOOD)
+        goto cleanup;
+
     if(end > pos)
-        retval = bufferIncompleteChunk(channel, pos, end);
+        retval = bufferIncompleteChunk(channel, pos, end); /* Buffer incomplete chunk */
 
  cleanup:
+    if(retval == UA_STATUSCODE_GOOD)
+        retval = persistIncompleteMessages(channel); /* Buffer complete cunks that point
+                                                        to the current packet. */
+    else
+        removeBuffered(channel);
     UA_ByteString_deleteMembers(&appended);
     return retval;
 }
 
 UA_StatusCode
-UA_SecureChannel_persistIncompleteMessages(UA_SecureChannel *channel) {
-    UA_Message *me;
-    TAILQ_FOREACH(me, &channel->messages, pointers) {
-        UA_ChunkPayload *cp;
-        SIMPLEQ_FOREACH(cp, &me->chunkPayloads, pointers) {
-            if(cp->copied)
-                continue;
-            UA_ByteString copy;
-            UA_StatusCode retval = UA_ByteString_copy(&cp->bytes, &copy);
-            if(retval != UA_STATUSCODE_GOOD) {
-                UA_SecureChannel_close(channel);
-                return retval;
-            }
-            cp->bytes = copy;
-            cp->copied = true;
-        }
-    }
-    return UA_STATUSCODE_GOOD;
-}
-
-UA_StatusCode
-UA_SecureChannel_receiveChunksBlocking(UA_SecureChannel *channel, UA_UInt32 timeout) {
+UA_SecureChannel_receiveBlocking(UA_SecureChannel *channel, void *application,
+                                 UA_ProcessMessageCallback callback, UA_UInt32 timeout) {
     UA_Connection *connection = channel->connection;
     if(!connection)
         return UA_STATUSCODE_BADSECURECHANNELCLOSED;
     
-    UA_DateTime now = UA_DateTime_nowMonotonic();
-    UA_DateTime maxDate = now + (timeout * UA_DATETIME_MSEC);
+    /* Listen for packets to arrive */
+    UA_ByteString packet = UA_BYTESTRING_NULL;
+    UA_StatusCode res = connection->recv(connection, &packet, timeout);
+    if(res != UA_STATUSCODE_GOOD)
+        return res;
 
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    while(true) {
-        /* Listen for messages to arrive */
-        UA_ByteString packet = UA_BYTESTRING_NULL;
-        retval = connection->recv(connection, &packet, timeout);
-        if(retval != UA_STATUSCODE_GOOD)
-            break;
+    /* Process the packet  */
+    res = UA_SecureChannel_processPacket(channel, &packet, application, callback);
 
-        /* Try to process one complete chunk */
-        retval = UA_SecureChannel_processPacket(channel, &packet);
-        retval |= UA_SecureChannel_persistIncompleteMessages(channel);
-        connection->releaseRecvBuffer(connection, &packet);
-        if(retval != UA_STATUSCODE_GOOD)
-            break;
-
-        /* Have one complete message */
-        UA_Message *m = TAILQ_FIRST(&channel->messages);
-        if(m && m->final)
-            break;
-
-        /* We received a message. But the chunk is incomplete. Compute the
-         * remaining timeout. */
-        now = UA_DateTime_nowMonotonic();
-
-        /* >= avoid timeout to be set to 0 */
-        if(now >= maxDate)
-            return UA_STATUSCODE_GOODNONCRITICALTIMEOUT;
-
-        /* round always to upper value to avoid timeout to be set to 0
-         * if(maxDate - now) < (UA_DATETIME_MSEC/2) */
-        timeout = (UA_UInt32)(((maxDate - now) + (UA_DATETIME_MSEC - 1)) / UA_DATETIME_MSEC);
-    }
-    return retval;
+    /* Release the memory. Half-received chunks and chunks from an incomplete
+     * message are buffered in the SecureChannel */
+    connection->releaseRecvBuffer(connection, &packet);
+    return res;
 }
 
 UA_StatusCode
-UA_SecureChannel_receiveChunksNonBlocking(UA_SecureChannel *channel) {
-    UA_Connection *connection = channel->connection;
-    if(!connection)
-        return UA_STATUSCODE_BADSECURECHANNELCLOSED;
-
-    /* Listen for messages to arrive */
-    UA_ByteString packet = UA_BYTESTRING_NULL;
-    UA_StatusCode retval = connection->recv(connection, &packet, 1);
-    if(retval != UA_STATUSCODE_GOOD) {
-        if(retval != UA_STATUSCODE_GOODNONCRITICALTIMEOUT)
-            retval = UA_STATUSCODE_GOOD;
-        return retval;
-    }
-
-    /* Process the packet */
-    retval = UA_SecureChannel_processPacket(channel, &packet);
-    retval |= UA_SecureChannel_persistIncompleteMessages(channel);
-    connection->releaseRecvBuffer(connection, &packet);
-    return retval;
+UA_SecureChannel_receiveNonBlocking(UA_SecureChannel *channel, void *application,
+                                    UA_ProcessMessageCallback callback) {
+    UA_StatusCode res = UA_SecureChannel_receiveBlocking(channel, application, callback, 1);
+    if(res == UA_STATUSCODE_GOODNONCRITICALTIMEOUT)
+        res = UA_STATUSCODE_GOOD;
+    return res;
 }

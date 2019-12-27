@@ -24,13 +24,13 @@ signCreateSessionResponse(UA_Server *server, UA_SecureChannel *channel,
        channel->securityMode != UA_MESSAGESECURITYMODE_SIGNANDENCRYPT)
         return UA_STATUSCODE_GOOD;
 
-    const UA_SecurityPolicy *const securityPolicy = channel->securityPolicy;
+    const UA_SecurityPolicy *sp = channel->securityPolicy;
     UA_SignatureData *signatureData = &response->serverSignature;
 
     /* Prepare the signature */
-    size_t signatureSize = securityPolicy->certificateSigningAlgorithm.
-        getLocalSignatureSize(securityPolicy, channel->channelContext);
-    UA_StatusCode retval = UA_String_copy(&securityPolicy->certificateSigningAlgorithm.uri,
+    size_t signatureSize = sp->certificateSigningAlgorithm.
+        getLocalSignatureSize(sp, channel->channelContext);
+    UA_StatusCode retval = UA_String_copy(&sp->certificateSigningAlgorithm.uri,
                                           &signatureData->algorithm);
     retval |= UA_ByteString_allocBuffer(&signatureData->signature, signatureSize);
     if(retval != UA_STATUSCODE_GOOD)
@@ -47,8 +47,8 @@ signCreateSessionResponse(UA_Server *server, UA_SecureChannel *channel,
     memcpy(dataToSign.data, request->clientCertificate.data, request->clientCertificate.length);
     memcpy(dataToSign.data + request->clientCertificate.length,
            request->clientNonce.data, request->clientNonce.length);
-    retval = securityPolicy->certificateSigningAlgorithm.
-        sign(securityPolicy, channel->channelContext, &dataToSign, &signatureData->signature);
+    retval = sp->certificateSigningAlgorithm.sign(sp, channel->channelContext,
+                                                  &dataToSign, &signatureData->signature);
 
     /* Clean up */
     UA_ByteString_clear(&dataToSign);
@@ -221,9 +221,8 @@ checkSignature(const UA_Server *server, const UA_SecureChannel *channel,
         return UA_STATUSCODE_GOOD;
 
     /* Check for zero signature length in client signature */
-    if(request->clientSignature.signature.length == 0) {
+    if(request->clientSignature.signature.length == 0)
         return UA_STATUSCODE_BADAPPLICATIONSIGNATUREINVALID;
-    }
 
     if(!channel->securityPolicy)
         return UA_STATUSCODE_BADINTERNALERROR;
@@ -241,8 +240,9 @@ checkSignature(const UA_Server *server, const UA_SecureChannel *channel,
     memcpy(dataToVerify.data + localCertificate->length,
            session->serverNonce.data, session->serverNonce.length);
 
-    retval = securityPolicy->certificateSigningAlgorithm.verify(securityPolicy, channel->channelContext, &dataToVerify,
-                                                                &request->clientSignature.signature);
+    retval = securityPolicy->certificateSigningAlgorithm.
+        verify(securityPolicy, channel->channelContext, &dataToVerify,
+               &request->clientSignature.signature);
     UA_ByteString_clear(&dataToVerify);
     return retval;
 }
@@ -286,7 +286,8 @@ decryptPassword(UA_SecurityPolicy *securityPolicy, void *tempChannelContext,
     /* The server nonce must match according to the 1.04.1 specification errata,
      * chapter 3. */
     tokenServerNonce.length = serverNonce->length;
-    tokenServerNonce.data = &decryptedTokenSecret.data[sizeof(UA_UInt32) + tokenSecretLength - serverNonce->length];
+    tokenServerNonce.data =
+        &decryptedTokenSecret.data[sizeof(UA_UInt32) + tokenSecretLength - serverNonce->length];
     if(!UA_ByteString_equal(serverNonce, &tokenServerNonce))
         goto cleanup;
 
@@ -397,8 +398,8 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
 
 #ifdef UA_ENABLE_ENCRYPTION
     /* If it is a UserNameIdentityToken, decrypt the password if encrypted */
-    if((request->userIdentityToken.encoding == UA_EXTENSIONOBJECT_DECODED) &&
-       (request->userIdentityToken.content.decoded.type == &UA_TYPES[UA_TYPES_USERNAMEIDENTITYTOKEN])) {
+    if(request->userIdentityToken.encoding == UA_EXTENSIONOBJECT_DECODED &&
+       request->userIdentityToken.content.decoded.type == &UA_TYPES[UA_TYPES_USERNAMEIDENTITYTOKEN]) {
        UA_UserNameIdentityToken *userToken = (UA_UserNameIdentityToken *)
            request->userIdentityToken.content.decoded.data;
 
@@ -421,7 +422,10 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
        if(ed->userIdentityTokens[tokenIndex].securityPolicyUri.data == NULL)
            securityPolicy = UA_SecurityPolicy_getSecurityPolicyByUri(server, &ed->securityPolicyUri);
        else
-           securityPolicy = UA_SecurityPolicy_getSecurityPolicyByUri(server, &ed->userIdentityTokens[tokenIndex].securityPolicyUri);
+           securityPolicy =
+               UA_SecurityPolicy_getSecurityPolicyByUri(server,
+                                                        &ed->userIdentityTokens[tokenIndex].
+                                                        securityPolicyUri);
        if(!securityPolicy) {
           response->responseHeader.serviceResult = UA_STATUSCODE_BADINTERNALERROR;
           return;

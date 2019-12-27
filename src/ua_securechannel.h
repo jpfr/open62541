@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. 
  *
- *    Copyright 2014-2018 (c) Fraunhofer IOSB (Author: Julius Pfrommer)
+ *    Copyright 2014-2019 (c) Fraunhofer IOSB (Author: Julius Pfrommer)
  *    Copyright 2017 (c) Florian Palm
  *    Copyright 2017 (c) Stefan Profanter, fortiss GmbH
  *    Copyright 2017 (c) Mark Giraud, Fraunhofer IOSB
@@ -262,59 +262,39 @@ UA_SecureChannel_generateRemoteKeys(const UA_SecureChannel *channel,
  * Receive Message
  * --------------- */
 
-/* The network layer may receive several chunks in one packet since TCP is a
- * streaming protocol. The last chunk in the packet may be only partial. This
- * puts all full chunks into the MessageQueue. If the last chunk is incomplete,
- * it is buffered in the SecureChannel.
- *
- * For zero-copy processing, the elements in the MessageQueue may point in the
- * packet after this function. Call UA_SecureChannel_persistIncompleteMessages
- * to persist remaining messages before freeing the packet content. */
-UA_StatusCode
-UA_SecureChannel_processPacket(UA_SecureChannel *channel,
-                               const UA_ByteString *packet);
-
-/* The network buffer is about to be cleared. Copy all chunks that point into
- * the network buffer into dedicated memory. */
-UA_StatusCode
-UA_SecureChannel_persistIncompleteMessages(UA_SecureChannel *channel);
-
-/* Try to receive at least one complete chunk on the connection. This blocks the
- * current thread up to the given timeout.
- *
- * @param connection The connection
- * @param application The client or server application
- * @param processCallback The function pointer for processing each chunk
- * @param timeout The timeout (in milliseconds) the method will block at most.
- * @return Returns UA_STATUSCODE_GOOD or an error code. When an timeout occurs,
- *         UA_STATUSCODE_GOODNONCRITICALTIMEOUT is returned. */
-UA_StatusCode
-UA_SecureChannel_receiveChunksBlocking(UA_SecureChannel *channel, UA_UInt32 timeout);
-
-UA_StatusCode
-UA_SecureChannel_receiveChunksNonBlocking(UA_SecureChannel *channel);
-
 typedef void
 (UA_ProcessMessageCallback)(void *application, UA_SecureChannel *channel,
                             UA_MessageType messageType, UA_UInt32 requestId,
                             const UA_ByteString *message);
 
-/* Process received complete messages in-order. The callback function is called
- * with the complete message body if the message is complete. The message is
- * removed afterwards.
+/* Try to receive on the connection. This blocks the current thread up to the
+ * given timeout or until a packet is processed (not necessarily a complete
+ * chunk).
  *
- * Symmetric callback is ERR, MSG, CLO only
- * Asymmetric callback is OPN only
- *
- * @param channel the channel the chunks were received on.
- * @param application data pointer to application specific data that gets passed
- *                    on to the callback function.
- * @param callback the callback function that gets called with the complete
- *                 message body, once a final chunk is processed.
- * @return Returns if an irrecoverable error occured. Maybe close the channel. */
+ * Returns UA_STATUSCODE_GOOD or an error code. When an timeout occurs,
+ * UA_STATUSCODE_GOODNONCRITICALTIMEOUT is returned. */
 UA_StatusCode
-UA_SecureChannel_processCompleteMessages(UA_SecureChannel *channel, void *application,
-                                         UA_ProcessMessageCallback callback);
+UA_SecureChannel_receiveBlocking(UA_SecureChannel *channel,
+                                 void *application,
+                                 UA_ProcessMessageCallback callback,
+                                 UA_UInt32 timeout);
+
+UA_StatusCode
+UA_SecureChannel_receiveNonBlocking(UA_SecureChannel *channel, void *application,
+                                    UA_ProcessMessageCallback callback);
+
+/* The network layer may receive several chunks in one packet since TCP is a
+ * streaming protocol. The last chunk in the packet may be only partial. This
+ * puts all full chunks into the MessageQueue.
+ *
+ * If the last chunk is incomplete, it is buffered in the SecureChannel.
+ * Likewise, complete chunks from an incomplete message are stored in the
+ * SecureChannel. */
+UA_StatusCode
+UA_SecureChannel_processPacket(UA_SecureChannel *channel,
+                               const UA_ByteString *packet,
+                               void *application,
+                               UA_ProcessMessageCallback callback);
 
 /**
  * Log Helper

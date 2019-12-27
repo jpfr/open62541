@@ -802,7 +802,8 @@ UA_Server_processBinaryMessage(UA_Server *server, UA_Connection *connection,
     UA_SecureChannel *channel = connection->channel;
     UA_assert(channel);
 
-    UA_StatusCode retval = UA_SecureChannel_processPacket(channel, message);
+    UA_StatusCode retval =
+        UA_SecureChannel_processPacket(channel, message, server, processSecureChannelMessage);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_INFO(&server->config.logger, UA_LOGCATEGORY_NETWORK,
                     "Connection %i | Processing the message failed with "
@@ -813,15 +814,7 @@ UA_Server_processBinaryMessage(UA_Server *server, UA_Connection *connection,
         error.reason = UA_STRING_NULL;
         UA_Connection_sendError(connection, &error);
         connection->close(connection);
-        return;
     }
-
-    /* Process complete messages */
-    UA_SecureChannel_processCompleteMessages(channel, server, processSecureChannelMessage);
-
-    /* Store unused decoded chunks internally in the SecureChannel */
-    if(channel->state != UA_SECURECHANNELSTATE_CLOSED)
-        UA_SecureChannel_persistIncompleteMessages(connection->channel);
 }
 
 #if UA_MULTITHREADING >= 200

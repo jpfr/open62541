@@ -124,6 +124,9 @@ struct UA_Client {
     UA_WorkQueue workQueue;
     UA_Connection connection;
 
+    UA_StatusCode connectionResult; /* If the connection handshakes are done
+                                       async, store the error here. */
+
     /* SecureChannel */
     UA_SecureChannelState lastChannelState; /* Signal changes only */
     UA_SecureChannel channel;

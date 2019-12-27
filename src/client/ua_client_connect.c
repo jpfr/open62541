@@ -590,10 +590,11 @@ static void
 activateSessionResponseCallback(UA_Client *client, void *userdata,
                                 UA_UInt32 requestId, void *response) {
     UA_ActivateSessionResponse *asr = (UA_ActivateSessionResponse *)response;
-    if(asr->responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
+    client->connectionResult = asr->responseHeader.serviceResult;
+    if(client->connectionResult != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR_CHANNEL(&client->config.logger, &client->channel,
                              "ActivateSession failed with StatusCode %s",
-                             UA_StatusCode_name(asr->responseHeader.serviceResult));
+                             UA_StatusCode_name(client->connectionResult));
         closeSessionAsync(client);
         return;
     }
@@ -634,13 +635,11 @@ sendActivateSession(UA_Client *client) {
                             (UA_String*)request.userIdentityToken.content.decoded.data);
 
 #ifdef UA_ENABLE_ENCRYPTION
-    /* Encrypt the UserIdentityToken */
+    /* Encrypt the UserIdentityToken and sign the request */
     const UA_String *userTokenPolicy = &client->channel.securityPolicy->policyUri;
     if(client->config.userTokenPolicy.securityPolicyUri.length > 0)
         userTokenPolicy = &client->config.userTokenPolicy.securityPolicyUri;
     retval |= encryptUserIdentityToken(client, userTokenPolicy, &request.userIdentityToken);
-
-    /* This function call is to prepare a client signature */
     retval |= signActivateSessionRequest(&client->channel, &request);
 #endif
 
@@ -702,13 +701,14 @@ createSessionResponseCallback(UA_Client *client, void *userdata,
                              "CreateSession failed with StatusCode %s",
                              UA_StatusCode_name(res));
         UA_Client_setSessionState(client, UA_SESSIONSTATE_CLOSED);
+        client->connectionResult = res;
         return;
     }
 
     UA_LOG_INFO_CHANNEL(&client->config.logger, &client->channel, "Session created");
     UA_NodeId_copy(&sessionResponse->authenticationToken, &client->authenticationToken);
     UA_Client_setSessionState(client, UA_SESSIONSTATE_CREATED);
-    sendActivateSession(client);
+    client->connectionResult = sendActivateSession(client);
 }
 
 static UA_StatusCode
@@ -725,7 +725,7 @@ sendCreateSession(UA_Client *client) {
         if(client->channel.localNonce.length != UA_SESSION_LOCALNONCELENGTH) {
            UA_ByteString_deleteMembers(&client->channel.localNonce);
             res = UA_ByteString_allocBuffer(&client->channel.localNonce,
-                                               UA_SESSION_LOCALNONCELENGTH);
+                                            UA_SESSION_LOCALNONCELENGTH);
             if(res != UA_STATUSCODE_GOOD)
                 return res;
         }
@@ -950,6 +950,7 @@ selectEndpoint(UA_Client *client, void *userdata, UA_UInt32 requestId,
     return;
 
  close_channel:
+    client->connectionResult = res;
     closeSecureChannel(client);
 }
 
@@ -1029,6 +1030,8 @@ verifyClientApplicationURI(const UA_Client *client) {
 
 UA_StatusCode
 UA_Client_connect_async_noSession(UA_Client *client, const char *endpointUrl) {
+    client->connectionResult = UA_STATUSCODE_GOOD;
+
     if(client->channel.state != UA_SECURECHANNELSTATE_FRESH &&
        client->channel.state != UA_SECURECHANNELSTATE_CLOSED)
         return UA_STATUSCODE_GOOD;
