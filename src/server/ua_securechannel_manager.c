@@ -132,7 +132,6 @@ UA_SecureChannelManager_create(UA_SecureChannelManager *cm,
     entry->channel.securityToken.tokenId = cm->lastTokenId++;
     entry->channel.securityToken.createdAt = UA_DateTime_now();
     entry->channel.securityToken.revisedLifetime = cm->server->config.maxSecurityTokenLifetime;
-    entry->channel.allowPreviousToken = false;
 
     TAILQ_INSERT_TAIL(&cm->channels, entry, pointers);
     UA_atomic_addUInt32(&cm->currentChannelCount, 1);

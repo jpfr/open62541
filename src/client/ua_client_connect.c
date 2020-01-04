@@ -135,27 +135,26 @@ sendHEL(UA_Client *client) {
 
 UA_StatusCode
 UA_Client_sendOPN(UA_Client *client, UA_Boolean renew) {
-    /* Generate clientNonce. */
-    UA_StatusCode res = UA_SecureChannel_generateLocalNonce(&client->channel);
-    if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR_CHANNEL(&client->config.logger, &client->channel, 
-                             "Generating a local nonce failed");
-        return res;
-    }
-
     /* Prepare the OpenSecureChannelRequest */
     UA_OpenSecureChannelRequest opnSecRq;
     UA_OpenSecureChannelRequest_init(&opnSecRq);
     opnSecRq.requestHeader.timestamp = UA_DateTime_now();
-    opnSecRq.requestHeader.authenticationToken = client->authenticationToken;
     if(renew) {
         opnSecRq.requestType = UA_SECURITYTOKENREQUESTTYPE_RENEW;
         UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
-                             "Requesting to renew the SecureChannel");
+                             "Renewing the SecureChannel");
     } else {
         opnSecRq.requestType = UA_SECURITYTOKENREQUESTTYPE_ISSUE;
         UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
-                             "Requesting to open a SecureChannel");
+                             "Opening a SecureChannel");
+    }
+
+    /* Generate clientNonce. */
+    UA_StatusCode res = UA_SecureChannel_generateLocalNonce(&client->channel);
+    if(res != UA_STATUSCODE_GOOD) {
+        UA_LOG_ERROR_CHANNEL(&client->config.logger, &client->channel,
+                             "Generating a local nonce failed");
+        return res;
     }
 
     /* Set the securityMode to input securityMode from client data */
@@ -268,13 +267,16 @@ UA_Client_processOPN(UA_Client *client, UA_ByteString *message, UA_Boolean renew
     channel->remoteNonce = response.serverNonce;
     UA_ByteString_init(&response.serverNonce);
 
-    /* Replace the token and generate keys */
-    if(renew) {
-        channel->nextSecurityToken = response.securityToken;
-    } else {
-        channel->securityToken = response.securityToken;
-        res = UA_SecureChannel_generateNewKeys(channel);
-    }
+    /* TODO: Verify if the created-timestamps and the revised token lifetime are
+       conformant */
+
+    /* Replace the token and generate keys. For the client, the new token is
+     * immediately active. The server continues to accept the old token until a
+     * message with the new token arrives.*/
+    channel->securityToken = response.securityToken;
+    res = UA_SecureChannel_generateNewKeys(channel);
+    if(res != UA_STATUSCODE_GOOD)
+        goto cleanup;
 
     if(channel->state == UA_SECURECHANNELSTATE_OPEN)
         UA_LOG_INFO_CHANNEL(&client->config.logger, channel, "SecureChannel renewed");

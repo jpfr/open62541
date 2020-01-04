@@ -348,8 +348,7 @@ processHEL(UA_Server *server, UA_SecureChannel *channel,
 }
 
 static UA_StatusCode
-processOPN(UA_Server *server, UA_SecureChannel *channel,
-           UA_ByteString *message) {
+processOPN(UA_Server *server, UA_SecureChannel *channel, UA_ByteString *message) {
     /* Decode the asymmetric algorithm security header */
     size_t offset = 0;
     UA_AsymmetricAlgorithmSecurityHeader asymHeader;

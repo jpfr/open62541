@@ -153,15 +153,6 @@ typedef struct {
 static UA_StatusCode
 sendSymmetricServiceRequest(UA_Client *client, const void *request,
                             const UA_DataType *requestType, UA_UInt32 *requestId) {
-    /* Adjusting the request header. The const attribute is violated, but we
-     * only touch the following members: */
-    UA_RequestHeader *rr = (UA_RequestHeader*)(uintptr_t)request;
-    rr->authenticationToken = client->authenticationToken; /* cleaned up at the end */
-    rr->timestamp = UA_DateTime_now();
-    rr->requestHandle = ++client->requestHandle;
-
-    /* Send the request */
-    UA_UInt32 rqId = ++client->requestId;
 #ifdef UA_ENABLE_TYPEDESCRIPTION
     UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
                          "Sending a request of type %s", requestType->typeName);
@@ -171,28 +162,21 @@ sendSymmetricServiceRequest(UA_Client *client, const void *request,
                          requestType->typeId.identifier.numeric);
 #endif
 
-    /* Change to the new security token if the secure channel has been renewed */
-    UA_StatusCode res = UA_STATUSCODE_GOOD;
-    if(client->channel.nextSecurityToken.tokenId != 0) {
-        UA_LOG_DEBUG_CHANNEL(&client->config.logger, &client->channel,
-                             "Revolving the token");
-        res = UA_SecureChannel_revolveTokens(&client->channel);
-        if(res != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR_CHANNEL(&client->config.logger, &client->channel,
-                                 "Could not revolve the tokens with StatusCode %s",
-                                 UA_StatusCode_name(res));
-            return res;
-        }
-    }
+    /* Adjusting the request header */
+    UA_RequestHeader *rr = (UA_RequestHeader*)(uintptr_t)request;
+    rr->authenticationToken = client->authenticationToken;
+    rr->timestamp = UA_DateTime_now();
+    rr->requestHandle = ++client->requestHandle;
 
-    res = UA_SecureChannel_sendSymmetricMessage(&client->channel, rqId,
-                                                UA_MESSAGETYPE_MSG, rr, requestType);
+    /* Send the request */
+    *requestId = ++client->requestId;
+    UA_StatusCode res =
+        UA_SecureChannel_sendSymmetricMessage(&client->channel, *requestId,
+                                              UA_MESSAGETYPE_MSG, rr, requestType);
 
-    /* Do not return the token to the user */
+    /* Don't expose internals to the caller */
     UA_NodeId_init(&rr->authenticationToken);
-
-    if(res == UA_STATUSCODE_GOOD)
-        *requestId = rqId;
+    UA_UInt32_init(&rr->requestHandle);
     return res;
 }
 

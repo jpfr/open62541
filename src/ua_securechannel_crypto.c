@@ -188,24 +188,6 @@ UA_SecureChannel_generateNewKeys(UA_SecureChannel *channel) {
     return retval;
 }
 
-UA_StatusCode
-UA_SecureChannel_revolveTokens(UA_SecureChannel *channel) {
-    if(channel->nextSecurityToken.tokenId == 0) // no security token issued
-        return UA_STATUSCODE_BADSECURECHANNELTOKENUNKNOWN;
-
-    UA_ChannelSecurityToken_deleteMembers(&channel->previousSecurityToken);
-    UA_ChannelSecurityToken_copy(&channel->securityToken, &channel->previousSecurityToken);
-
-    UA_ChannelSecurityToken_deleteMembers(&channel->securityToken);
-    UA_ChannelSecurityToken_copy(&channel->nextSecurityToken, &channel->securityToken);
-
-    UA_ChannelSecurityToken_deleteMembers(&channel->nextSecurityToken);
-    UA_ChannelSecurityToken_init(&channel->nextSecurityToken);
-
-    /* remote keys are generated later on */
-    return UA_SecureChannel_generateLocalKeys(channel, channel->securityPolicy);
-}
-
 /******************************/
 /* Prepare Asymmetric Message */
 /******************************/
@@ -536,33 +518,27 @@ checkLimitsSym(UA_MessageContext *messageContext, size_t *bodyLength) {
 UA_StatusCode
 encodeHeadersSym(UA_MessageContext *const messageContext, size_t totalLength) {
     UA_SecureChannel *channel = messageContext->channel;
-    UA_Byte *header_pos = messageContext->messageBuffer.data;
-
-    UA_SecureConversationMessageHeader respHeader;
-    respHeader.secureChannelId = channel->securityToken.channelId;
-    respHeader.messageHeader.messageTypeAndChunkType = messageContext->messageType;
-    respHeader.messageHeader.messageSize = (UA_UInt32)totalLength;
+    UA_SecureConversationMessageHeader scmh;
+    scmh.messageHeader.messageTypeAndChunkType = messageContext->messageType;
     if(messageContext->final)
-        respHeader.messageHeader.messageTypeAndChunkType += UA_CHUNKTYPE_FINAL;
+        scmh.messageHeader.messageTypeAndChunkType += UA_CHUNKTYPE_FINAL;
     else
-        respHeader.messageHeader.messageTypeAndChunkType += UA_CHUNKTYPE_INTERMEDIATE;
-
-    UA_StatusCode res =
-        UA_encodeBinary(&respHeader, &UA_TRANSPORT[UA_TRANSPORT_SECURECONVERSATIONMESSAGEHEADER],
-                        &header_pos, &messageContext->buf_end, NULL, NULL);
-
-    UA_SymmetricAlgorithmSecurityHeader symSecHeader;
-    symSecHeader.tokenId = channel->securityToken.tokenId;
-    res |= UA_encodeBinary(&symSecHeader.tokenId,
-                           &UA_TRANSPORT[UA_TRANSPORT_SYMMETRICALGORITHMSECURITYHEADER],
-                           &header_pos, &messageContext->buf_end, NULL, NULL);
+        scmh.messageHeader.messageTypeAndChunkType += UA_CHUNKTYPE_INTERMEDIATE;
+    scmh.messageHeader.messageSize = (UA_UInt32)totalLength;
+    scmh.secureChannelId = channel->securityToken.channelId;
 
     UA_SequenceHeader seqHeader;
-    seqHeader.requestId = messageContext->requestId;
     seqHeader.sequenceNumber = UA_atomic_addUInt32(&channel->sendSequenceNumber, 1);
-    res |= UA_encodeBinary(&seqHeader, &UA_TRANSPORT[UA_TRANSPORT_SEQUENCEHEADER],
-                           &header_pos, &messageContext->buf_end, NULL, NULL);
+    seqHeader.requestId = messageContext->requestId;
 
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    UA_Byte *pos = messageContext->messageBuffer.data;
+    res |= UA_encodeBinary(&scmh, &UA_TRANSPORT[UA_TRANSPORT_SECURECONVERSATIONMESSAGEHEADER],
+                           &pos, &messageContext->buf_end, NULL, NULL);
+    res |= UA_encodeBinary(&channel->securityToken.tokenId, &UA_TYPES[UA_TYPES_UINT32],
+                           &pos, &messageContext->buf_end, NULL, NULL);
+    res |= UA_encodeBinary(&seqHeader, &UA_TRANSPORT[UA_TRANSPORT_SEQUENCEHEADER],
+                           &pos, &messageContext->buf_end, NULL, NULL);
     return res;
 }
 
@@ -747,69 +723,33 @@ processSequenceNumberSym(UA_SecureChannel *channel, UA_UInt32 sequenceNumber) {
     return UA_STATUSCODE_GOOD;
 }
 
-static UA_StatusCode
-checkPreviousToken(UA_SecureChannel *channel, UA_UInt32 tokenId) {
-    if(tokenId != channel->previousSecurityToken.tokenId)
-        return UA_STATUSCODE_BADSECURECHANNELTOKENUNKNOWN;
-
-    UA_DateTime timeout = channel->previousSecurityToken.createdAt +
-        (UA_DateTime)((UA_Double)channel->previousSecurityToken.revisedLifetime *
-                      (UA_Double)UA_DATETIME_MSEC * 1.25);
-
-    if(timeout < UA_DateTime_nowMonotonic())
-        return UA_STATUSCODE_BADSECURECHANNELTOKENUNKNOWN;
-
-    return UA_STATUSCODE_GOOD;
-}
-
 UA_StatusCode
 checkSymHeader(UA_SecureChannel *channel, UA_UInt32 tokenId) {
-    /* If the message uses the currently active token, check if it is still valid */
-    if(tokenId == channel->securityToken.tokenId) {
-        if(channel->state == UA_SECURECHANNELSTATE_OPEN &&
-           (channel->securityToken.createdAt +
-            (channel->securityToken.revisedLifetime * UA_DATETIME_MSEC))
-           < UA_DateTime_nowMonotonic()) {
-            UA_SecureChannel_close(channel);
-            return UA_STATUSCODE_BADSECURECHANNELCLOSED;
-        }
-    }
-
-    /* If the message uses a different token, check if it is the next token. */
+    /* Not the active token */
     if(tokenId != channel->securityToken.tokenId) {
-        /* If it isn't the next token, we might be dealing with a message, that
-         * still uses the old token, so check if the old one is still valid.*/
-        if(tokenId != channel->nextSecurityToken.tokenId) {
-            if(channel->allowPreviousToken)
-                return checkPreviousToken(channel, tokenId);
+        /* Is it the next token? */
+        if(channel->nextSecurityToken.tokenId == 0 ||
+           tokenId != channel->nextSecurityToken.tokenId)
             return UA_STATUSCODE_BADSECURECHANNELTOKENUNKNOWN;
-        }
 
-        /* If the token is indeed the next token, revolve the tokens */
-        UA_StatusCode retval = UA_SecureChannel_revolveTokens(channel);
-        if(retval != UA_STATUSCODE_GOOD)
-            return retval;
+        /* Revolve to the next token */
+        UA_ChannelSecurityToken_clear(&channel->securityToken);
+        channel->securityToken = channel->nextSecurityToken;
+        UA_ChannelSecurityToken_init(&channel->nextSecurityToken);
 
         /* If the message now uses the currently active token also generate
          * new remote keys to correctly decrypt. */
-        if(channel->securityToken.tokenId == tokenId) {
-            retval = UA_SecureChannel_generateRemoteKeys(channel, channel->securityPolicy);
-            UA_ChannelSecurityToken_deleteMembers(&channel->previousSecurityToken);
-            UA_ChannelSecurityToken_init(&channel->previousSecurityToken);
-            return retval;
-        }
+        UA_StatusCode res = UA_SecureChannel_generateRemoteKeys(channel,
+                                                                channel->securityPolicy);
+        if(res != UA_STATUSCODE_GOOD)
+            return res;
     }
 
-    /* It is possible that the sent messages already use the new token, but
-     * the received messages still use the old token. If we receive a message
-     * with the new token, we will need to generate the keys and discard the
-     * old token now*/
-    if(channel->previousSecurityToken.tokenId != 0) {
-        UA_StatusCode retval = UA_SecureChannel_generateRemoteKeys(channel, channel->securityPolicy);
-        UA_ChannelSecurityToken_deleteMembers(&channel->previousSecurityToken);
-        UA_ChannelSecurityToken_init(&channel->previousSecurityToken);
-        return retval;
-    }
+    /* Check if the token is still valid */
+    UA_DateTime timeout = channel->securityToken.createdAt +
+        (channel->securityToken.revisedLifetime * UA_DATETIME_MSEC);
+    if(timeout < UA_DateTime_nowMonotonic())
+        return UA_STATUSCODE_BADSECURECHANNELCLOSED;
 
     return UA_STATUSCODE_GOOD;
 }

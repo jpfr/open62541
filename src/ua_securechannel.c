@@ -565,22 +565,17 @@ MSGToMessageQueue(UA_SecureChannel *channel, UA_ByteString *chunkContent,
                   UA_MessageType messageType, UA_ChunkType chunkType) {
     /* Decode and check the symmetric security header (tokenId) */
     size_t offset = 0;
-    UA_SymmetricAlgorithmSecurityHeader symmetricSecurityHeader;
-    UA_SymmetricAlgorithmSecurityHeader_init(&symmetricSecurityHeader);
-    UA_StatusCode retval =
-        UA_SymmetricAlgorithmSecurityHeader_decodeBinary(chunkContent, &offset,
-                                                         &symmetricSecurityHeader);
+    UA_UInt32 tokenId;
+    UA_StatusCode retval = UA_UInt32_decodeBinary(chunkContent, &offset, &tokenId);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
     /* Do some checks that depend on a configured SecurityPolicy */
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-    /* Help fuzzing by always setting the correct tokenId */
-    symmetricSecurityHeader.tokenId = channel->securityToken.tokenId;
-#endif
-    retval = checkSymHeader(channel, symmetricSecurityHeader.tokenId);
+#ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+    retval = checkSymHeader(channel, tokenId);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
+#endif
 
     UA_UInt32 requestId = 0;
     UA_UInt32 sequenceNumber = 0;
