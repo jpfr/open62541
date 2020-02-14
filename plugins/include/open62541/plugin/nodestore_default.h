@@ -36,26 +36,17 @@ UA_Nodestore_ZipTree(UA_Nodestore *ns);
  * nodes. It uses the copy of zipTree to hold the MINIMAL nodes
  */
 UA_EXPORT UA_StatusCode
-UA_Nodestore_BinaryEncoded(UA_Nodestore *ns, const char *const lookupTablePath,
-                         const char *const enocdedBinPath);
+UA_Nodestore_BinaryEncoded(UA_Nodestore *ns, const char *lookupTablePath,
+                           const char *enocdedBinPath);
 
 UA_StatusCode
-UA_Node_encode(const UA_Node *node, UA_ByteString *new_valueEncoding);
-
-/* Lookup table for the encoded nodes */
-struct lookUpTable;
-typedef struct lookUpTable lookUpTable;
-struct lookUpTable {
-    UA_NodeId nodeId;
-    size_t nodePosition;
-    size_t nodeSize;
-};
+UA_Node_encodeBinary(const UA_Node *node, UA_ByteString *new_valueEncoding);
 
 UA_Node*
-decodeNode(void *ctx, UA_ByteString encodedBin, size_t offset);
+UA_Node_decodeBinary(void *ctx, UA_ByteString encodedBin, size_t offset);
 
 void
-encodeNodeCallback(void *visitorCtx, const UA_Node *node);
+UA_Node_dumpToFileCallback(void *visitorCtx, const UA_Node *node);
 
 #endif
 
