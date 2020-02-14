@@ -144,7 +144,6 @@ option(UA_ENABLE_PARSING "Utility functions that require parsing (e.g. NodeId ex
 option(UA_ENABLE_DA "Enable OPC UA DataAccess (Part 8) definitions" ON)
 option(UA_ENABLE_MICRO_EMB_DEV_PROFILE "Builds CTT Compliant Micro Embedded Device Server Profile" OFF)
 option(UA_ENABLE_WEBSOCKET_SERVER "Enable websocket support (uses libwebsockets)" OFF)
-option(UA_ENABLE_ENCODE_AND_DUMP "Binary Encode the nodes present in information model and dump it into a file" OFF)
 option(UA_ENABLE_USE_ENCODED_NODES "Use OPC UA binary encoded nodes" OFF)
 
 # security provider 
@@ -180,20 +179,6 @@ endif()
 if(UA_ENABLE_MICRO_EMB_DEV_PROFILE)
     if(NOT (UA_NAMESPACE_ZERO STREQUAL "FULL"))
         message(FATAL_ERROR "CTT Compliant Micro Embedded Device Server Profile needs full namespace zero")
-    endif()
-endif()
-
-if((UA_ENABLE_AMALGAMATION) AND (UA_ENABLE_USE_ENCODED_NODES))
-        message(FATAL_ERROR "Simultaneous usage of UA_ENABLE_AMALGAMATION AND UA_ENABLE_USE_ENCODED_NODES is not allowed")
-endif()
-
-if((UA_ENABLE_ENCODE_AND_DUMP) AND (UA_ENABLE_USE_ENCODED_NODES))
-        message(FATAL_ERROR "Simultaneous usage of UA_ENABLE_ENCODE_AND_DUMP AND UA_ENABLE_USE_ENCODED_NODES is not allowed")
-endif()
-
-if(UA_ENABLE_USE_ENCODED_NODES)
-    if(NOT (UA_NAMESPACE_ZERO STREQUAL "MINIMAL"))
-        message(FATAL_ERROR "Usage of binary encoded nodes requries 'minimal' information model")
     endif()
 endif()
 

@@ -18,11 +18,17 @@
 #include <sys/mman.h>
 #include <stdio.h>
 
-#if defined UA_ENABLE_ENCODE_AND_DUMP || defined UA_ENABLE_USE_ENCODED_NODES
+#ifdef UA_ENABLE_USE_ENCODED_NODES
 
 #ifndef UA_ENABLE_IMMUTABLE_NODES
 #error The ROM-based Nodestore requires nodes to be replaced on write
 #endif
+
+typedef struct {
+    UA_NodeId nodeId;
+    size_t nodePosition;
+    size_t nodeSize;
+} lookUpTable;
 
 static UA_StatusCode
 commonVariableAttributeEncode(const UA_VariableNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
@@ -236,7 +242,7 @@ getNodeSize(const UA_Node * node) {
 }
 
 UA_StatusCode
-UA_Node_encode(const UA_Node *node, UA_ByteString *new_valueEncoding) {
+UA_Node_encodeBinary(const UA_Node *node, UA_ByteString *new_valueEncoding) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
 
     UA_Byte *bufPos = new_valueEncoding->data;
@@ -651,8 +657,8 @@ zipNsReleaseNode(void *nsCtx, const UA_Node *node) {
     cleanupEntry(entry);
 }
 
-UA_Node*
-decodeNode(void *ctx, UA_ByteString encodedBin, size_t offset) {
+UA_Node *
+UA_Node_decodeBinary(void *ctx, UA_ByteString encodedBin, size_t offset) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     UA_NodeId nodeID;
     retval |= UA_NodeId_decodeBinary(&encodedBin, &offset, &nodeID);
@@ -758,7 +764,7 @@ zipNsGetNode(void *nsCtx, const UA_NodeId *nodeId) {
 
     for(size_t i = 0; i < ltSizeRead; i++) {
         if(UA_NodeId_equal(nodeId, &ltRead[i].nodeId))
-            return decodeNode(nsCtx, encodeBin, ltRead[i].nodePosition);
+            return UA_Node_decodeBinary(nsCtx, encodeBin, ltRead[i].nodePosition);
     }
     return NULL;
 }
@@ -963,7 +969,7 @@ UA_Nodestore_BinaryEncoded(UA_Nodestore *ns, const char *const lookupTablePath,
 #endif
 
 void
-encodeNodeCallback(void *visitorCtx, const UA_Node *node) {
+UA_Node_dumpToFileCallback(void *visitorCtx, const UA_Node *node) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
 
     /* To calculate the binary size of the encoded node */
@@ -1000,7 +1006,7 @@ encodeNodeCallback(void *visitorCtx, const UA_Node *node) {
     new_valueEncoding.length = nodeSize;
 
     /* Encode the node */
-    retval = UA_Node_encode(node, &new_valueEncoding);
+    retval = UA_Node_encodeBinary(node, &new_valueEncoding);
 
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "The encoding of nodes failed with error : %s",
