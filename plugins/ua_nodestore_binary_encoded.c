@@ -395,8 +395,6 @@ viewNodeDecode(const UA_ByteString *src, size_t *offset, UA_ViewNode* viewNode) 
     return retval;
 }
 
-
-
 static void
 readRowLookuptable(char ltRow [], int length, lookUpTable *lt, int row) {
     /**
@@ -658,34 +656,31 @@ zipNsReleaseNode(void *nsCtx, const UA_Node *node) {
 }
 
 UA_Node *
-UA_Node_decodeBinary(void *ctx, UA_ByteString encodedBin, size_t offset) {
+UA_Node_decodeBinary(void *ctx, const UA_ByteString encodedBin, size_t offset) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     UA_NodeId nodeID;
     retval |= UA_NodeId_decodeBinary(&encodedBin, &offset, &nodeID);
     UA_NodeClass nodeClass;
     retval |= UA_NodeClass_decodeBinary(&encodedBin, &offset, &nodeClass);
-    UA_QualifiedName browseName;
-    retval |= UA_QualifiedName_decodeBinary(&encodedBin, &offset, &browseName);
-    UA_LocalizedText displayName;
-    retval |= UA_LocalizedText_decodeBinary(&encodedBin, &offset, &displayName);
-    UA_LocalizedText description;
-    retval |= UA_LocalizedText_decodeBinary(&encodedBin, &offset, &description);
-    UA_UInt32 writeMask;
-    retval |= UA_UInt32_decodeBinary(&encodedBin, &offset, &writeMask);
-    size_t referencesSize;
-    retval |= UA_UInt64_decodeBinary(&encodedBin, &offset, (UA_UInt64 *)&referencesSize);
-
     UA_Node* node = zipNsNewNode(ctx, nodeClass);
-    node->context = ctx;
+    if(!node) {
+        UA_NodeId_clear(&nodeID);
+        return NULL;
+    }
+
     memcpy(&node->nodeId, &nodeID, sizeof(UA_NodeId));
     node->nodeClass = nodeClass;
-    memcpy(&node->browseName, &browseName, sizeof(UA_QualifiedName));
-    memcpy(&node->displayName, &displayName, sizeof(UA_LocalizedText));
-    memcpy(&node->description, &description, sizeof(UA_LocalizedText));
-    node->writeMask = writeMask;
+
+    retval |= UA_QualifiedName_decodeBinary(&encodedBin, &offset, &node->browseName);
+    retval |= UA_LocalizedText_decodeBinary(&encodedBin, &offset, &node->displayName);
+    retval |= UA_LocalizedText_decodeBinary(&encodedBin, &offset, &node->description);
+    retval |= UA_UInt32_decodeBinary(&encodedBin, &offset, &node->writeMask);
+    UA_UInt64 referencesSize;
+    retval |= UA_UInt64_decodeBinary(&encodedBin, &offset, &referencesSize);
     node->referencesSize = referencesSize;
 
-    node->references = (UA_NodeReferenceKind*) UA_calloc(referencesSize, sizeof(UA_NodeReferenceKind));
+    node->references = (UA_NodeReferenceKind*)
+        UA_calloc(referencesSize, sizeof(UA_NodeReferenceKind));
     for (size_t i = 0; i < referencesSize; i++) {
         UA_NodeId referenceTypeId;
         retval |= UA_NodeId_decodeBinary(&encodedBin, &offset, &referenceTypeId);
@@ -694,59 +689,62 @@ UA_Node_decodeBinary(void *ctx, UA_ByteString encodedBin, size_t offset) {
         memcpy(&node->references[i].referenceTypeId, &referenceTypeId, sizeof(UA_NodeId));
         node->references[i].isInverse = isInverse;
 
-           size_t refTargetsSize;
-           retval |= UA_UInt64_decodeBinary(&encodedBin, &offset, (UA_UInt64 *)&refTargetsSize);
-           node->references[i].refTargetsSize = refTargetsSize;
-           node->references[i].refTargets = (UA_ReferenceTarget*)UA_calloc(node->references[i].refTargetsSize,
-                                                 sizeof(UA_ReferenceTarget));
-           for (size_t j = 0; j < refTargetsSize; j++) {
-               UA_UInt32 targetHash;
+        size_t refTargetsSize;
+        retval |= UA_UInt64_decodeBinary(&encodedBin, &offset, (UA_UInt64 *)&refTargetsSize);
+        node->references[i].refTargetsSize = refTargetsSize;
+        node->references[i].refTargets = (UA_ReferenceTarget*)
+            UA_calloc(node->references[i].refTargetsSize, sizeof(UA_ReferenceTarget));
+        for (size_t j = 0; j < refTargetsSize; j++) {
+            UA_UInt32 targetHash;
             retval |= UA_UInt32_decodeBinary(&encodedBin, &offset, &targetHash);
             UA_ExpandedNodeId target;
             retval |= UA_ExpandedNodeId_decodeBinary(&encodedBin, &offset, &target);
             node->references[i].refTargets[j].targetHash = targetHash;
             memcpy(&node->references[i].refTargets[j].target, &target, sizeof(UA_ExpandedNodeId));
-           }
+        }
     }
 
     switch(nodeClass) {
     case UA_NODECLASS_OBJECT:
-           retval |= objectNodeDecode(&encodedBin, &offset, (UA_ObjectNode*) node);
+        retval |= objectNodeDecode(&encodedBin, &offset, (UA_ObjectNode*) node);
         break;
     case UA_NODECLASS_VARIABLE:
         retval |= variableNodeDecode(&encodedBin, &offset, (UA_VariableNode*) node);
         break;
     case UA_NODECLASS_METHOD:
-           retval |= methodNodeDecode(&encodedBin, &offset, (UA_MethodNode*) node);
+        retval |= methodNodeDecode(&encodedBin, &offset, (UA_MethodNode*) node);
         break;
     case UA_NODECLASS_OBJECTTYPE:
         retval |= objectTypeNodeDecode(&encodedBin, &offset, (UA_ObjectTypeNode*) node);
         break;
     case UA_NODECLASS_VARIABLETYPE:
-           retval |= variableTypeNodeDecode(&encodedBin, &offset, (UA_VariableTypeNode*) node);
+        retval |= variableTypeNodeDecode(&encodedBin, &offset, (UA_VariableTypeNode*) node);
         break;
     case UA_NODECLASS_REFERENCETYPE:
-          retval |= ReferenceTypeNodeDecode(&encodedBin, &offset, (UA_ReferenceTypeNode*) node);
+        retval |= ReferenceTypeNodeDecode(&encodedBin, &offset, (UA_ReferenceTypeNode*) node);
         break;
     case UA_NODECLASS_DATATYPE:
-          retval |= dataTypeNodeDecode(&encodedBin, &offset, (UA_DataTypeNode*) node);
+        retval |= dataTypeNodeDecode(&encodedBin, &offset, (UA_DataTypeNode*) node);
         break;
     case UA_NODECLASS_VIEW:
-          retval |= viewNodeDecode(&encodedBin, &offset, (UA_ViewNode*) node);
+        retval |= viewNodeDecode(&encodedBin, &offset, (UA_ViewNode*) node);
         break;
     default:
         break;
     }
 
+    NodeEntry *entry = container_of(node, NodeEntry, nodeId);
+
     if(retval != UA_STATUSCODE_GOOD) {
-           UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "The decodeNode failed with error : %s",
-                                          UA_StatusCode_name(retval));
+        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER,
+                     "The decodeNode failed with error : %s",
+                     UA_StatusCode_name(retval));
+        deleteEntry(entry);
+        return NULL;
     }
 
-    NodeEntry *entry = container_of(node, NodeEntry, nodeId);
     ++entry->refCount;
     entry->deleted = true; // remove the decoded node from the memory when release is called!
-
     return node;
 }
 

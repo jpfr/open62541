@@ -43,7 +43,7 @@ UA_StatusCode
 UA_Node_encodeBinary(const UA_Node *node, UA_ByteString *new_valueEncoding);
 
 UA_Node*
-UA_Node_decodeBinary(void *ctx, UA_ByteString encodedBin, size_t offset);
+UA_Node_decodeBinary(void *ctx, const UA_ByteString encodedBin, size_t offset);
 
 void
 UA_Node_dumpToFileCallback(void *visitorCtx, const UA_Node *node);
