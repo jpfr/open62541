@@ -15,7 +15,8 @@
 
 static void usage(void) {
     printf("Usage: server [-lookupTable <lookup table file>] \n"
-           "              [-enocdedBin <encoded binary file>] \n");
+           "              [-encodedBin <encoded binary file>] \n"
+           "              [-dump] \n");
 }
 
 static volatile UA_Boolean running = true;
@@ -27,16 +28,10 @@ static void stopHandler(int sig) {
 int main(int argc, char *argv[]) {
     signal(SIGINT, stopHandler);
     signal(SIGTERM, stopHandler);
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
 
     char *lookupTablePath = NULL;
     char *enocdedBinPath = NULL;
-
-    /* At least three argument is required for the binary nodestore */
-    if(argc <= 2) {
-        usage();
-        return EXIT_FAILURE;
-    }
+    bool dump = false;
 
     /* Parse the arguments */
     for(int argpos = 1; argpos < argc; argpos++) {
@@ -52,9 +47,14 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        if(strcmp(argv[argpos], "-enocdedBin") == 0) {
+        if(strcmp(argv[argpos], "-encodedBin") == 0) {
             argpos++;
             enocdedBinPath = argv[argpos];
+            continue;
+        }
+
+        if(strcmp(argv[argpos], "-dump") == 0) {
+            dump = true;
             continue;
         }
 
@@ -62,26 +62,39 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-
     UA_ServerConfig config;
     memset(&config, 0, sizeof(UA_ServerConfig));
-    UA_Nodestore_BinaryEncoded(&config.nodestore, lookupTablePath, enocdedBinPath);
+    if(!dump && lookupTablePath && enocdedBinPath)
+        UA_Nodestore_BinaryEncoded(&config.nodestore, lookupTablePath, enocdedBinPath);
     UA_ServerConfig_setDefault(&config);
+    config.initNS0 = dump; /* only initialize if dumping the nodeset */
 
     UA_Server *server = NULL;
     server = UA_Server_newWithConfig(&config);
     if(!server) {
-        retval |= UA_STATUSCODE_BADINTERNALERROR;
+        UA_LOG_WARNING(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                       "Could not create the server");
+        return EXIT_FAILURE;
     }
 
-    /* Use the iterate before along with encodeNodeCallback to dump the nodes */
-    UA_ServerConfig *cc = UA_Server_getConfig(server);
-    UA_ServerConfig_setDefault(cc);
-    cc->nodestore.iterate(cc->nodestore.context, UA_Node_dumpToFileCallback, NULL);
-    UA_LOG_INFO(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                "Nodes encoded and dumped to encodedNode.bin and lookupTable.bin");
+    UA_StatusCode retval;
 
-    retval |= UA_Server_run(server, &running);
+    if(dump) {
+        running = false;
+        retval = UA_Server_run(server, &running);
+        void *dumpCtx = UA_Nodestore_dumpFileContext_open(lookupTablePath, enocdedBinPath);
+        if(dumpCtx) {
+            UA_ServerConfig *cc = UA_Server_getConfig(server);
+            cc->nodestore.iterate(cc->nodestore.context, UA_Nodestore_dumpNodeCallback, dumpCtx);
+            UA_Nodestore_dumpFileContext_close(dumpCtx);
+        } else {
+            UA_LOG_WARNING(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
+                           "Could not write the nodestore to files");
+            retval |= UA_STATUSCODE_BADINTERNALERROR;
+        }
+    } else {
+        retval = UA_Server_run(server, &running);
+    }
 
     UA_Server_delete(server);
     return retval == UA_STATUSCODE_GOOD ? EXIT_SUCCESS : EXIT_FAILURE;

@@ -17,7 +17,14 @@
 #include "ua_session.h"
 #include "ua_subscription.h"
 
-#if 0
+UA_StatusCode
+writeNs0VariableArray(UA_Server *server, UA_UInt32 id, void *v,
+                      size_t length, const UA_DataType *type) {
+    UA_Variant var;
+    UA_Variant_init(&var);
+    UA_Variant_setArray(&var, v, length, type);
+    return UA_Server_writeValue(server, UA_NODEID_NUMERIC(0, id), var);
+}
 
 static UA_StatusCode
 addNode_raw(UA_Server *server, UA_NodeClass nodeClass,
@@ -46,8 +53,6 @@ addNode_finish(UA_Server *server, UA_UInt32 nodeId,
     return AddNode_finish(server, &server->adminSession, &sourceId);
 }
 
-#endif
-
 static UA_StatusCode
 addObjectNode(UA_Server *server, char* name, UA_UInt32 objectid,
               UA_UInt32 parentid, UA_UInt32 referenceid, UA_UInt32 type_id) {
@@ -61,7 +66,6 @@ addObjectNode(UA_Server *server, char* name, UA_UInt32 objectid,
                                    object_attr, NULL, NULL);
 }
 
-#if 0
 static UA_StatusCode
 addReferenceTypeNode(UA_Server *server, char* name, char *inverseName, UA_UInt32 referencetypeid,
                      UA_Boolean isabstract, UA_Boolean symmetric, UA_UInt32 parentid) {
@@ -75,13 +79,11 @@ addReferenceTypeNode(UA_Server *server, char* name, char *inverseName, UA_UInt32
                                    UA_NODEID_NUMERIC(0, parentid), UA_NODEID_NULL,
                                    UA_QUALIFIEDNAME(0, name), reference_attr, NULL, NULL);
 }
-#endif
 
 /***************************/
 /* Bootstrap NS0 hierarchy */
 /***************************/
 
-#if 0
 /* Creates the basic nodes which are expected by the nodeset compiler to be
  * already created. This is necessary to reduce the dependencies for the nodeset
  * compiler. */
@@ -269,8 +271,6 @@ UA_Server_createNS0_base(UA_Server *server) {
 
     return ret;
 }
-
-#endif
 
 /****************/
 /* Data Sources */
@@ -630,16 +630,8 @@ readMonitoredItems(UA_Server *server, const UA_NodeId *sessionId, void *sessionC
 }
 #endif /* defined(UA_ENABLE_METHODCALLS) && defined(UA_ENABLE_SUBSCRIPTIONS) */
 
-UA_StatusCode
-writeNs0VariableArray(UA_Server *server, UA_UInt32 id, void *v,
-                      size_t length, const UA_DataType *type) {
-    UA_Variant var;
-    UA_Variant_init(&var);
-    UA_Variant_setArray(&var, v, length, type);
-    return UA_Server_writeValue(server, UA_NODEID_NUMERIC(0, id), var);
-}
-
 #ifndef UA_GENERATED_NAMESPACE_ZERO
+
 static UA_StatusCode
 addVariableNode(UA_Server *server, char* name, UA_UInt32 variableid,
                 UA_UInt32 parentid, UA_UInt32 referenceid,
@@ -784,24 +776,25 @@ addModellingRules(UA_Server *server) {
  * example server time. */
 UA_StatusCode
 UA_Server_initNS0(UA_Server *server) {
-    return 0;
-
     /* Initialize base nodes which are always required an cannot be created
      * through the NS compiler */
-    server->bootstrapNS0 = true;
-    UA_StatusCode retVal = 0;//UA_Server_createNS0_base(server);
-    server->bootstrapNS0 = false;
-    if(retVal != UA_STATUSCODE_GOOD)
-        return retVal;
-
+    UA_StatusCode retVal = UA_STATUSCODE_GOOD;
+    if(server->config.initNS0) {
+        server->bootstrapNS0 = true;
+        retVal = UA_Server_createNS0_base(server);
+        server->bootstrapNS0 = false;
+        if(retVal != UA_STATUSCODE_GOOD)
+            return retVal;
+        
 #ifdef UA_GENERATED_NAMESPACE_ZERO
-    /* Load nodes and references generated from the XML ns0 definition */
-    retVal = namespace0_generated(server);
+        /* Load nodes and references generated from the XML ns0 definition */
+        retVal = namespace0_generated(server);
 #else
-    /* Create a minimal server object */
-    retVal = UA_Server_minimalServerObject(server);
+        /* Create a minimal server object */
+        retVal = UA_Server_minimalServerObject(server);
 #endif
-
+    }
+    
     if(retVal != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(&server->config.logger, UA_LOGCATEGORY_SERVER,
                      "Initialization of Namespace 0 (before bootstrapping) "

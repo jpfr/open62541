@@ -23,26 +23,6 @@
 /* Edit Node Context */
 /*********************/
 
-UA_StatusCode
-UA_Server_getNodeContext(UA_Server *server, UA_NodeId nodeId,
-                         void **nodeContext) {
-    UA_LOCK(server->serviceMutex);
-    UA_StatusCode retval = getNodeContext(server, nodeId, nodeContext);
-    UA_UNLOCK(server->serviceMutex);
-    return retval;
-}
-
-UA_StatusCode
-getNodeContext(UA_Server *server, UA_NodeId nodeId,
-                         void **nodeContext) {
-    const UA_Node *node = UA_NODESTORE_GET(server, &nodeId);
-    if(!node)
-        return UA_STATUSCODE_BADNODEIDUNKNOWN;
-    *nodeContext = node->context;
-    UA_NODESTORE_RELEASE(server, node);
-    return UA_STATUSCODE_GOOD;
-}
-
 static UA_StatusCode
 setDeconstructedNode(UA_Server *server, UA_Session *session,
                      UA_Node *node, void *context) {

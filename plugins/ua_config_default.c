@@ -47,6 +47,7 @@ UA_Server_new() {
     /* Set a default logger and NodeStore for the initialization */
     config.logger = UA_Log_Stdout_;
     UA_Nodestore_HashMap(&config.nodestore);
+    config.initNS0 = true;
     return UA_Server_newWithConfig(&config);
 }
 
@@ -120,6 +121,7 @@ setDefaultConfig(UA_ServerConfig *conf) {
 
     if(conf->nodestore.context == NULL)
         UA_Nodestore_HashMap(&conf->nodestore);
+    conf->initNS0 = true;
 
     /* --> Start setting the default static config <-- */
     conf->nThreads = 1;

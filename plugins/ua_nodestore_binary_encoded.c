@@ -37,9 +37,10 @@ commonVariableAttributeEncode(const UA_VariableNode *node, UA_Byte **bufPos, con
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     retval |= UA_NodeId_encodeBinary(&node->dataType, bufPos, bufEnd);
     retval |= UA_Int32_encodeBinary(&node->valueRank, bufPos, bufEnd);
-    retval |= UA_UInt64_encodeBinary(&node->arrayDimensionsSize, bufPos, bufEnd);
-    if(node->arrayDimensionsSize) {
-        retval |= UA_UInt32_encodeBinary(node->arrayDimensions, bufPos, bufEnd);
+    UA_UInt64 arrayDims = node->arrayDimensionsSize;
+    retval |= UA_UInt64_encodeBinary(&arrayDims, bufPos, bufEnd);
+    for(size_t i = 0; i < node->arrayDimensionsSize; i++) {
+        retval |= UA_UInt32_encodeBinary(&node->arrayDimensions[i], bufPos, bufEnd);
     }
     retval |= UA_UInt32_encodeBinary((const UA_UInt32*)&node->valueSource, bufPos, bufEnd);
     UA_DataValue v2 = node->value.data.value;
@@ -112,8 +113,8 @@ UA_NodeReferenceKind_encodeBinary(const UA_NodeReferenceKind *references,
     retval |= UA_UInt64_encodeBinary(&targetSize, bufPos, bufEnd);
     for(size_t i = 0; i < references->refTargetsSize; i++) {
         UA_ReferenceTarget *refTarget = &references->refTargets[i];
-        retval |= UA_UInt32_encodeBinary(&refTarget->targetHash, bufPos, bufEnd);
-        retval |= UA_ExpandedNodeId_encodeBinary(&refTarget->target, bufPos, bufEnd);
+        retval |= UA_UInt32_encodeBinary(&refTarget->targetIdHash, bufPos, bufEnd);
+        retval |= UA_ExpandedNodeId_encodeBinary(&refTarget->targetId, bufPos, bufEnd);
     }
     return retval;
 }
@@ -181,11 +182,15 @@ variableNodeDecode(const UA_ByteString *src, size_t *offset, UA_VariableNode* va
     retval |= UA_Boolean_decodeBinary(src, offset, &variableNode->historizing);
     retval |= UA_NodeId_decodeBinary(src, offset, &variableNode->dataType);
     retval |= UA_Int32_decodeBinary(src, offset, &variableNode->valueRank);
-    retval |= UA_UInt64_decodeBinary(src, offset, &variableNode->arrayDimensionsSize);
-    if(variableNode->arrayDimensionsSize) {
+    UA_UInt64 arrayDims = 0;
+    retval |= UA_UInt64_decodeBinary(src, offset, &arrayDims);
+    variableNode->arrayDimensionsSize = arrayDims;
+    if(variableNode->arrayDimensionsSize > 0) {
         variableNode->arrayDimensions = (UA_UInt32 *)
-            UA_calloc(variableNode->arrayDimensionsSize, sizeof(UA_UInt32));
-        retval |= UA_UInt32_decodeBinary(src, offset, variableNode->arrayDimensions);
+            UA_malloc(sizeof(UA_UInt32) * variableNode->arrayDimensionsSize);
+        for(size_t i = 0; i < variableNode->arrayDimensionsSize; i++) {
+            retval |= UA_UInt32_decodeBinary(src, offset, &variableNode->arrayDimensions[i]);
+        }
     }
     retval |= UA_UInt32_decodeBinary(src, offset, (UA_UInt32*)&variableNode->valueSource);
     retval |= UA_DataValue_decodeBinary(src, offset, &variableNode->value.data.value);
@@ -213,13 +218,18 @@ variableTypeNodeDecode(const UA_ByteString *src, size_t *offset,
     retval |= UA_Boolean_decodeBinary(src, offset, &varTypeNode->isAbstract);
     retval |= UA_NodeId_decodeBinary(src, offset, &varTypeNode->dataType);
     retval |= UA_Int32_decodeBinary(src, offset, &varTypeNode->valueRank);
-    retval |= UA_UInt64_decodeBinary(src, offset, &varTypeNode->arrayDimensionsSize);
-    if(varTypeNode->arrayDimensionsSize) {
-        retval |= UA_UInt32_decodeBinary(src, offset, &varTypeNode->arrayDimensions[0]);
+    UA_UInt64 arrayDims = 0;
+    retval |= UA_UInt64_decodeBinary(src, offset, &arrayDims);
+    varTypeNode->arrayDimensionsSize = arrayDims;
+    if(varTypeNode->arrayDimensionsSize > 0) {
+        varTypeNode->arrayDimensions = (UA_UInt32 *)
+            UA_malloc(sizeof(UA_UInt32) * varTypeNode->arrayDimensionsSize);
+        for(size_t i = 0; i < varTypeNode->arrayDimensionsSize; i++) {
+            retval |= UA_UInt32_decodeBinary(src, offset, &varTypeNode->arrayDimensions[i]);
+        }
     }
-    retval |= UA_UInt32_decodeBinary(src, offset, (UA_UInt32*)&varTypeNode->valueSource);
+    retval |= UA_UInt32_decodeBinary(src, offset, (UA_UInt32 *)&varTypeNode->valueSource);
     retval |= UA_DataValue_decodeBinary(src, offset, &varTypeNode->value.data.value);
-
     return retval;
 }
 
@@ -564,8 +574,8 @@ UA_Node_decodeBinary(void *ctx, const UA_ByteString encodedBin, size_t offset) {
             retval |= UA_UInt32_decodeBinary(&encodedBin, &offset, &targetHash);
             UA_ExpandedNodeId target;
             retval |= UA_ExpandedNodeId_decodeBinary(&encodedBin, &offset, &target);
-            node->references[i].refTargets[j].targetHash = targetHash;
-            memcpy(&node->references[i].refTargets[j].target, &target, sizeof(UA_ExpandedNodeId));
+            node->references[i].refTargets[j].targetIdHash = targetHash;
+            memcpy(&node->references[i].refTargets[j].targetId, &target, sizeof(UA_ExpandedNodeId));
         }
     }
 
@@ -834,7 +844,7 @@ typedef struct {
     int nodefd;
 } DumpFileCtx;
 
-#define NODEFILE_INITSIZE (1024 * 1024)
+#define NODEFILE_INITSIZE (1024 * 1024) * 20
 
 void *
 UA_Nodestore_dumpFileContext_open(const char *table_file, const char *node_file) {
@@ -851,7 +861,7 @@ UA_Nodestore_dumpFileContext_open(const char *table_file, const char *node_file)
     DumpFileCtx *dfctx = (DumpFileCtx*)UA_malloc(sizeof(DumpFileCtx));
     fallocate(nodefd, 0, 0, NODEFILE_INITSIZE);
     dfctx->nodeFile.data = (UA_Byte*)
-        mmap(NULL, NODEFILE_INITSIZE, PROT_WRITE, MAP_PRIVATE, nodefd, 0);
+        mmap(NULL, NODEFILE_INITSIZE, PROT_WRITE, MAP_SHARED, nodefd, 0);
     dfctx->nodeFile.length = NODEFILE_INITSIZE;
     dfctx->nodeFileOffset = 0;
 
@@ -889,13 +899,17 @@ UA_Nodestore_dumpNodeCallback(void *dumpFileContext, const UA_Node *node) {
         fallocate(dfctx->nodefd, 0,
                   (off_t)dfctx->nodeFile.length, (off_t)dfctx->nodeFile.length);
         dfctx->nodeFile.data = (UA_Byte*)
-            mmap(NULL, dfctx->nodeFile.length * 2, PROT_WRITE, MAP_PRIVATE, dfctx->nodefd, 0);
+            mmap(NULL, dfctx->nodeFile.length * 2, PROT_WRITE, MAP_SHARED, dfctx->nodefd, 0);
         dfctx->nodeFile.length *= 2;
     }
 
     /* Debug: Check if we get back the same encoded by decoding first */
     UA_Node *test = UA_Node_decodeBinary(NULL, dfctx->nodeFile, dfctx->nodeFileOffset);
     UA_assert(test);
+    UA_STACKARRAY(UA_Byte, encoded, nodesize);
+    UA_Byte *bp = encoded;
+    UA_Node_encodeBinary(node, &bp, encoded + nodesize);
+    UA_assert(memcmp(&dfctx->nodeFile.data[dfctx->nodeFileOffset], encoded, nodesize) == 0);
     deleteEntry(container_of(test, NodeEntry, nodeId));
 
     /* Encode the table */

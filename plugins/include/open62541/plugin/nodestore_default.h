@@ -29,25 +29,18 @@ UA_EXPORT UA_StatusCode
 UA_Nodestore_ZipTree(UA_Nodestore *ns);
 
 #ifdef UA_ENABLE_USE_ENCODED_NODES
-/*
- * Binary encoded Nodestore contains nodes in a compressed format. The lookupTable
- * is used to locate the index location of compressed node. The MINIMAL nodes
- * should be present in the information model for adding datasource and method
- * nodes. It uses the copy of zipTree to hold the MINIMAL nodes
- */
+/* A binary encoded Nodestore contains nodes in a compressed format. The lookupTable
+ * is used to locate the index location of compressed node. */
 UA_EXPORT UA_StatusCode
 UA_Nodestore_BinaryEncoded(UA_Nodestore *ns, const char *lookupTablePath,
                            const char *enocdedBinPath);
 
-UA_StatusCode
-UA_Node_encodeBinary(const UA_Node *node, UA_ByteString *new_valueEncoding);
-
-UA_Node*
-UA_Node_decodeBinary(void *ctx, const UA_ByteString encodedBin, size_t offset);
-
-void
-UA_Node_dumpToFileCallback(void *visitorCtx, const UA_Node *node);
-
+/* Dump any nodestore to a binary file */
+UA_EXPORT void * UA_Nodestore_dumpFileContext_open(const char *table_file,
+                                                   const char *node_file);
+UA_EXPORT void UA_Nodestore_dumpNodeCallback(void *dumpFileContext,
+                                             const UA_Node *node);
+UA_EXPORT void UA_Nodestore_dumpFileContext_close(void *dumpFileContext);
 #endif
 
 

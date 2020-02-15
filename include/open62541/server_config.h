@@ -178,6 +178,7 @@ struct UA_ServerConfig {
 
     /* Nodestore */
     UA_Nodestore nodestore;
+    UA_Boolean initNS0; /* Set to false if the ns0 is preconfigured in the nodestore */
 
     /* Certificate Verification */
     UA_CertificateVerification certificateVerification;

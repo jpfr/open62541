@@ -18,6 +18,26 @@
 /* Information Model Operations */
 /********************************/
 
+UA_StatusCode
+UA_Server_getNodeContext(UA_Server *server, UA_NodeId nodeId,
+                         void **nodeContext) {
+    UA_LOCK(server->serviceMutex);
+    UA_StatusCode retval = getNodeContext(server, nodeId, nodeContext);
+    UA_UNLOCK(server->serviceMutex);
+    return retval;
+}
+
+UA_StatusCode
+getNodeContext(UA_Server *server, UA_NodeId nodeId,
+                         void **nodeContext) {
+    const UA_Node *node = UA_NODESTORE_GET(server, &nodeId);
+    if(!node)
+        return UA_STATUSCODE_BADNODEIDUNKNOWN;
+    *nodeContext = node->context;
+    UA_NODESTORE_RELEASE(server, node);
+    return UA_STATUSCODE_GOOD;
+}
+
 /* Keeps track of already visited nodes to detect circular references */
 struct ref_history {
     struct ref_history *parent; /* the previous element */
