@@ -9,6 +9,7 @@
  *    This nodestore contains the copy of zipTree to hold the MINIMAL nodes
  */
 
+#define _GNU_SOURCE
 
 #include <open62541/plugin/nodestore_default.h>
 #include <open62541/plugin/log_stdout.h>
@@ -32,231 +33,105 @@ typedef struct {
 } lookUpTable;
 
 static UA_StatusCode
-commonVariableAttributeEncode(const UA_VariableNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
+commonVariableAttributeEncode(const UA_VariableNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    retval |= UA_NodeId_encodeBinary(&node->dataType, &bufPos, bufEnd);
-    retval |= UA_Int32_encodeBinary(&node->valueRank, &bufPos, bufEnd);
-    retval |= UA_UInt64_encodeBinary(&node->arrayDimensionsSize, &bufPos, bufEnd);
+    retval |= UA_NodeId_encodeBinary(&node->dataType, bufPos, bufEnd);
+    retval |= UA_Int32_encodeBinary(&node->valueRank, bufPos, bufEnd);
+    retval |= UA_UInt64_encodeBinary(&node->arrayDimensionsSize, bufPos, bufEnd);
     if(node->arrayDimensionsSize) {
-        retval |= UA_UInt32_encodeBinary(node->arrayDimensions, &bufPos, bufEnd);
+        retval |= UA_UInt32_encodeBinary(node->arrayDimensions, bufPos, bufEnd);
     }
-    retval |= UA_UInt32_encodeBinary((const UA_UInt32*)&node->valueSource, &bufPos, bufEnd);
+    retval |= UA_UInt32_encodeBinary((const UA_UInt32*)&node->valueSource, bufPos, bufEnd);
     UA_DataValue v2 = node->value.data.value;
-    retval |= UA_DataValue_encodeBinary(&v2, &bufPos, bufEnd);
+    retval |= UA_DataValue_encodeBinary(&v2, bufPos, bufEnd);
     return retval;
 }
 
 static UA_StatusCode
-objectNodeEncode(const UA_ObjectNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
-    return UA_Byte_encodeBinary(&node->eventNotifier, &bufPos, bufEnd);
+objectNodeEncode(const UA_ObjectNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
+    return UA_Byte_encodeBinary(&node->eventNotifier, bufPos, bufEnd);
 }
 
 static UA_StatusCode
-variableNodeEncode(const UA_VariableNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
+variableNodeEncode(const UA_VariableNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    retval |= UA_Byte_encodeBinary(&node->accessLevel, &bufPos, bufEnd);
-    retval |= UA_Double_encodeBinary(&node->minimumSamplingInterval, &bufPos, bufEnd);
-    retval |= UA_Boolean_encodeBinary(&node->historizing, &bufPos, bufEnd);
+    retval |= UA_Byte_encodeBinary(&node->accessLevel, bufPos, bufEnd);
+    retval |= UA_Double_encodeBinary(&node->minimumSamplingInterval, bufPos, bufEnd);
+    retval |= UA_Boolean_encodeBinary(&node->historizing, bufPos, bufEnd);
     retval |= commonVariableAttributeEncode(node, bufPos, bufEnd);
     return retval;
 }
 
 static UA_StatusCode
-methodNodeEncode(const UA_MethodNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
-    return UA_Boolean_encodeBinary(&node->executable, &bufPos, bufEnd);
+methodNodeEncode(const UA_MethodNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
+    return UA_Boolean_encodeBinary(&node->executable, bufPos, bufEnd);
 }
 
 static UA_StatusCode
-objectTypeNodeEncode(const UA_ObjectTypeNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
-    return UA_Boolean_encodeBinary(&node->isAbstract, &bufPos, bufEnd);
+objectTypeNodeEncode(const UA_ObjectTypeNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
+    return UA_Boolean_encodeBinary(&node->isAbstract, bufPos, bufEnd);
 }
 
 static UA_StatusCode
-variableTypeNodeEncode(const UA_VariableTypeNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
+variableTypeNodeEncode(const UA_VariableTypeNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    retval |= UA_Boolean_encodeBinary(&node->isAbstract, &bufPos, bufEnd);
+    retval |= UA_Boolean_encodeBinary(&node->isAbstract, bufPos, bufEnd);
     retval |= commonVariableAttributeEncode((const UA_VariableNode*)node, bufPos, bufEnd);
     return retval;
 }
 
 static UA_StatusCode
-ReferenceTypeNodeEncode(const UA_ReferenceTypeNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
+ReferenceTypeNodeEncode(const UA_ReferenceTypeNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    retval |= UA_Boolean_encodeBinary(&node->isAbstract, &bufPos, bufEnd);
-    retval |= UA_Boolean_encodeBinary(&node->symmetric, &bufPos, bufEnd);
-    retval |= UA_LocalizedText_encodeBinary(&node->inverseName, &bufPos, bufEnd);
+    retval |= UA_Boolean_encodeBinary(&node->isAbstract, bufPos, bufEnd);
+    retval |= UA_Boolean_encodeBinary(&node->symmetric, bufPos, bufEnd);
+    retval |= UA_LocalizedText_encodeBinary(&node->inverseName, bufPos, bufEnd);
     return retval;
 }
 
 static UA_StatusCode
-dataTypeNodeEncode(const UA_DataTypeNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
-    return UA_Boolean_encodeBinary(&node->isAbstract, &bufPos, bufEnd);
+dataTypeNodeEncode(const UA_DataTypeNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
+    return UA_Boolean_encodeBinary(&node->isAbstract, bufPos, bufEnd);
 }
 
 static UA_StatusCode
-viewNodeEncode(const UA_ViewNode *node, UA_Byte *bufPos, const UA_Byte *bufEnd) {
+viewNodeEncode(const UA_ViewNode *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    retval |= UA_Byte_encodeBinary(&node->eventNotifier, &bufPos, bufEnd);
-    retval |= UA_Boolean_encodeBinary(&node->containsNoLoops, &bufPos, bufEnd);
+    retval |= UA_Byte_encodeBinary(&node->eventNotifier, bufPos, bufEnd);
+    retval |= UA_Boolean_encodeBinary(&node->containsNoLoops, bufPos, bufEnd);
     return retval;
-}
-
-static size_t
-commonVariableAttributeCalcSizeBinary(const UA_VariableNode *node) {
-    size_t size = 0;
-    size += UA_NodeId_calcSizeBinary(&node->dataType);
-    size += UA_Int32_calcSizeBinary(&node->valueRank);
-    size += UA_UInt64_calcSizeBinary(&node->arrayDimensionsSize);
-    if(node->arrayDimensionsSize) {
-        size += UA_UInt32_calcSizeBinary(node->arrayDimensions);
-    }
-    size += UA_UInt32_calcSizeBinary((const UA_UInt32*)&node->valueSource);
-    UA_DataValue v1 = node->value.data.value;
-    size += UA_DataValue_calcSizeBinary(&v1);
-    return size;
-}
-
-static size_t
-objectNodeCalcSizeBinary(const UA_ObjectNode* node) {
-    return UA_Byte_calcSizeBinary(&node->eventNotifier);
-}
-
-static size_t
-variableNodeCalcSizeBinary(const UA_VariableNode* node) {
-    size_t size = 0;
-    size += UA_Byte_calcSizeBinary(&node->accessLevel);
-    size += UA_Double_calcSizeBinary(&node->minimumSamplingInterval);
-    size += UA_Boolean_calcSizeBinary(&node->historizing);
-    size += commonVariableAttributeCalcSizeBinary(node);
-    return size;
-}
-
-static size_t
-methodNodeCalcSizeBinary(const UA_MethodNode* node) {
-    return UA_Boolean_calcSizeBinary(&node->executable);
-}
-
-static size_t
-objectTypeNodeCalcSizeBinary(const UA_ObjectTypeNode* node) {
-    return UA_Boolean_calcSizeBinary(&node->isAbstract);
-}
-
-static size_t
-variableTypeNodeCalcSizeBinary(const UA_VariableTypeNode* node){
-    size_t size = 0;
-    size += UA_Boolean_calcSizeBinary(&node->isAbstract);
-    size += commonVariableAttributeCalcSizeBinary((const UA_VariableNode*)node);
-    return size;
-}
-
-static size_t
-referenceTypeNodeCalcSizeBinary(const UA_ReferenceTypeNode* node) {
-    size_t size = 0;
-    size += UA_Boolean_calcSizeBinary(&node->isAbstract);
-    size += UA_Boolean_calcSizeBinary(&node->symmetric);
-    size += UA_LocalizedText_calcSizeBinary(&node->inverseName);
-    return size;
-}
-
-static size_t
-dataTypeNodeCalcSizeBinary(const UA_DataTypeNode* node) {
-    return UA_Boolean_calcSizeBinary(&node->isAbstract);
-}
-
-static size_t
-viewNodeCalcSizeBinary(const UA_ViewNode* node) {
-    size_t size = 0;
-    size += UA_Byte_calcSizeBinary(&node->eventNotifier);
-    size += UA_Boolean_calcSizeBinary(&node->containsNoLoops);
-    return size;
 }
 
 static UA_StatusCode
 UA_NodeReferenceKind_encodeBinary(const UA_NodeReferenceKind *references,
-                                  UA_Byte **bufPos, const UA_Byte **bufEnd) {
+                                  UA_Byte **bufPos, const UA_Byte *bufEnd) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    retval |= UA_NodeId_encodeBinary(&references->referenceTypeId, bufPos, *bufEnd);
-    retval |= UA_Boolean_encodeBinary(&references->isInverse, bufPos, *bufEnd);
-    retval |= UA_UInt64_encodeBinary((const UA_UInt64 *)&references->refTargetsSize, bufPos, *bufEnd);
+    retval |= UA_NodeId_encodeBinary(&references->referenceTypeId, bufPos, bufEnd);
+    retval |= UA_Boolean_encodeBinary(&references->isInverse, bufPos, bufEnd);
+    UA_UInt64 targetSize = (UA_UInt64)references->refTargetsSize;
+    retval |= UA_UInt64_encodeBinary(&targetSize, bufPos, bufEnd);
     for(size_t i = 0; i < references->refTargetsSize; i++) {
         UA_ReferenceTarget *refTarget = &references->refTargets[i];
-        retval |= UA_UInt32_encodeBinary(&refTarget->targetHash, bufPos, *bufEnd);
-        retval |= UA_ExpandedNodeId_encodeBinary(&refTarget->target, bufPos, *bufEnd);
+        retval |= UA_UInt32_encodeBinary(&refTarget->targetHash, bufPos, bufEnd);
+        retval |= UA_ExpandedNodeId_encodeBinary(&refTarget->target, bufPos, bufEnd);
     }
     return retval;
 }
 
-static size_t
-getNodeSize(const UA_Node * node) {
-    size_t nodeSize = 0;
-
-    nodeSize += UA_NodeId_calcSizeBinary(&node->nodeId);
-    nodeSize += UA_NodeClass_calcSizeBinary(&node->nodeClass);
-    nodeSize += UA_QualifiedName_calcSizeBinary(&node->browseName);
-    nodeSize += UA_LocalizedText_calcSizeBinary(&node->displayName);
-    nodeSize += UA_LocalizedText_calcSizeBinary(&node->description);
-    nodeSize += UA_UInt32_calcSizeBinary(&node->writeMask);
-    nodeSize += UA_UInt64_calcSizeBinary(&node->referencesSize);
-
-    for(size_t i = 0; i < node->referencesSize; i++) {
-        UA_NodeReferenceKind *refKind = &node->references[i];
-        nodeSize += UA_NodeId_calcSizeBinary(&refKind->referenceTypeId);
-        nodeSize += UA_Boolean_calcSizeBinary(&refKind->isInverse);
-        nodeSize += UA_UInt64_calcSizeBinary(&refKind->refTargetsSize);
-        for(size_t j = 0; j < node->references[i].refTargetsSize; j++) {
-            UA_ReferenceTarget *refTarget = &refKind->refTargets[j];
-            nodeSize += UA_UInt32_calcSizeBinary(&refTarget->targetHash);
-            nodeSize += UA_ExpandedNodeId_calcSizeBinary(&refTarget->target);
-        }
-    }
-
-    switch(node->nodeClass) {
-    case UA_NODECLASS_OBJECT:
-        nodeSize += objectNodeCalcSizeBinary((const UA_ObjectNode*)node);
-        break;
-    case UA_NODECLASS_VARIABLE:
-        nodeSize += variableNodeCalcSizeBinary((const UA_VariableNode*)node);
-        break;
-    case UA_NODECLASS_METHOD:
-        nodeSize += methodNodeCalcSizeBinary((const UA_MethodNode*)node);
-        break;
-    case UA_NODECLASS_OBJECTTYPE:
-        nodeSize += objectTypeNodeCalcSizeBinary((const UA_ObjectTypeNode*)node);
-        break;
-    case UA_NODECLASS_VARIABLETYPE:
-        nodeSize += variableTypeNodeCalcSizeBinary((const UA_VariableTypeNode*)node);
-        break;
-    case UA_NODECLASS_REFERENCETYPE:
-        nodeSize += referenceTypeNodeCalcSizeBinary((const UA_ReferenceTypeNode*)node);
-        break;
-    case UA_NODECLASS_DATATYPE:
-        nodeSize += dataTypeNodeCalcSizeBinary((const UA_DataTypeNode*)node);
-        break;
-    case UA_NODECLASS_VIEW:
-        nodeSize += viewNodeCalcSizeBinary((const UA_ViewNode*)node);
-        break;
-    default:
-        break;
-    }
-
-    return nodeSize;
-}
-
-UA_StatusCode
-UA_Node_encodeBinary(const UA_Node *node, UA_ByteString *new_valueEncoding) {
+static UA_StatusCode
+UA_Node_encodeBinary(const UA_Node *node, UA_Byte **bufPos, const UA_Byte *bufEnd) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-
-    UA_Byte *bufPos = new_valueEncoding->data;
-    const UA_Byte *bufEnd = &new_valueEncoding->data[new_valueEncoding->length];
-    retval |= UA_NodeId_encodeBinary(&node->nodeId, &bufPos, bufEnd);
-    retval |= UA_NodeClass_encodeBinary(&node->nodeClass, &bufPos, bufEnd);
-    retval |= UA_QualifiedName_encodeBinary(&node->browseName, &bufPos, bufEnd);
-    retval |= UA_LocalizedText_encodeBinary(&node->displayName, &bufPos, bufEnd);
-    retval |= UA_LocalizedText_encodeBinary(&node->description, &bufPos, bufEnd);
-    retval |= UA_UInt32_encodeBinary(&node->writeMask, &bufPos, bufEnd);
-    retval |= UA_UInt64_encodeBinary((const UA_UInt64 *)&node->referencesSize, &bufPos, bufEnd);
-    for (size_t i = 0; i < node->referencesSize; i++) {
-        retval |= UA_NodeReferenceKind_encodeBinary(&node->references[i], &bufPos, &bufEnd);
+    retval |= UA_NodeId_encodeBinary(&node->nodeId, bufPos, bufEnd);
+    retval |= UA_NodeClass_encodeBinary(&node->nodeClass, bufPos, bufEnd);
+    UA_assert(node->nodeClass != UA_NODECLASS_UNSPECIFIED);
+    retval |= UA_QualifiedName_encodeBinary(&node->browseName, bufPos, bufEnd);
+    retval |= UA_LocalizedText_encodeBinary(&node->displayName, bufPos, bufEnd);
+    retval |= UA_LocalizedText_encodeBinary(&node->description, bufPos, bufEnd);
+    retval |= UA_UInt32_encodeBinary(&node->writeMask, bufPos, bufEnd);
+    UA_UInt64 refSize = (UA_UInt64)node->referencesSize;
+    retval |= UA_UInt64_encodeBinary(&refSize, bufPos, bufEnd);
+    for(size_t i = 0; i < node->referencesSize; i++) {
+        retval |= UA_NodeReferenceKind_encodeBinary(&node->references[i], bufPos, bufEnd);
     }
 
     switch(node->nodeClass) {
@@ -290,25 +165,6 @@ UA_Node_encodeBinary(const UA_Node *node, UA_ByteString *new_valueEncoding) {
 
     return retval;
 }
-#endif
-
-#ifdef UA_ENABLE_USE_ENCODED_NODES
-#define MINIMALNODECOUNT        45 // Total number of nodes in MINIMAL configuration
-const UA_UInt32 minimalNodeIds[MINIMALNODECOUNT] =
-    {UA_NS0ID_REFERENCES, UA_NS0ID_HASSUBTYPE, UA_NS0ID_AGGREGATES, UA_NS0ID_HIERARCHICALREFERENCES,
-     UA_NS0ID_NONHIERARCHICALREFERENCES, UA_NS0ID_HASCHILD, UA_NS0ID_ORGANIZES, UA_NS0ID_HASEVENTSOURCE,
-     UA_NS0ID_HASMODELLINGRULE, UA_NS0ID_HASENCODING, UA_NS0ID_HASDESCRIPTION,UA_NS0ID_HASTYPEDEFINITION,
-     UA_NS0ID_GENERATESEVENT, UA_NS0ID_HASPROPERTY, UA_NS0ID_HASCOMPONENT, UA_NS0ID_HASNOTIFIER,
-     UA_NS0ID_HASORDEREDCOMPONENT, UA_NS0ID_BASEDATATYPE, UA_NS0ID_BASEVARIABLETYPE, UA_NS0ID_BASEDATAVARIABLETYPE,
-     UA_NS0ID_PROPERTYTYPE, UA_NS0ID_BASEOBJECTTYPE, UA_NS0ID_FOLDERTYPE, UA_NS0ID_ROOTFOLDER,
-     UA_NS0ID_OBJECTSFOLDER, UA_NS0ID_TYPESFOLDER, UA_NS0ID_REFERENCETYPESFOLDER, UA_NS0ID_DATATYPESFOLDER,
-     UA_NS0ID_VARIABLETYPESFOLDER, UA_NS0ID_OBJECTTYPESFOLDER, UA_NS0ID_EVENTTYPESFOLDER, UA_NS0ID_VIEWSFOLDER,
-     UA_NS0ID_SERVER, UA_NS0ID_SERVER_SERVERARRAY, UA_NS0ID_SERVER_NAMESPACEARRAY, UA_NS0ID_SERVER_SERVERSTATUS,
-     UA_NS0ID_SERVER_SERVERSTATUS_CURRENTTIME, UA_NS0ID_SERVER_SERVERSTATUS_STATE, UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO,
-     UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO_PRODUCTURI, UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO_MANUFACTURERNAME,
-     UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO_PRODUCTNAME, UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO_SOFTWAREVERSION,
-     UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO_BUILDNUMBER, UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO_BUILDDATE
-    };
 
 static UA_StatusCode
 objectNodeDecode(const UA_ByteString *src, size_t *offset, UA_ObjectNode* objectNode) {
@@ -327,7 +183,8 @@ variableNodeDecode(const UA_ByteString *src, size_t *offset, UA_VariableNode* va
     retval |= UA_Int32_decodeBinary(src, offset, &variableNode->valueRank);
     retval |= UA_UInt64_decodeBinary(src, offset, &variableNode->arrayDimensionsSize);
     if(variableNode->arrayDimensionsSize) {
-        variableNode->arrayDimensions = (UA_UInt32 *)UA_calloc(variableNode->arrayDimensionsSize, sizeof(UA_UInt32));
+        variableNode->arrayDimensions = (UA_UInt32 *)
+            UA_calloc(variableNode->arrayDimensionsSize, sizeof(UA_UInt32));
         retval |= UA_UInt32_decodeBinary(src, offset, variableNode->arrayDimensions);
     }
     retval |= UA_UInt32_decodeBinary(src, offset, (UA_UInt32*)&variableNode->valueSource);
@@ -350,7 +207,8 @@ objectTypeNodeDecode(const UA_ByteString *src, size_t *offset, UA_ObjectTypeNode
 }
 
 static UA_StatusCode
-variableTypeNodeDecode(const UA_ByteString *src, size_t *offset, UA_VariableTypeNode* varTypeNode) {
+variableTypeNodeDecode(const UA_ByteString *src, size_t *offset,
+                       UA_VariableTypeNode* varTypeNode) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     retval |= UA_Boolean_decodeBinary(src, offset, &varTypeNode->isAbstract);
     retval |= UA_NodeId_decodeBinary(src, offset, &varTypeNode->dataType);
@@ -366,7 +224,8 @@ variableTypeNodeDecode(const UA_ByteString *src, size_t *offset, UA_VariableType
 }
 
 static UA_StatusCode
-ReferenceTypeNodeDecode(const UA_ByteString *src, size_t *offset, UA_ReferenceTypeNode* refTypeNode) {
+ReferenceTypeNodeDecode(const UA_ByteString *src, size_t *offset,
+                        UA_ReferenceTypeNode* refTypeNode) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     retval |= UA_Boolean_decodeBinary(src, offset, &refTypeNode->isAbstract);
     retval |= UA_Boolean_decodeBinary(src, offset, &refTypeNode->symmetric);
@@ -375,7 +234,8 @@ ReferenceTypeNodeDecode(const UA_ByteString *src, size_t *offset, UA_ReferenceTy
 }
 
 static UA_StatusCode
-dataTypeNodeDecode(const UA_ByteString *src, size_t *offset, UA_DataTypeNode* dataTypeNode) {
+dataTypeNodeDecode(const UA_ByteString *src, size_t *offset,
+                   UA_DataTypeNode* dataTypeNode) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     retval |= UA_Boolean_decodeBinary(src, offset, &dataTypeNode->isAbstract);
     return retval;
@@ -654,14 +514,20 @@ zipNsReleaseNode(void *nsCtx, const UA_Node *node) {
     cleanupEntry(entry);
 }
 
-UA_Node *
+static UA_Node *
 UA_Node_decodeBinary(void *ctx, const UA_ByteString encodedBin, size_t offset) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     UA_NodeId nodeID;
     retval |= UA_NodeId_decodeBinary(&encodedBin, &offset, &nodeID);
     UA_NodeClass nodeClass;
     retval |= UA_NodeClass_decodeBinary(&encodedBin, &offset, &nodeClass);
-    UA_Node* node = zipNsNewNode(ctx, nodeClass);
+    UA_Node* node = NULL;
+    if(ctx)
+        node = zipNsNewNode(ctx, nodeClass);
+    else {
+        NodeEntry *e = newEntry(nodeClass);
+        node = (UA_Node*)&e->nodeId;
+    }
     if(!node) {
         UA_NodeId_clear(&nodeID);
         return NULL;
@@ -961,65 +827,89 @@ UA_Nodestore_BinaryEncoded(UA_Nodestore *ns, const char *const lookupTablePath,
 }
 #endif
 
+typedef struct {
+    UA_ByteString nodeFile;
+    size_t nodeFileOffset;
+    FILE *tableFile;
+    int nodefd;
+} DumpFileCtx;
+
+#define NODEFILE_INITSIZE (1024 * 1024)
+
+void *
+UA_Nodestore_dumpFileContext_open(const char *table_file, const char *node_file) {
+    mode_t mode = S_IRUSR | S_IWUSR;
+    int nodefd = open(node_file,  O_RDWR|O_CREAT|O_TRUNC, mode);
+    int tablefd = open(table_file,  O_RDWR|O_CREAT|O_TRUNC, mode);
+    FILE *tablefp = fdopen(tablefd, "w");
+    if(!tablefp || nodefd < 0) {
+        fclose(tablefp);
+        close(nodefd);
+        return NULL;
+    }
+
+    DumpFileCtx *dfctx = (DumpFileCtx*)UA_malloc(sizeof(DumpFileCtx));
+    fallocate(nodefd, 0, 0, NODEFILE_INITSIZE);
+    dfctx->nodeFile.data = (UA_Byte*)
+        mmap(NULL, NODEFILE_INITSIZE, PROT_WRITE, MAP_PRIVATE, nodefd, 0);
+    dfctx->nodeFile.length = NODEFILE_INITSIZE;
+    dfctx->nodeFileOffset = 0;
+
+    dfctx->tableFile = tablefp;
+    dfctx->nodefd = nodefd;
+    return dfctx;
+}
+
+void UA_Nodestore_dumpFileContext_close(void *dumpFileContext) {
+    DumpFileCtx *dfctx = (DumpFileCtx*)dumpFileContext;
+    munmap(dfctx->nodeFile.data, dfctx->nodeFileOffset);
+    ftruncate(dfctx->nodefd, (off_t)dfctx->nodeFileOffset);
+    close(dfctx->nodefd);
+    fclose(dfctx->tableFile);
+    UA_free(dfctx);
+}
+
 void
-UA_Node_dumpToFileCallback(void *visitorCtx, const UA_Node *node) {
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-
-    /* To calculate the binary size of the encoded node */
-    size_t nodeSize = 0;
-
-    /* To measure the total binary size of the encoded node and
-     * resolve the starting position of next nodes*/
-    static size_t totalSize = 0;
-
-    size_t ltNodeSize;
-    size_t ltNodePosition;
-    FILE *fpEncoded;
-    FILE *fpLookuptable;
-
-    fpEncoded = fopen("encodedNode.bin", "a");
-    if(!fpEncoded) {
-        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "The opening of file encodedNode.bin failed");
-    }
-
-    fpLookuptable = fopen("lookupTable.bin", "a");
-    if(!fpLookuptable) {
-        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "The opening of file lookupTable.bin failed");
-    }
-
-    nodeSize =  getNodeSize(node);
-
-    ltNodePosition = totalSize;
-    totalSize += nodeSize;
-    ltNodeSize = nodeSize;
-
-    UA_STACKARRAY(UA_Byte, new_stackValueEncoding, nodeSize);
-    UA_ByteString new_valueEncoding;
-    new_valueEncoding.data = new_stackValueEncoding;
-    new_valueEncoding.length = nodeSize;
+UA_Nodestore_dumpNodeCallback(void *dumpFileContext, const UA_Node *node) {
+    DumpFileCtx *dfctx = (DumpFileCtx*)dumpFileContext;
 
     /* Encode the node */
-    retval = UA_Node_encodeBinary(node, &new_valueEncoding);
-
-    if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "The encoding of nodes failed with error : %s",
-                                      UA_StatusCode_name(retval));
+    size_t nodesize = 0;
+    while(true) {
+        UA_Byte *bufPos = &dfctx->nodeFile.data[dfctx->nodeFileOffset];
+        const UA_Byte *bufEnd = &dfctx->nodeFile.data[dfctx->nodeFile.length];
+        UA_StatusCode retval = UA_Node_encodeBinary(node, &bufPos, bufEnd);
+        if(retval == UA_STATUSCODE_GOOD) {
+            nodesize = (size_t)((uintptr_t)bufPos -
+                                (uintptr_t)&dfctx->nodeFile.data[dfctx->nodeFileOffset]);
+            break;
+        }
+        /* Not enough space .. make a larger mmap */
+        munmap(dfctx->nodeFile.data, dfctx->nodeFile.length);
+        fallocate(dfctx->nodefd, 0,
+                  (off_t)dfctx->nodeFile.length, (off_t)dfctx->nodeFile.length);
+        dfctx->nodeFile.data = (UA_Byte*)
+            mmap(NULL, dfctx->nodeFile.length * 2, PROT_WRITE, MAP_PRIVATE, dfctx->nodefd, 0);
+        dfctx->nodeFile.length *= 2;
     }
 
-    for (size_t i = 0; i < nodeSize; i++) {
-        fprintf(fpEncoded, "%c", new_valueEncoding.data[i]);
-    }
+    /* Debug: Check if we get back the same encoded by decoding first */
+    UA_Node *test = UA_Node_decodeBinary(NULL, dfctx->nodeFile, dfctx->nodeFileOffset);
+    UA_assert(test);
+    deleteEntry(container_of(test, NodeEntry, nodeId));
 
+    /* Encode the table */
     if(node->nodeId.identifierType == UA_NODEIDTYPE_NUMERIC) {
-        fprintf(fpLookuptable, "%d %u %lu %lu\n", node->nodeId.identifierType, node->nodeId.identifier.numeric,
-                                          ltNodePosition, ltNodeSize);
+        fprintf(dfctx->tableFile, "%d %u %lu %lu\n",
+                node->nodeId.identifierType, node->nodeId.identifier.numeric,
+                dfctx->nodeFileOffset, nodesize);
     }
-
     if(node->nodeId.identifierType == UA_NODEIDTYPE_STRING) {
-        fprintf(fpLookuptable, "%d %s %lu %lu\n", node->nodeId.identifierType, node->nodeId.identifier.string.data,
-                                          ltNodePosition, ltNodeSize);
+        fprintf(dfctx->tableFile, "%d %s %lu %lu\n",
+                node->nodeId.identifierType, node->nodeId.identifier.string.data,
+                dfctx->nodeFileOffset, nodesize);
     }
 
-    fclose(fpLookuptable);
-    fclose(fpEncoded);
+    /* Forward the offset for the next node */
+    dfctx->nodeFileOffset += nodesize;
 }
