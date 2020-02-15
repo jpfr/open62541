@@ -16,6 +16,7 @@
 #include <open62541/types_generated_encoding_binary.h>
 
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <stdio.h>
 
 #ifdef UA_ENABLE_USE_ENCODED_NODES
@@ -500,22 +501,32 @@ UA_Read_LookUpTable(lookUpTable *lt, UA_UInt32 ltSize, const char* const path){
 }
 
 static UA_StatusCode
-UA_Read_Encoded_Binary(UA_ByteString *encodedBin, const char *const path) {
-    /* Allocate and initialize the context */
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    FILE *fpEncoded = fopen(path, "r");
-    if(!fpEncoded) {
-        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "The opening of file encodedNode.bin failed");
-        retval |= UA_STATUSCODE_BADINTERNALERROR;
-        return retval;
+UA_Read_Encoded_Binary(UA_ByteString *encodedBin, const char *path) {
+    /* Open file */
+    int fdEncoded = open(path, 0, O_RDONLY);
+    if(fdEncoded < 0) {
+        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER,
+                     "The opening of file encodedNode.bin failed");
+        return UA_STATUSCODE_BADINTERNALERROR;
     }
-    fseek(fpEncoded, 0L, SEEK_END);
-    size_t sizeOfEncodedBin = (size_t)ftell(fpEncoded);
-    void *mmapped = mmap(NULL, sizeOfEncodedBin, PROT_READ, MAP_PRIVATE, fileno(fpEncoded), 0);
+
+    /* Get the file size */
+    struct stat filestat;
+    if(fstat(fdEncoded, &filestat) !=0) {
+        close(fdEncoded);
+        return UA_STATUSCODE_BADINTERNALERROR;
+    }
+
+    /* mmap file for direct access */
+    void *mmapped = mmap(NULL, (size_t)filestat.st_size, PROT_READ, MAP_PRIVATE, fdEncoded, 0);
+    if(!mmapped) {
+        close(fdEncoded);
+        return UA_STATUSCODE_BADINTERNALERROR;
+    }
     encodedBin->data = (UA_Byte*)mmapped;
-    encodedBin->length = sizeOfEncodedBin;
-    fclose(fpEncoded);
-    return retval;
+    encodedBin->length = (size_t)filestat.st_size;
+    close(fdEncoded);
+    return UA_STATUSCODE_GOOD;
 }
 
 /* container_of */
