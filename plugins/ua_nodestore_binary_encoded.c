@@ -113,7 +113,6 @@ UA_NodeReferenceKind_encodeBinary(const UA_NodeReferenceKind *references,
     retval |= UA_UInt64_encodeBinary(&targetSize, bufPos, bufEnd);
     for(size_t i = 0; i < references->refTargetsSize; i++) {
         UA_ReferenceTarget *refTarget = &references->refTargets[i];
-        retval |= UA_UInt32_encodeBinary(&refTarget->targetHash, bufPos, bufEnd);
         retval |= UA_ExpandedNodeId_encodeBinary(&refTarget->target, bufPos, bufEnd);
     }
     return retval;
@@ -550,33 +549,25 @@ UA_Node_decodeBinary(void *ctx, const UA_ByteString encodedBin, size_t offset) {
     retval |= UA_LocalizedText_decodeBinary(&encodedBin, &offset, &node->displayName);
     retval |= UA_LocalizedText_decodeBinary(&encodedBin, &offset, &node->description);
     retval |= UA_UInt32_decodeBinary(&encodedBin, &offset, &node->writeMask);
+
+    /* Decode references */
     UA_UInt64 referencesSize;
     retval |= UA_UInt64_decodeBinary(&encodedBin, &offset, &referencesSize);
-    node->referencesSize = referencesSize;
-
-    node->references = (UA_NodeReferenceKind*)
-        UA_calloc(referencesSize, sizeof(UA_NodeReferenceKind));
+    UA_AddReferencesItem item;
+    UA_AddReferencesItem_init(&item);
     for (size_t i = 0; i < referencesSize; i++) {
-        UA_NodeId referenceTypeId;
-        retval |= UA_NodeId_decodeBinary(&encodedBin, &offset, &referenceTypeId);
+        retval |= UA_NodeId_decodeBinary(&encodedBin, &offset, &item.referenceTypeId);
         UA_Boolean isInverse;
         retval |= UA_Boolean_decodeBinary(&encodedBin, &offset, &isInverse);
-        memcpy(&node->references[i].referenceTypeId, &referenceTypeId, sizeof(UA_NodeId));
-        node->references[i].isInverse = isInverse;
-
-        size_t refTargetsSize;
-        retval |= UA_UInt64_decodeBinary(&encodedBin, &offset, (UA_UInt64 *)&refTargetsSize);
-        node->references[i].refTargetsSize = refTargetsSize;
-        node->references[i].refTargets = (UA_ReferenceTarget*)
-            UA_calloc(node->references[i].refTargetsSize, sizeof(UA_ReferenceTarget));
-        for (size_t j = 0; j < refTargetsSize; j++) {
-            UA_UInt32 targetHash;
-            retval |= UA_UInt32_decodeBinary(&encodedBin, &offset, &targetHash);
-            UA_ExpandedNodeId target;
-            retval |= UA_ExpandedNodeId_decodeBinary(&encodedBin, &offset, &target);
-            node->references[i].refTargets[j].targetHash = targetHash;
-            memcpy(&node->references[i].refTargets[j].target, &target, sizeof(UA_ExpandedNodeId));
+        item.isForward = !isInverse;
+        UA_UInt64 refTargetsSize;
+        retval |= UA_UInt64_decodeBinary(&encodedBin, &offset, &refTargetsSize);
+        for(UA_UInt64 j = 0; j < refTargetsSize; j++) {
+            retval |= UA_ExpandedNodeId_decodeBinary(&encodedBin, &offset, &item.targetNodeId);
+            retval |= UA_Node_addReference(node, &item);
+            UA_ExpandedNodeId_clear(&item.targetNodeId);
         }
+        UA_NodeId_clear(&item.referenceTypeId);
     }
 
     switch(nodeClass) {
@@ -795,13 +786,13 @@ zipNsClear(void *nsCtx) {
         return;
     ZipContext *ns = (ZipContext*)nsCtx;
     ZIP_ITER(NodeTreeBin, &ns->root, deleteNodeVisitor, NULL);
-    UA_free(ns);
 
     /* Clear encoded node contents */
     for(size_t i = 0; i < ns->ltSizeRead; i++) {
         UA_NodeId_clear(&ns->ltRead[i].nodeId);
     }
     UA_free(ns->ltRead);
+    UA_free(ns);
 }
 
 UA_StatusCode
