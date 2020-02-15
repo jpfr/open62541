@@ -310,13 +310,6 @@ const UA_UInt32 minimalNodeIds[MINIMALNODECOUNT] =
      UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO_BUILDNUMBER, UA_NS0ID_SERVER_SERVERSTATUS_BUILDINFO_BUILDDATE
     };
 
-UA_Boolean isMinimalNodesAdded = UA_FALSE;
-#define MAX_ROW_LENGTH         30  // Maximum length of a row in lookup table
-
-lookUpTable *ltRead;
-UA_UInt32 ltSizeRead;
-UA_ByteString encodeBin;
-
 static UA_StatusCode
 objectNodeDecode(const UA_ByteString *src, size_t *offset, UA_ObjectNode* objectNode) {
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
@@ -396,6 +389,8 @@ viewNodeDecode(const UA_ByteString *src, size_t *offset, UA_ViewNode* viewNode) 
     return retval;
 }
 
+#define MAX_ROW_LENGTH         30  // Maximum length of a row in lookup table
+
 static void
 readRowLookuptable(char ltRow [], int length, lookUpTable *lt, int row) {
     /**
@@ -452,13 +447,14 @@ readRowLookuptable(char ltRow [], int length, lookUpTable *lt, int row) {
 }
 
 static lookUpTable*
-UA_Lookuptable_Initialize(UA_UInt32 *ltSize, const char *const path) {
+UA_Lookuptable_Initialize(size_t *ltSize, const char *const path) {
     int ch;
-    UA_UInt32 nodeCount = 0; // To count the number of nodes
+    size_t nodeCount = 0; // To count the number of nodes
     FILE *fpLookuptable;
     fpLookuptable = fopen(path, "r");
     if(!fpLookuptable) {
-        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "The opening of file lookupTable.bin failed");
+        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER,
+                     "The opening of file lookupTable.bin failed");
     }
     while((ch = fgetc(fpLookuptable)) != EOF) {
         if(ch == '\n') {
@@ -472,14 +468,15 @@ UA_Lookuptable_Initialize(UA_UInt32 *ltSize, const char *const path) {
 }
 
 static void
-UA_Read_LookUpTable(lookUpTable *lt, UA_UInt32 ltSize, const char* const path){
+UA_Read_LookUpTable(lookUpTable *lt, size_t ltSize, const char* const path){
     int ch;
     int length = 0;
     int row = 0;
     char ltRow[MAX_ROW_LENGTH] = {0};
     FILE *fpLookuptable  = fopen(path, "r");
     if(!fpLookuptable) {
-        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER, "The opening of file lookupTable.bin failed");
+        UA_LOG_ERROR(UA_Log_Stdout, UA_LOGCATEGORY_SERVER,
+                     "The opening of file lookupTable.bin failed");
     }
     while((ch = fgetc(fpLookuptable)) != EOF) {
         switch(ch) {
@@ -547,18 +544,6 @@ struct NodeEntry {
     UA_NodeId nodeId; /* This is actually a UA_Node that also starts with a NodeId */
 };
 
-static void checkMinimalNodeIds(UA_NodeId nodeId) {
-    static UA_UInt16 insertedNodeCount = 0;
-    for(int i = 0; i < MINIMALNODECOUNT; i++) {
-        if(nodeId.identifier.numeric == minimalNodeIds[i]) {
-            insertedNodeCount++;
-        }
-    }
-    if(insertedNodeCount == MINIMALNODECOUNT) {
-        isMinimalNodesAdded = UA_TRUE;
-    }
-}
-
 /* Absolute ordering for NodeIds */
 static enum ZIP_CMP
 cmpNodeId(const void *a, const void *b) {
@@ -580,6 +565,9 @@ typedef struct NodeTreeBin NodeTreeBin;
 
 typedef struct {
     NodeTreeBin root;
+    lookUpTable *ltRead;
+    size_t ltSizeRead;
+    UA_ByteString encodeBin;
 } ZipContext;
 
 ZIP_PROTTYPE(NodeTreeBin, NodeEntry, NodeEntry)
@@ -771,9 +759,9 @@ zipNsGetNode(void *nsCtx, const UA_NodeId *nodeId) {
         return (const UA_Node*)&entry->nodeId;
     }
 
-    for(size_t i = 0; i < ltSizeRead; i++) {
-        if(UA_NodeId_equal(nodeId, &ltRead[i].nodeId))
-            return UA_Node_decodeBinary(nsCtx, encodeBin, ltRead[i].nodePosition);
+    for(size_t i = 0; i < ns->ltSizeRead; i++) {
+        if(UA_NodeId_equal(nodeId, &ns->ltRead[i].nodeId))
+            return UA_Node_decodeBinary(nsCtx, ns->encodeBin, ns->ltRead[i].nodePosition);
     }
     return NULL;
 }
@@ -811,9 +799,6 @@ static UA_StatusCode
 zipNsInsertNode(void *nsCtx, UA_Node *node, UA_NodeId *addedNodeId) {
     NodeEntry *entry = container_of(node, NodeEntry, nodeId);
     ZipContext *ns = (ZipContext*)nsCtx;
-
-    /* Check if all the minimal nodes are inserted*/
-    checkMinimalNodeIds(node->nodeId);
 
     /* Ensure that the NodeId is unique */
     NodeEntry dummy;
@@ -937,11 +922,10 @@ zipNsClear(void *nsCtx) {
     UA_free(ns);
 
     /* Clear encoded node contents */
-    for (UA_UInt32 i = 0; i < ltSizeRead; i++) {
-        UA_NodeId_clear(&ltRead[i].nodeId);
+    for(size_t i = 0; i < ns->ltSizeRead; i++) {
+        UA_NodeId_clear(&ns->ltRead[i].nodeId);
     }
-    UA_free(ltRead);
-    //UA_free(encodeBin.data); // mmapped
+    UA_free(ns->ltRead);
 }
 
 UA_StatusCode
@@ -969,9 +953,9 @@ UA_Nodestore_BinaryEncoded(UA_Nodestore *ns, const char *const lookupTablePath,
 
     /* Initialize binary enocded nodes and lookuptable */
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    retval |= UA_Read_Encoded_Binary(&encodeBin, enocdedBinPath);
-    ltRead = UA_Lookuptable_Initialize(&ltSizeRead, lookupTablePath);
-    UA_Read_LookUpTable(&ltRead[0], ltSizeRead, lookupTablePath);
+    retval |= UA_Read_Encoded_Binary(&ctx->encodeBin, enocdedBinPath);
+    ctx->ltRead = UA_Lookuptable_Initialize(&ctx->ltSizeRead, lookupTablePath);
+    UA_Read_LookUpTable(ctx->ltRead, ctx->ltSizeRead, lookupTablePath);
 
     return retval;
 }
