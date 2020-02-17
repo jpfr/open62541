@@ -203,6 +203,9 @@ mark_as_advanced(UA_ENABLE_COVERAGE)
 option(UA_ENABLE_QUERY "Enable query support in the client (most servers don't support it)" OFF)
 mark_as_advanced(UA_ENABLE_QUERY)
 
+option(UA_ENABLE_NS0_BOOTSTRAP "Bootstrap Namespace 0 at startup (no preallocated nodestore)" ON)
+mark_as_advanced(UA_ENABLE_NS0_BOOTSTRAP)
+
 option(UA_ENABLE_IMMUTABLE_NODES "Nodes in the information model are not edited but copied and replaced" OFF)
 mark_as_advanced(UA_ENABLE_IMMUTABLE_NODES)
 if(UA_MULTITHREADING GREATER 100)
@@ -712,7 +715,6 @@ set(lib_sources ${PROJECT_SOURCE_DIR}/src/ua_types.c
                 ${PROJECT_SOURCE_DIR}/src/server/ua_services_subscription.c
                 ${PROJECT_SOURCE_DIR}/src/server/ua_services_monitoreditem.c
                 ${PROJECT_SOURCE_DIR}/src/server/ua_services_securechannel.c
-                ${PROJECT_SOURCE_DIR}/src/server/ua_services_nodemanagement.c
                 ${PROJECT_SOURCE_DIR}/src/server/ua_services_discovery_multicast.c
                 # client
                 ${PROJECT_SOURCE_DIR}/src/client/ua_client.c
@@ -746,6 +748,12 @@ set(default_plugin_sources ${PROJECT_SOURCE_DIR}/plugins/ua_log_stdout.c
                            ${PROJECT_SOURCE_DIR}/plugins/ua_config_default.c
                            ${PROJECT_SOURCE_DIR}/plugins/securityPolicies/ua_securitypolicy_none.c
 )
+
+# Include the nodemanagement services only when needed. The linker would remove
+# the object code. But this way we can make sure they are not used anywhere.
+if(UA_ENABLE_NODEMANAGEMENT OR UA_ENABLE_NS0_BOOTSTRAP)
+    list(APPEND lib_sources ${PROJECT_SOURCE_DIR}/src/server/ua_services_nodemanagement.c)
+endif()
 
 if(UA_GENERATED_NAMESPACE_ZERO)
     list(APPEND internal_headers ${PROJECT_BINARY_DIR}/src_generated/open62541/namespace0_generated.h)

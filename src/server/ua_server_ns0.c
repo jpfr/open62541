@@ -17,6 +17,16 @@
 #include "ua_session.h"
 #include "ua_subscription.h"
 
+UA_StatusCode
+writeNs0VariableArray(UA_Server *server, UA_UInt32 id, void *v,
+                      size_t length, const UA_DataType *type) {
+    UA_Variant var;
+    UA_Variant_init(&var);
+    UA_Variant_setArray(&var, v, length, type);
+    return UA_Server_writeValue(server, UA_NODEID_NUMERIC(0, id), var);
+}
+
+
 #if 0
 
 static UA_StatusCode
@@ -46,8 +56,6 @@ addNode_finish(UA_Server *server, UA_UInt32 nodeId,
     return AddNode_finish(server, &server->adminSession, &sourceId);
 }
 
-#endif
-
 static UA_StatusCode
 addObjectNode(UA_Server *server, char* name, UA_UInt32 objectid,
               UA_UInt32 parentid, UA_UInt32 referenceid, UA_UInt32 type_id) {
@@ -61,7 +69,6 @@ addObjectNode(UA_Server *server, char* name, UA_UInt32 objectid,
                                    object_attr, NULL, NULL);
 }
 
-#if 0
 static UA_StatusCode
 addReferenceTypeNode(UA_Server *server, char* name, char *inverseName, UA_UInt32 referencetypeid,
                      UA_Boolean isabstract, UA_Boolean symmetric, UA_UInt32 parentid) {
@@ -75,13 +82,11 @@ addReferenceTypeNode(UA_Server *server, char* name, char *inverseName, UA_UInt32
                                    UA_NODEID_NUMERIC(0, parentid), UA_NODEID_NULL,
                                    UA_QUALIFIEDNAME(0, name), reference_attr, NULL, NULL);
 }
-#endif
 
 /***************************/
 /* Bootstrap NS0 hierarchy */
 /***************************/
 
-#if 0
 /* Creates the basic nodes which are expected by the nodeset compiler to be
  * already created. This is necessary to reduce the dependencies for the nodeset
  * compiler. */
@@ -267,6 +272,7 @@ UA_Server_createNS0_base(UA_Server *server) {
 /****************/
 /* Data Sources */
 /****************/
+#if 0
 
 static UA_StatusCode
 readStatus(UA_Server *server, const UA_NodeId *sessionId, void *sessionContext,
@@ -550,6 +556,7 @@ readMinSamplingInterval(UA_Server *server, const UA_NodeId *sessionId, void *ses
 #endif
 
 #if defined(UA_GENERATED_NAMESPACE_ZERO) && defined(UA_ENABLE_METHODCALLS) && defined(UA_ENABLE_SUBSCRIPTIONS)
+#if 0
 static UA_StatusCode
 readMonitoredItems(UA_Server *server, const UA_NodeId *sessionId, void *sessionContext,
                    const UA_NodeId *methodId, void *methodContext, const UA_NodeId *objectId,
@@ -603,15 +610,7 @@ readMonitoredItems(UA_Server *server, const UA_NodeId *sessionId, void *sessionC
     return UA_STATUSCODE_GOOD;
 }
 #endif /* defined(UA_ENABLE_METHODCALLS) && defined(UA_ENABLE_SUBSCRIPTIONS) */
-
-UA_StatusCode
-writeNs0VariableArray(UA_Server *server, UA_UInt32 id, void *v,
-                      size_t length, const UA_DataType *type) {
-    UA_Variant var;
-    UA_Variant_init(&var);
-    UA_Variant_setArray(&var, v, length, type);
-    return UA_Server_writeValue(server, UA_NODEID_NUMERIC(0, id), var);
-}
+#endif
 
 #ifndef UA_GENERATED_NAMESPACE_ZERO
 static UA_StatusCode
@@ -629,6 +628,7 @@ addVariableNode(UA_Server *server, char* name, UA_UInt32 variableid,
                                      UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE),
                                      attr, NULL, NULL);
 }
+
 
 /* A minimal server object that is not complete and does not use the mandated
  * references to a server type. To be used on very constrained devices. */
@@ -694,8 +694,11 @@ UA_Server_minimalServerObject(UA_Server *server) {
     return retval;
 }
 
+#endif
+
 #else
 
+#if 0
 static UA_StatusCode
 writeNs0Variable(UA_Server *server, UA_UInt32 id, void *v, const UA_DataType *type) {
     UA_Variant var;
@@ -750,6 +753,7 @@ addModellingRules(UA_Server *server) {
                            UA_EXPANDEDNODEID_NUMERIC(0, UA_NS0ID_MODELLINGRULE_OPTIONALPLACEHOLDER),
                            true);
 }
+#endif
 
 #endif
 
@@ -760,6 +764,7 @@ UA_StatusCode
 UA_Server_initNS0(UA_Server *server) {
     return 0;
 
+#if 0
     /* Initialize base nodes which are always required an cannot be created
      * through the NS compiler */
     server->bootstrapNS0 = true;
@@ -1099,4 +1104,5 @@ UA_Server_initNS0(UA_Server *server) {
         return UA_STATUSCODE_BADINTERNALERROR;
     }
     return UA_STATUSCODE_GOOD;
+#endif
 }
