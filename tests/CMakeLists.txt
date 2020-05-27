@@ -11,12 +11,11 @@ if(NOT MSVC AND UA_ENABLE_UNIT_TESTS_MEMCHECK)
     find_package(Valgrind REQUIRED)
 endif()
 
-if(APPLE)
-    # CLang on Apple complains about many cases like this:
-    # /Users/travis/build/open62541/open62541/tests/check_chunking.c:148:22: warning: implicit conversion changes signedness: 'size_t' (aka 'unsigned long') to 'intmax_t' (aka 'long') [-Wsign-conversion]
-    #    ck_assert_int_eq(counter,9); //10 chunks allocated - callback called 4 times
-    add_definitions(-Wno-sign-conversion)
-endif()
+# CLang on Apple and OpenBSD complains about cases like this:
+# /Users/travis/build/open62541/open62541/tests/check_chunking.c:148:22: warning: implicit conversion changes signedness: 'size_t' (aka 'unsigned long') to 'intmax_t' (aka 'long') [-Wsign-conversion]
+#    ck_assert_int_eq(counter,9); //10 chunks allocated - callback called 4 times
+# Set this option on other platforms and CI to avoid regression.
+add_definitions(-Wsign-conversion)
 
 get_property(open62541_BUILD_INCLUDE_DIRS TARGET open62541 PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
 include_directories(${open62541_BUILD_INCLUDE_DIRS})
@@ -103,10 +102,6 @@ target_compile_definitions(open62541-testplugins PRIVATE -DUA_DYNAMIC_LINKING_EX
 
 if(NOT MSVC)
     add_definitions(-Wno-deprecated-declarations)
-endif()
-# Workaround some clang warnings in the uni tests
-if((NOT ${CMAKE_SYSTEM_NAME} MATCHES "OpenBSD") AND (CMAKE_COMPILER_IS_GNUCC OR "x${CMAKE_C_COMPILER_ID}" STREQUAL "xClang"))
-    add_definitions(-Wno-sign-conversion)
 endif()
 
 # Unit Test Definition Macro
