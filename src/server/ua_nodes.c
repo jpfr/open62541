@@ -163,6 +163,9 @@ UA_ReferenceTypeNode_copy(const UA_ReferenceTypeNode *src,
                                                  &dst->inverseName);
     dst->isAbstract = src->isAbstract;
     dst->symmetric = src->symmetric;
+
+    dst->referenceTypeIndex = src->referenceTypeIndex;
+    dst->subTypes = src->subTypes;
     return retval;
 }
 
@@ -213,15 +216,11 @@ UA_Node_copy(const UA_Node *src, UA_Node *dst) {
             UA_NodeReferenceKind *drefs = &dst->references[i];
             drefs->isInverse = srefs->isInverse;
             ZIP_INIT(&drefs->refTargetsIdTree);
-            retval = UA_NodeId_copy(&srefs->referenceTypeId, &drefs->referenceTypeId);
-            if(retval != UA_STATUSCODE_GOOD)
-                break;
+            drefs->referenceTypeIndex = srefs->referenceTypeIndex;
             drefs->refTargets = (UA_ReferenceTarget*)
                 UA_malloc(srefs->refTargetsSize* sizeof(UA_ReferenceTarget));
-            if(!drefs->refTargets) {
-                UA_NodeId_clear(&drefs->referenceTypeId);
+            if(!drefs->refTargets)
                 break;
-            }
             uintptr_t arraydiff = (uintptr_t)drefs->refTargets - (uintptr_t)srefs->refTargets;
             for(size_t j = 0; j < srefs->refTargetsSize; j++) {
                 UA_ReferenceTarget *srefTarget = &srefs->refTargets[j];
@@ -598,26 +597,24 @@ addReferenceTarget(UA_NodeReferenceKind *refs, const UA_ExpandedNodeId *target,
 }
 
 static UA_StatusCode
-addReferenceKind(UA_Node *node, const UA_AddReferencesItem *item,
-                 UA_UInt32 targetBrowseNameHash) {
+addReferenceKind(UA_Node *node, UA_Byte refTypeIndex, UA_Boolean isForward,
+                 const UA_ExpandedNodeId *targetNodeId, UA_UInt32 targetBrowseNameHash) {
     UA_NodeReferenceKind *refs = (UA_NodeReferenceKind*)
         UA_realloc(node->references, sizeof(UA_NodeReferenceKind) * (node->referencesSize+1));
     if(!refs)
         return UA_STATUSCODE_BADOUTOFMEMORY;
     node->references = refs;
 
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
     UA_NodeReferenceKind *newRef = &refs[node->referencesSize];
     memset(newRef, 0, sizeof(UA_NodeReferenceKind));
     ZIP_INIT(&newRef->refTargetsIdTree);
     ZIP_INIT(&newRef->refTargetsNameTree);
-    newRef->isInverse = !item->isForward;
-    retval |= UA_NodeId_copy(&item->referenceTypeId, &newRef->referenceTypeId);
-    retval |= addReferenceTarget(newRef, &item->targetNodeId,
-                                 UA_ExpandedNodeId_hash(&item->targetNodeId),
-                                 targetBrowseNameHash);
+    newRef->isInverse = !isForward;
+    newRef->referenceTypeIndex = refTypeIndex;
+    UA_StatusCode retval =
+        addReferenceTarget(newRef, targetNodeId, UA_ExpandedNodeId_hash(targetNodeId),
+                           targetBrowseNameHash);
     if(retval != UA_STATUSCODE_GOOD) {
-        UA_NodeId_clear(&newRef->referenceTypeId);
         if(node->referencesSize == 0) {
             UA_free(node->references);
             node->references = NULL;
@@ -629,47 +626,50 @@ addReferenceKind(UA_Node *node, const UA_AddReferencesItem *item,
     return UA_STATUSCODE_GOOD;
 }
 
-UA_StatusCode
-UA_Node_addReference(UA_Node *node, const UA_AddReferencesItem *item,
+UA_StatusCode UA_EXPORT
+UA_Node_addReference(UA_Node *node, UA_Byte refTypeIndex, UA_Boolean isForward,
+                     const UA_ExpandedNodeId *targetNodeId,
                      UA_UInt32 targetBrowseNameHash) {
     /* Find the matching refkind */
     UA_NodeReferenceKind *existingRefs = NULL;
     for(size_t i = 0; i < node->referencesSize; ++i) {
         UA_NodeReferenceKind *refs = &node->references[i];
-        if(refs->isInverse != item->isForward &&
-           UA_NodeId_equal(&refs->referenceTypeId, &item->referenceTypeId)) {
+        if(refs->isInverse != isForward &&
+           refs->referenceTypeIndex == refTypeIndex) {
             existingRefs = refs;
             break;
         }
     }
 
     if(!existingRefs)
-        return addReferenceKind(node, item, targetBrowseNameHash);
+        return addReferenceKind(node, refTypeIndex, isForward,
+                                targetNodeId, targetBrowseNameHash);
 
     UA_ReferenceTarget tmpTarget;
-    tmpTarget.targetId = item->targetNodeId;
-    tmpTarget.targetIdHash = UA_ExpandedNodeId_hash(&item->targetNodeId);
+    tmpTarget.targetId = *targetNodeId;
+    tmpTarget.targetIdHash = UA_ExpandedNodeId_hash(targetNodeId);
     UA_ReferenceTarget *found =
         ZIP_FIND(UA_ReferenceTargetIdTree, &existingRefs->refTargetsIdTree, &tmpTarget);
     if(found)
         return UA_STATUSCODE_BADDUPLICATEREFERENCENOTALLOWED;
 
-    return addReferenceTarget(existingRefs, &item->targetNodeId,
+    return addReferenceTarget(existingRefs, targetNodeId,
                               tmpTarget.targetIdHash, targetBrowseNameHash);
 }
 
-UA_StatusCode
-UA_Node_deleteReference(UA_Node *node, const UA_DeleteReferencesItem *item) {
+UA_StatusCode UA_EXPORT
+UA_Node_deleteReference(UA_Node *node, UA_Byte refTypeIndex, UA_Boolean isForward,
+                        const UA_ExpandedNodeId *targetNodeId) {
     for(size_t i = node->referencesSize; i > 0; --i) {
         UA_NodeReferenceKind *refs = &node->references[i-1];
-        if(item->isForward == refs->isInverse)
+        if(isForward == refs->isInverse)
             continue;
-        if(!UA_NodeId_equal(&item->referenceTypeId, &refs->referenceTypeId))
+        if(refTypeIndex != refs->referenceTypeIndex)
             continue;
 
         for(size_t j = refs->refTargetsSize; j > 0; --j) {
             UA_ReferenceTarget *target = &refs->refTargets[j-1];
-            if(!UA_NodeId_equal(&item->targetNodeId.nodeId, &target->targetId.nodeId))
+            if(!UA_ExpandedNodeId_equal(targetNodeId, &target->targetId))
                 continue;
 
             /* Ok, delete the reference */
@@ -699,7 +699,6 @@ UA_Node_deleteReference(UA_Node *node, const UA_DeleteReferencesItem *item) {
 
             /* No target for the ReferenceType remaining. Remove entry. */
             UA_free(refs->refTargets);
-            UA_NodeId_clear(&refs->referenceTypeId);
             node->referencesSize--;
             if(node->referencesSize > 0) {
                 if(i-1 != node->referencesSize) {
@@ -726,31 +725,18 @@ UA_Node_deleteReference(UA_Node *node, const UA_DeleteReferencesItem *item) {
 }
 
 void
-UA_Node_deleteReferencesSubset(UA_Node *node, size_t referencesSkipSize,
-                               UA_NodeId* referencesSkip) {
-    /* Nothing to do */
-    if(node->referencesSize == 0 || node->references == NULL)
-        return;
-
+UA_Node_deleteReferencesSubset(UA_Node *node, UA_ReferenceTypeSet keepSet) {
     for(size_t i = node->referencesSize; i > 0; --i) {
         UA_NodeReferenceKind *refs = &node->references[i-1];
 
-        /* Shall we keep the references of this type? */
-        UA_Boolean skip = false;
-        for(size_t j = 0; j < referencesSkipSize; j++) {
-            if(UA_NodeId_equal(&refs->referenceTypeId, &referencesSkip[j])) {
-                skip = true;
-                break;
-            }
-        }
-        if(skip)
+        /* Keep the references of this type? */
+        if(UA_ReferenceTypeSet_contains(keepSet, refs->referenceTypeIndex))
             continue;
 
         /* Remove references */
         for(size_t j = 0; j < refs->refTargetsSize; j++)
             UA_ExpandedNodeId_clear(&refs->refTargets[j].targetId);
         UA_free(refs->refTargets);
-        UA_NodeId_clear(&refs->referenceTypeId);
         node->referencesSize--;
 
         /* Move last references-kind entry to this position */
@@ -774,5 +760,5 @@ UA_Node_deleteReferencesSubset(UA_Node *node, size_t referencesSkipSize,
 }
 
 void UA_Node_deleteReferences(UA_Node *node) {
-    UA_Node_deleteReferencesSubset(node, 0, NULL);
+    UA_Node_deleteReferencesSubset(node, 0);
 }

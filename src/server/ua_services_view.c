@@ -153,22 +153,9 @@ RefTree_add(RefTree *rt, const UA_ExpandedNodeId *target) {
     return UA_STATUSCODE_GOOD;
 }
 
-static UA_Boolean
-relevantReference(const UA_NodeId *refType, size_t relevantRefsSize,
-                  const UA_NodeId *relevantRefs) {
-    if(!relevantRefs)
-        return true;
-    for(size_t i = 0; i < relevantRefsSize; i++) {
-        if(UA_NodeId_equal(refType, &relevantRefs[i]))
-            return true;
-    }
-    return false;
-}
-
 static UA_StatusCode
 addRelevantReferences(UA_Server *server, RefTree *rt, const UA_NodeId *nodeId,
-                      size_t refTypesSize, const UA_NodeId *refTypes,
-                      UA_BrowseDirection browseDirection) {
+                      UA_ReferenceTypeSet refTypes, UA_BrowseDirection browseDirection) {
     const UA_Node *node = UA_NODESTORE_GET(server, nodeId);
     if(!node)
         return UA_STATUSCODE_BADNODEIDUNKNOWN;
@@ -184,7 +171,7 @@ addRelevantReferences(UA_Server *server, RefTree *rt, const UA_NodeId *nodeId,
             continue;
 
         /* Is the reference part of the hierarchy of references we look for? */
-        if(!relevantReference(&rk->referenceTypeId, refTypesSize, refTypes))
+        if(!UA_ReferenceTypeSet_contains(refTypes, rk->referenceTypeIndex))
             continue;
 
         for(size_t k = 0; k < rk->refTargetsSize; k++) {
@@ -200,11 +187,9 @@ addRelevantReferences(UA_Server *server, RefTree *rt, const UA_NodeId *nodeId,
 }
 
 UA_StatusCode
-browseRecursive(UA_Server *server,
-                size_t startNodesSize, const UA_NodeId *startNodes,
-                size_t refTypesSize, const UA_NodeId *refTypes,
-                UA_BrowseDirection browseDirection, UA_Boolean includeStartNodes,
-                size_t *resultsSize, UA_ExpandedNodeId **results) {
+browseRecursive(UA_Server *server, size_t startNodesSize, const UA_NodeId *startNodes,
+                UA_ReferenceTypeSet refTypes, UA_BrowseDirection browseDirection,
+                UA_Boolean includeStartNodes, size_t *resultsSize, UA_ExpandedNodeId **results) {
     RefTree rt;
     UA_StatusCode retval = RefTree_init(&rt);
     if(retval != UA_STATUSCODE_GOOD)
@@ -217,8 +202,7 @@ browseRecursive(UA_Server *server,
             en.nodeId = startNodes[i];
             retval = RefTree_add(&rt, &en);
         } else {
-            retval = addRelevantReferences(server, &rt, &startNodes[i],
-                                           refTypesSize, refTypes, browseDirection);
+            retval = addRelevantReferences(server, &rt, &startNodes[i], refTypes, browseDirection);
         }
     }
     if(retval != UA_STATUSCODE_GOOD) {
@@ -236,7 +220,7 @@ browseRecursive(UA_Server *server,
             continue;
 
         retval = addRelevantReferences(server, &rt, &rt.targets[i].nodeId,
-                                       refTypesSize, refTypes, browseDirection);
+                                       refTypes, browseDirection);
         if(retval != UA_STATUSCODE_GOOD) {
             RefTree_clear(&rt);
             return retval;
@@ -253,78 +237,50 @@ browseRecursive(UA_Server *server,
     return UA_STATUSCODE_GOOD;
 }
 
-/* Only if IncludeSubtypes is selected */
 UA_StatusCode
-referenceSubtypes(UA_Server *server, const UA_NodeId *refType,
-                  size_t *refTypesSize, UA_NodeId **refTypes) {
-    /* Leave refTypes == NULL */
+referenceTypeIndices(UA_Server *server, const UA_NodeId *refType,
+                     UA_ReferenceTypeSet *indices, UA_Boolean includeSubtypes) {
     if(UA_NodeId_isNull(refType))
         return UA_STATUSCODE_GOOD;
 
-    /* Browse recursive for the hierarchy of sub-references */
-    UA_ExpandedNodeId *rt = NULL;
-    size_t rtSize = 0;
-    UA_NodeId hasSubtype = UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE);
-    UA_StatusCode retval = browseRecursive(server, 1, refType, 1, &hasSubtype,
-                                           UA_BROWSEDIRECTION_FORWARD, true, &rtSize, &rt);
-    if(retval != UA_STATUSCODE_GOOD)
-        return retval;
+    const UA_Node *refNode = UA_NODESTORE_GET(server, refType);
+    if(!refNode)
+        return UA_STATUSCODE_BADREFERENCETYPEIDINVALID;
 
-    UA_assert(rtSize > 0);
+    if(refNode->nodeClass != UA_NODECLASS_REFERENCETYPE) {
+        UA_NODESTORE_RELEASE(server, refNode);
+        return UA_STATUSCODE_BADREFERENCETYPEIDINVALID;
+    }
 
-    /* Allocate space (realloc if non-NULL) */
-    UA_NodeId *newRt = NULL;
-    if(!*refTypes) {
-        newRt = (UA_NodeId*)UA_malloc(rtSize * UA_TYPES[UA_TYPES_NODEID].memSize);
-    } else {
-        newRt = (UA_NodeId*)UA_realloc(*refTypes, (*refTypesSize + rtSize) *
-                                           UA_TYPES[UA_TYPES_NODEID].memSize);
-    }
-    if(!newRt) {
-        UA_Array_delete(rt, rtSize, &UA_TYPES[UA_TYPES_EXPANDEDNODEID]);
-        return UA_STATUSCODE_BADOUTOFMEMORY;
-    }
-    *refTypes = newRt;
+    if(!includeSubtypes)
+        *indices = UA_REFTYPESET(((const UA_ReferenceTypeNode*)refNode)->referenceTypeIndex);
+    else
+        *indices = ((const UA_ReferenceTypeNode*)refNode)->subTypes;
 
-    /* Move NodeIds */
-    for(size_t i = 0; i < rtSize; i++) {
-        (*refTypes)[*refTypesSize + i] = rt[i].nodeId;
-        UA_NodeId_init(&rt[i].nodeId);
-    }
-    *refTypesSize += rtSize;
-    UA_Array_delete(rt, rtSize, &UA_TYPES[UA_TYPES_EXPANDEDNODEID]);
+    UA_NODESTORE_RELEASE(server, refNode);
     return UA_STATUSCODE_GOOD;
 }
 
 UA_StatusCode
 UA_Server_browseRecursive(UA_Server *server, const UA_BrowseDescription *bd,
                           size_t *resultsSize, UA_ExpandedNodeId **results) {
-    /* Set the list of relevant reference types */
     UA_LOCK(server->serviceMutex);
-    UA_NodeId *refTypes = NULL;
-    size_t refTypesSize = 0;
+
+    /* Set the list of relevant reference types */
+    UA_ReferenceTypeSet refTypes = ~((UA_UInt64)0); /* allow all */
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     if(!UA_NodeId_isNull(&bd->referenceTypeId)) {
-        if(!bd->includeSubtypes) {
-            refTypes = (UA_NodeId*)(uintptr_t)&bd->referenceTypeId;
-            refTypesSize = 1;
-        } else {
-            retval = referenceSubtypes(server, &bd->referenceTypeId,
-                                       &refTypesSize, &refTypes);
-            if(retval != UA_STATUSCODE_GOOD) {
-                UA_UNLOCK(server->serviceMutex);
-                return retval;
-            }
+        retval = referenceTypeIndices(server, &bd->referenceTypeId,
+                                      &refTypes, bd->includeSubtypes);
+        if(retval != UA_STATUSCODE_GOOD) {
+            UA_UNLOCK(server->serviceMutex);
+            return retval;
         }
     }
 
     /* Browse */
-    retval = browseRecursive(server, 1, &bd->nodeId, refTypesSize, refTypes,
+    retval = browseRecursive(server, 1, &bd->nodeId, refTypes,
                              bd->browseDirection, false, resultsSize, results);
-
-    /* Clean up */
-    if(refTypes && bd->includeSubtypes)
-        UA_Array_delete(refTypes, refTypesSize, &UA_TYPES[UA_TYPES_NODEID]);
 
     UA_UNLOCK(server->serviceMutex);
     return retval;
@@ -379,8 +335,7 @@ struct ContinuationPoint {
     UA_BrowseDescription browseDescription;
     UA_UInt32 maxReferences;
 
-    size_t relevantReferencesSize;
-    UA_NodeId *relevantReferences;
+    UA_ReferenceTypeSet relevantReferences;
 
     /* The last point in the node references? */
     size_t referenceKindIndex;
@@ -391,8 +346,6 @@ ContinuationPoint *
 ContinuationPoint_clear(ContinuationPoint *cp) {
     UA_ByteString_clear(&cp->identifier);
     UA_BrowseDescription_clear(&cp->browseDescription);
-    UA_Array_delete(cp->relevantReferences, cp->relevantReferencesSize,
-                    &UA_TYPES[UA_TYPES_NODEID]);
     return cp->next;
 }
 
@@ -413,7 +366,8 @@ addReferenceDescription(UA_Server *server, RefResult *rr, const UA_NodeReference
     /* Fields without access to the actual node */
     retval = UA_ExpandedNodeId_copy(nodeId, &descr->nodeId);
     if(mask & UA_BROWSERESULTMASK_REFERENCETYPEID)
-        retval |= UA_NodeId_copy(&ref->referenceTypeId, &descr->referenceTypeId);
+        retval |= UA_NodeId_copy(UA_NODESTORE_GETREFERENCETYPEID(server, ref->referenceTypeIndex),
+                                 &descr->referenceTypeId);
     if(mask & UA_BROWSERESULTMASK_ISFORWARD)
         descr->isForward = !ref->isInverse;
 
@@ -479,8 +433,7 @@ browseReferences(UA_Server *server, const UA_Node *node,
             continue;
 
         /* Is the reference part of the hierarchy of references we look for? */
-        if(!relevantReference(&rk->referenceTypeId, cp->relevantReferencesSize,
-                              cp->relevantReferences))
+        if(!UA_ReferenceTypeSet_contains(cp->relevantReferences, rk->referenceTypeIndex))
             continue;
 
         /* Loop over the targets */
@@ -629,28 +582,20 @@ Operation_Browse(UA_Server *server, UA_Session *session, const UA_UInt32 *maxref
     }
 
     /* Get the list of relevant reference types */
+    cp->relevantReferences = ~((UA_UInt64)0); /* allow all */
     if(!UA_NodeId_isNull(&descr->referenceTypeId)) {
-        if(!descr->includeSubtypes) {
-            cp->relevantReferences = (UA_NodeId*)(uintptr_t)&descr->referenceTypeId;
-            cp->relevantReferencesSize = 1;
-        } else {
-            result->statusCode =
-                referenceSubtypes(server, &descr->referenceTypeId,
-                                  &cp->relevantReferencesSize, &cp->relevantReferences);
-            if(result->statusCode != UA_STATUSCODE_GOOD)
-                return;
-        }
+        result->statusCode =
+            referenceTypeIndices(server, &descr->referenceTypeId,
+                                 &cp->relevantReferences, descr->includeSubtypes);
+        if(result->statusCode != UA_STATUSCODE_GOOD)
+            return;
     }
 
     UA_Boolean done = browseWithContinuation(server, session, cp, result);
 
     /* Exit early if done or an error occurred */
-    if(done || result->statusCode != UA_STATUSCODE_GOOD) {
-        if(descr->includeSubtypes)
-            UA_Array_delete(cp->relevantReferences, cp->relevantReferencesSize,
-                            &UA_TYPES[UA_TYPES_NODEID]);
+    if(done || result->statusCode != UA_STATUSCODE_GOOD)
         return;
-    }
 
     /* Persist the new continuation point */
 
@@ -674,17 +619,7 @@ Operation_Browse(UA_Server *server, UA_Session *session, const UA_UInt32 *maxref
     cp2->referenceKindIndex = cp->referenceKindIndex;
     cp2->targetIndex = cp->targetIndex;
     cp2->maxReferences = cp->maxReferences;
-
-    if(descr->includeSubtypes) {
-        cp2->relevantReferences = cp->relevantReferences;
-        cp2->relevantReferencesSize = cp->relevantReferencesSize;
-    } else {
-        retval = UA_Array_copy(cp->relevantReferences, cp->relevantReferencesSize,
-                               (void**)&cp2->relevantReferences, &UA_TYPES[UA_TYPES_NODEID]);
-        if(retval != UA_STATUSCODE_GOOD)
-            goto cleanup;
-        cp2->relevantReferencesSize = cp->relevantReferencesSize;
-    }
+    cp2->relevantReferences = cp->relevantReferences;
 
     /* Copy the description */
     retval = UA_BrowseDescription_copy(descr, &cp2->browseDescription);
@@ -853,20 +788,17 @@ walkBrowsePathElement(UA_Server *server, UA_Session *session,
     const UA_RelativePathElement *elem = &path->elements[pathIndex];
     UA_UInt32 browseNameHash = UA_QualifiedName_hash(&elem->targetName);
 
-    /* Is the ReferenceType valid? */
-    UA_Boolean all_refs = UA_NodeId_isNull(&elem->referenceTypeId);
-    if(!all_refs) {
-        const UA_Node *rootRef = UA_NODESTORE_GET(server, &elem->referenceTypeId);
-        if(!rootRef)
-            return UA_STATUSCODE_BADNOMATCH;
-        UA_Boolean match = (rootRef->nodeClass == UA_NODECLASS_REFERENCETYPE);
-        UA_NODESTORE_RELEASE(server, rootRef);
-        if(!match)
+    /* Get the relevant ReferenceTypes */
+    UA_StatusCode res = UA_STATUSCODE_GOOD;
+    UA_ReferenceTypeSet refTypes = ~((UA_UInt64)0); /* allow all */
+    if(!UA_NodeId_isNull(&elem->referenceTypeId)) {
+        res = referenceTypeIndices(server, &elem->referenceTypeId,
+                                   &refTypes, elem->includeSubtypes);
+        if(res != UA_STATUSCODE_GOOD)
             return UA_STATUSCODE_BADNOMATCH;
     }
 
     /* Loop over all Nodes int the current depth level */
-    UA_StatusCode res = UA_STATUSCODE_GOOD;
     for(size_t i = 0; i < current->size; i++) {
         /* Remote Node. Immediately add to the results with the RemainingPathIndex set. */
         if(current->targets[i].serverIndex > 0 ||
@@ -915,18 +847,8 @@ walkBrowsePathElement(UA_Server *server, UA_Session *session,
                 continue;
 
             /* Does the reference type match? */
-            if(!all_refs) {
-                if(!elem->includeSubtypes) {
-                    if(!UA_NodeId_equal(&rk->referenceTypeId, &elem->referenceTypeId))
-                        continue;
-                } else {
-                    UA_Boolean match =
-                        isNodeInTree(server, &rk->referenceTypeId,
-                                     &elem->referenceTypeId, &subtypeId, 1);
-                    if(!match)
-                        continue;
-                }
-            }
+            if(!UA_ReferenceTypeSet_contains(refTypes, rk->referenceTypeIndex))
+                continue;
 
             /* Retrieve by BrowseName hash */
             UA_ReferenceTarget *rt = ZIP_FIND(UA_ReferenceTargetNameTree,

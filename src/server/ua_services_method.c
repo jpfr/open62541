@@ -21,16 +21,12 @@
 static const UA_VariableNode *
 getArgumentsVariableNode(UA_Server *server, const UA_MethodNode *ofMethod,
                          UA_String withBrowseName) {
-    UA_NodeId hasProperty = UA_NODEID_NUMERIC(0, UA_NS0ID_HASPROPERTY);
     for(size_t i = 0; i < ofMethod->referencesSize; ++i) {
         UA_NodeReferenceKind *rk = &ofMethod->references[i];
-
         if(rk->isInverse != false)
             continue;
-
-        if(!UA_NodeId_equal(&hasProperty, &rk->referenceTypeId))
+        if(rk->referenceTypeIndex != UA_REFERENCETYPEINDEX_HASPROPERTY)
             continue;
-
         for(size_t j = 0; j < rk->refTargetsSize; ++j) {
             const UA_Node *refTarget =
                 UA_NODESTORE_GET(server, &rk->refTargets[j].targetId.nodeId);
@@ -100,10 +96,9 @@ validMethodArguments(UA_Server *server, UA_Session *session, const UA_MethodNode
     }
 
     /* Verify the request */
-    UA_StatusCode retval = typeCheckArguments(server, session, inputArguments,
-                                              request->inputArgumentsSize,
-                                              request->inputArguments,
-                                              inputArgumentResults);
+    UA_StatusCode retval =
+        typeCheckArguments(server, session, inputArguments, request->inputArgumentsSize,
+                           request->inputArguments, inputArgumentResults);
 
     /* Release the input arguments node */
     UA_NODESTORE_RELEASE(server, (const UA_Node*)inputArguments);
@@ -111,7 +106,6 @@ validMethodArguments(UA_Server *server, UA_Session *session, const UA_MethodNode
 }
 
 static const UA_NodeId hasComponentNodeId = {0, UA_NODEIDTYPE_NUMERIC, {UA_NS0ID_HASCOMPONENT}};
-static const UA_NodeId hasSubTypeNodeId = {0, UA_NODEIDTYPE_NUMERIC, {UA_NS0ID_HASSUBTYPE}};
 static const UA_NodeId organizedByNodeId = {0, UA_NODEIDTYPE_NUMERIC, {UA_NS0ID_ORGANIZES}};
 static const UA_String namespaceDiModel = UA_STRING_STATIC("http://opcfoundation.org/UA/DI/");
 static const UA_NodeId hasTypeDefinitionNodeId = {0, UA_NODEIDTYPE_NUMERIC, {UA_NS0ID_HASTYPEDEFINITION}};
@@ -145,13 +139,17 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
      * subtype of hasComponent reference to the method node. Therefore, check
      * every reference between the parent object and the method node if there is
      * a hasComponent (or subtype) reference */
+    UA_ReferenceTypeSet hasComponentRefs = 0;
+    result->statusCode =
+        referenceTypeIndices(server, &hasComponentNodeId, &hasComponentRefs, true);
+    if(result->statusCode != UA_STATUSCODE_GOOD)
+        return;
     UA_Boolean found = false;
     for(size_t i = 0; i < object->referencesSize && !found; ++i) {
         UA_NodeReferenceKind *rk = &object->references[i];
         if(rk->isInverse)
             continue;
-        if(!isNodeInTree(server, &rk->referenceTypeId,
-                         &hasComponentNodeId, &hasSubTypeNodeId, 1))
+        if(!UA_ReferenceTypeSet_contains(hasComponentRefs, rk->referenceTypeIndex))
             continue;
         for(size_t j = 0; j < rk->refTargetsSize; ++j) {
             if(UA_NodeId_equal(&rk->refTargets[j].targetId.nodeId, &request->methodId)) {
@@ -183,20 +181,27 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
         }
         functionGroupNodeId.namespaceIndex = (UA_UInt16)foundNamespace;
 
+        UA_ReferenceTypeSet hasTypeDefinitionRefs = 0;
+        result->statusCode =
+            referenceTypeIndices(server, &hasTypeDefinitionNodeId,
+                                 &hasTypeDefinitionRefs, true);
+        if(result->statusCode != UA_STATUSCODE_GOOD)
+            return;
+
         /* Search for a HasTypeDefinition (or sub-) reference in the parent object */
         for(size_t i = 0; i < object->referencesSize && !found; ++i) {
             UA_NodeReferenceKind *rk = &object->references[i];
             if(rk->isInverse)
                 continue;
-            if(!isNodeInTree(server, &rk->referenceTypeId,
-                             &hasTypeDefinitionNodeId, &hasSubTypeNodeId, 1))
+            if(!UA_ReferenceTypeSet_contains(hasTypeDefinitionRefs, rk->referenceTypeIndex))
                 continue;
             
             /* Verify that the HasTypeDefinition is equal to FunctionGroupType
              * (or sub-type) from the DI model */
             for(size_t j = 0; j < rk->refTargetsSize && !found; ++j) {
                 if(!isNodeInTree(server, &rk->refTargets[j].targetId.nodeId,
-                                 &functionGroupNodeId, &hasSubTypeNodeId, 1))
+                                 &functionGroupNodeId,
+                                 UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASSUBTYPE)))
                     continue;
                 
                 /* Search for the called method with reference Organize (or
@@ -205,8 +210,11 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
                     UA_NodeReferenceKind *rkInner = &object->references[k];
                     if(rkInner->isInverse)
                         continue;
-                    if(!isNodeInTree(server, &rkInner->referenceTypeId,
-                                     &organizedByNodeId, &hasSubTypeNodeId, 1))
+                    if(!isNodeInTree(server,
+                                     UA_NODESTORE_GETREFERENCETYPEID(server,
+                                                                     rkInner->referenceTypeIndex),
+                                     &organizedByNodeId,
+                                     UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASSUBTYPE)))
                         continue;
                     
                     for(size_t m = 0; m < rkInner->refTargetsSize; ++m) {
@@ -251,7 +259,8 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
     result->inputArgumentResultsSize = request->inputArgumentsSize;
 
     /* Verify Input Arguments */
-    result->statusCode = validMethodArguments(server, session, method, request, result->inputArgumentResults);
+    result->statusCode = validMethodArguments(server, session, method, request,
+                                              result->inputArgumentResults);
 
     /* Return inputArgumentResults only for BADINVALIDARGUMENT */
     if(result->statusCode != UA_STATUSCODE_BADINVALIDARGUMENT) {
@@ -331,9 +340,8 @@ Operation_CallMethodAsync(UA_Server *server, UA_Session *session, UA_UInt32 requ
     if(!*ar) {
         opResult->statusCode =
             UA_AsyncManager_createAsyncResponse(&server->asyncManager, server,
-                                                &session->sessionId, requestId,
-                                                requestHandle, UA_ASYNCOPERATIONTYPE_CALL,
-                                                ar);
+                            &session->sessionId, requestId, requestHandle,
+                            UA_ASYNCOPERATIONTYPE_CALL, ar);
         if(opResult->statusCode != UA_STATUSCODE_GOOD)
             goto cleanup;
     }
@@ -363,23 +371,21 @@ Service_CallAsync(UA_Server *server, UA_Session *session, UA_UInt32 requestId,
     UA_AsyncResponse *ar = NULL;
     response->responseHeader.serviceResult =
         UA_Server_processServiceOperationsAsync(server, session, requestId,
-                                                request->requestHeader.requestHandle,
-                                                (UA_AsyncServiceOperation)Operation_CallMethodAsync,
-                                                &request->methodsToCallSize,
-                                                &UA_TYPES[UA_TYPES_CALLMETHODREQUEST],
-                                                &response->resultsSize,
-                                                &UA_TYPES[UA_TYPES_CALLMETHODRESULT], &ar);
+                  request->requestHeader.requestHandle,
+                  (UA_AsyncServiceOperation)Operation_CallMethodAsync,
+                  &request->methodsToCallSize, &UA_TYPES[UA_TYPES_CALLMETHODREQUEST],
+                  &response->resultsSize, &UA_TYPES[UA_TYPES_CALLMETHODRESULT], &ar);
 
     if(ar) {
         if(ar->opCountdown > 0) {
-            /* Move all results to the AsyncResponse. The async operation results
-             * will be overwritten when the workers return results. */
+            /* Move all results to the AsyncResponse. The async operation
+             * results will be overwritten when the workers return results. */
             ar->response.callResponse = *response;
             UA_CallResponse_init(response);
             *finished = false;
         } else {
-            /* If there is a new AsyncResponse, ensure it has at least one pending
-             * operation */
+            /* If there is a new AsyncResponse, ensure it has at least one
+             * pending operation */
             UA_AsyncManager_removeAsyncResponse(&server->asyncManager, ar);
         }
     }
@@ -427,9 +433,10 @@ void Service_Call(UA_Server *server, UA_Session *session,
     }
 
     response->responseHeader.serviceResult =
-        UA_Server_processServiceOperations(server, session, (UA_ServiceOperation)Operation_CallMethod, NULL,
-                                           &request->methodsToCallSize, &UA_TYPES[UA_TYPES_CALLMETHODREQUEST],
-                                           &response->resultsSize, &UA_TYPES[UA_TYPES_CALLMETHODRESULT]);
+        UA_Server_processServiceOperations(server, session,
+                  (UA_ServiceOperation)Operation_CallMethod, NULL,
+                  &request->methodsToCallSize, &UA_TYPES[UA_TYPES_CALLMETHODREQUEST],
+                  &response->resultsSize, &UA_TYPES[UA_TYPES_CALLMETHODRESULT]);
 }
 
 UA_CallMethodResult UA_EXPORT

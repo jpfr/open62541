@@ -27,8 +27,7 @@ struct ref_history {
 
 static UA_Boolean
 isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode, const UA_NodeId *nodeToFind,
-                       struct ref_history *visitedRefs, const UA_NodeId *referenceTypeIds,
-                       size_t referenceTypeIdsSize) {
+                       struct ref_history *visitedRefs, UA_ReferenceTypeSet relevantRefs) {
     if(UA_NodeId_equal(nodeToFind, leafNode))
         return true;
 
@@ -46,14 +45,7 @@ isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode, const UA_No
             continue;
 
         /* Consider only the indicated reference types */
-        UA_Boolean match = false;
-        for(size_t j = 0; j < referenceTypeIdsSize; ++j) {
-            if(UA_NodeId_equal(&refs->referenceTypeId, &referenceTypeIds[j])) {
-                match = true;
-                break;
-            }
-        }
-        if(!match)
+        if(!UA_ReferenceTypeSet_contains(relevantRefs, refs->referenceTypeIndex))
             continue;
 
         /* Match the targets or recurse */
@@ -81,7 +73,7 @@ isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode, const UA_No
             /* Recurse */
             UA_Boolean foundRecursive =
                 isNodeInTreeNoCircular(server, &refs->refTargets[j].targetId.nodeId, nodeToFind,
-                                       &nextVisitedRefs, referenceTypeIds, referenceTypeIdsSize);
+                                       &nextVisitedRefs, relevantRefs);
             if(foundRecursive) {
                 UA_NODESTORE_RELEASE(server, node);
                 return true;
@@ -94,27 +86,26 @@ isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode, const UA_No
 }
 
 UA_Boolean
-isNodeInTree(UA_Server *server, const UA_NodeId *leafNode, const UA_NodeId *nodeToFind,
-             const UA_NodeId *referenceTypeIds, size_t referenceTypeIdsSize) {
+isNodeInTree(UA_Server *server, const UA_NodeId *leafNode,
+             const UA_NodeId *nodeToFind, UA_ReferenceTypeSet relevantRefs) {
     struct ref_history visitedRefs = {NULL, leafNode, 0};
-    return isNodeInTreeNoCircular(server, leafNode, nodeToFind, &visitedRefs,
-                                  referenceTypeIds, referenceTypeIdsSize);
+    return isNodeInTreeNoCircular(server, leafNode, nodeToFind, &visitedRefs, relevantRefs);
 }
 
 const UA_Node *
 getNodeType(UA_Server *server, const UA_Node *node) {
     /* The reference to the parent is different for variable and variabletype */
-    UA_NodeId parentRef;
+    UA_Byte parentRefIndex;
     UA_Boolean inverse;
     UA_NodeClass typeNodeClass;
     switch(node->nodeClass) {
     case UA_NODECLASS_OBJECT:
-        parentRef = UA_NODEID_NUMERIC(0, UA_NS0ID_HASTYPEDEFINITION);
+        parentRefIndex = UA_REFERENCETYPEINDEX_HASTYPEDEFINITION;
         inverse = false;
         typeNodeClass = UA_NODECLASS_OBJECTTYPE;
         break;
     case UA_NODECLASS_VARIABLE:
-        parentRef = UA_NODEID_NUMERIC(0, UA_NS0ID_HASTYPEDEFINITION);
+        parentRefIndex = UA_REFERENCETYPEINDEX_HASTYPEDEFINITION;
         inverse = false;
         typeNodeClass = UA_NODECLASS_VARIABLETYPE;
         break;
@@ -122,7 +113,7 @@ getNodeType(UA_Server *server, const UA_Node *node) {
     case UA_NODECLASS_VARIABLETYPE:
     case UA_NODECLASS_REFERENCETYPE:
     case UA_NODECLASS_DATATYPE:
-        parentRef = UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE);
+        parentRefIndex = UA_REFERENCETYPEINDEX_HASSUBTYPE;
         inverse = true;
         typeNodeClass = node->nodeClass;
         break;
@@ -134,7 +125,7 @@ getNodeType(UA_Server *server, const UA_Node *node) {
     for(size_t i = 0; i < node->referencesSize; ++i) {
         if(node->references[i].isInverse != inverse)
             continue;
-        if(!UA_NodeId_equal(&node->references[i].referenceTypeId, &parentRef))
+        if(node->references[i].referenceTypeIndex != parentRefIndex)
             continue;
         UA_assert(node->references[i].refTargetsSize> 0);
         const UA_NodeId *targetId = &node->references[i].refTargets[0].targetId.nodeId;
@@ -151,28 +142,24 @@ getNodeType(UA_Server *server, const UA_Node *node) {
 
 UA_Boolean
 UA_Node_hasSubTypeOrInstances(const UA_Node *node) {
-    const UA_NodeId hasSubType = UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE);
-    const UA_NodeId hasTypeDefinition = UA_NODEID_NUMERIC(0, UA_NS0ID_HASTYPEDEFINITION);
     for(size_t i = 0; i < node->referencesSize; ++i) {
         if(node->references[i].isInverse == false &&
-           UA_NodeId_equal(&node->references[i].referenceTypeId, &hasSubType))
+           node->references[i].referenceTypeIndex == UA_REFERENCETYPEINDEX_HASSUBTYPE)
             return true;
         if(node->references[i].isInverse == true &&
-           UA_NodeId_equal(&node->references[i].referenceTypeId, &hasTypeDefinition))
+           node->references[i].referenceTypeIndex == UA_REFERENCETYPEINDEX_HASTYPEDEFINITION)
             return true;
     }
     return false;
 }
-
-static const UA_NodeId hasInterfaceNodeId =
-    {0, UA_NODEIDTYPE_NUMERIC, {UA_NS0ID_HASINTERFACE}};
 
 UA_StatusCode
 getParentTypeAndInterfaceHierarchy(UA_Server *server, const UA_NodeId *typeNode,
                                    UA_NodeId **typeHierarchy, size_t *typeHierarchySize) {
     UA_ExpandedNodeId *subTypes = NULL;
     size_t subTypesSize = 0;
-    UA_StatusCode retval = browseRecursive(server, 1, typeNode, 1, &subtypeId,
+    UA_StatusCode retval = browseRecursive(server, 1, typeNode,
+                                           UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASSUBTYPE),
                                            UA_BROWSEDIRECTION_INVERSE, false,
                                            &subTypesSize, &subTypes);
     if(retval != UA_STATUSCODE_GOOD)
@@ -182,7 +169,8 @@ getParentTypeAndInterfaceHierarchy(UA_Server *server, const UA_NodeId *typeNode,
 
     UA_ExpandedNodeId *interfaces = NULL;
     size_t interfacesSize = 0;
-    retval = browseRecursive(server, 1, typeNode, 1, &hasInterfaceNodeId,
+    retval = browseRecursive(server, 1, typeNode,
+                             UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASINTERFACE),
                              UA_BROWSEDIRECTION_FORWARD, false,
                              &interfacesSize, &interfaces);
     if(retval != UA_STATUSCODE_GOOD) {
