@@ -50,7 +50,7 @@ UA_SecureChannel_setSecurityPolicy(UA_SecureChannel *channel,
                                    const UA_ByteString *remoteCertificate) {
     /* Is a policy already configured? */
     if(channel->securityPolicy) {
-        UA_LOG_ERROR(securityPolicy->logger, UA_LOGCATEGORY_SECURITYPOLICY,
+        UA_LOG_ERROR(securityPolicy->logger, UA_LOGCATEGORY_SECURECHANNEL,
                      "Security policy already configured");
         return UA_STATUSCODE_BADINTERNALERROR;
     }
@@ -58,7 +58,7 @@ UA_SecureChannel_setSecurityPolicy(UA_SecureChannel *channel,
     UA_StatusCode retval = securityPolicy->channelModule.
         newContext(securityPolicy, remoteCertificate, &channel->channelContext);
     if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_WARNING(securityPolicy->logger, UA_LOGCATEGORY_SECURITYPOLICY,
+        UA_LOG_WARNING(securityPolicy->logger, UA_LOGCATEGORY_SECURECHANNEL,
                        "Could not set up the SecureChannel context");
         return retval;
     }
@@ -72,7 +72,7 @@ UA_SecureChannel_setSecurityPolicy(UA_SecureChannel *channel,
         makeCertificateThumbprint(securityPolicy, &channel->remoteCertificate,
                                   &remoteCertificateThumbprint);
     if(retval != UA_STATUSCODE_GOOD) {
-        UA_LOG_WARNING(securityPolicy->logger, UA_LOGCATEGORY_SECURITYPOLICY,
+        UA_LOG_WARNING(securityPolicy->logger, UA_LOGCATEGORY_SECURECHANNEL,
                        "Could not create the certificate thumbprint");
         return retval;
     }
