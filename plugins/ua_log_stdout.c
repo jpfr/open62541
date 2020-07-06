@@ -41,8 +41,8 @@ const char *logLevelNames[6] = {"trace", "debug",
                                 ANSI_COLOR_YELLOW "warn",
                                 ANSI_COLOR_RED "error",
                                 ANSI_COLOR_MAGENTA "fatal"};
-const char *logCategoryNames[7] = {"network", "channel", "session", "server",
-                                   "client", "userland", "securitypolicy"};
+const char *logCategoryNames[8] = {"network", "channel", "session", "server",
+                                   "client", "userland", "securitypolicy", "config"};
 
 #ifdef __clang__
 __attribute__((__format__(__printf__, 4 , 0)))
