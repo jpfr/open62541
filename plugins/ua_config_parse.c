@@ -7,6 +7,16 @@
 #include <open62541/server_config_parse.h>
 #include "toml.h"
 
+/* In order to help the user in writing configs -- and switching configs between
+ * releases of open62541 -- good error messages are important. Both when a
+ * configuration option is incorrect and when an unknown configuration is used.
+ *
+ * The TOML format will parse correctly even if unknown options are used. To
+ * prevent this, we loop over all entries and try to process every entry.
+ * Instead of picking out only those entries that we understan. Unused
+ * configuration options trigger a warning.
+ */
+
 /* Parse Builtin Types */
 
 static UA_StatusCode
@@ -22,7 +32,7 @@ parseString(const char *raw, UA_String *target) {
 }
 
 static UA_StatusCode
-parseStringArray(toml_table_t *arr, size_t *arrSize, UA_String **arrData) {
+parseStringArray(toml_array_t *arr, size_t *arrSize, UA_String **arrData) {
     if(toml_array_kind(arr) != 'v')
         return UA_STATUSCODE_BADINTERNALERROR;
     if(toml_array_type(arr) != 's')
@@ -31,7 +41,7 @@ parseStringArray(toml_table_t *arr, size_t *arrSize, UA_String **arrData) {
     if(isize < 0)
         return UA_STATUSCODE_BADINTERNALERROR;
     size_t size = (size_t)isize;
-    *arrData = UA_Array_new(size, UA_TYPES[UA_TYPES_STRING]);
+    *arrData = UA_Array_new(size, &UA_TYPES[UA_TYPES_STRING]);
     if(!(*arrData))
         return UA_STATUSCODE_BADOUTOFMEMORY;
     *arrSize = size;
@@ -61,8 +71,10 @@ parseApplicationDescription(toml_table_t *tt, UA_ApplicationDescription *ad) {
     parseLocalizedText(toml_table_in(tt, "ApplicationName"), &ad->applicationName);
     // UA_ApplicationType applicationType;
     parseString(toml_raw_in(tt, "GatewayServerUri"), &ad->gatewayServerUri);
-    UA_String discoveryProfileUri;
-    size_t discoveryUrlsSize;
+
+    toml_array_t *discoveryUri = toml_array_in(tt, "DiscoveryUrls");
+    if(discoveryUri)
+        parseStringArray(discoveryUri, &ad->discoveryUrlsSize, &ad->discoveryUrls);
 }
 
 static char errbuf[200];
@@ -73,12 +85,10 @@ UA_ServerConfig_parse(UA_ServerConfig *config, const char *toml) {
     if(!main_table)
         return UA_STATUSCODE_BADINTERNALERROR;
 
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
-
     /* Locate the [ApplicationDescription] table */
-    toml_table_t *app_descr = toml_table_in(conf, "ApplicationDescription");
+    toml_table_t *app_descr = toml_table_in(main_table, "ApplicationDescription");
     if(app_descr)
-        parseApplicationDescription(&config->applicationDescription, app_descr);
+        parseApplicationDescription(app_descr, &config->applicationDescription);
     
     toml_free(main_table);
     return UA_STATUSCODE_GOOD;
