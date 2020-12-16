@@ -890,12 +890,20 @@ static UA_StatusCode
 recursiveAddBrowseHashTarget(RefTree *next, const UA_ReferenceTarget *rt) {
     UA_assert(rt);
     UA_StatusCode res = RefTree_add(next, &rt->targetId, NULL);
-    UA_ReferenceTarget *left = ZIP_LEFT(rt, nameTreeFields);
-    if(left && left->targetNameHash == rt->targetNameHash)
-        res |= recursiveAddBrowseHashTarget(next, left);
-    UA_ReferenceTarget *right = ZIP_RIGHT(rt, nameTreeFields);
-    if(right && right->targetNameHash == rt->targetNameHash)
-        res |= recursiveAddBrowseHashTarget(next, right);
+    if(rt->nameTreeEntry.left) {
+        UA_ReferenceTarget *left = (UA_ReferenceTarget*)
+            ((uintptr_t)rt->nameTreeEntry.left -
+             offsetof(UA_ReferenceTarget, nameTreeEntry));
+        if(left->targetNameHash == rt->targetNameHash)
+            res |= recursiveAddBrowseHashTarget(next, left);
+    }
+    if(rt->nameTreeEntry.right) {
+        UA_ReferenceTarget *right = (UA_ReferenceTarget*)
+            ((uintptr_t)rt->nameTreeEntry.right -
+             offsetof(UA_ReferenceTarget, nameTreeEntry));
+        if(right->targetNameHash == rt->targetNameHash)
+            res |= recursiveAddBrowseHashTarget(next, right);
+    }
     return res;
 }
 
@@ -919,6 +927,8 @@ walkBrowsePathElement(UA_Server *server, UA_Session *session,
         if(res != UA_STATUSCODE_GOOD)
             return UA_STATUSCODE_BADNOMATCH;
     }
+
+    struct aa_head _nameTreeHead = nameTreeHead;
 
     /* Loop over all Nodes in the current depth level */
     for(size_t i = 0; i < current->size; i++) {
@@ -977,8 +987,9 @@ walkBrowsePathElement(UA_Server *server, UA_Session *session,
              * the hash matches. The exact BrowseName will be verified in the
              * next iteration of the outer loop. So we only have to retrieve
              * every node just once. */
-            UA_ReferenceTarget *rt = ZIP_FIND(UA_ReferenceTargetNameTree,
-                                              &rk->refTargetsNameTree, &browseNameHash);
+            _nameTreeHead.root = rk->nameTreeRoot;
+            UA_ReferenceTarget *rt = (UA_ReferenceTarget*)
+                aa_find(&_nameTreeHead, &browseNameHash);
             if(!rt)
                 continue;
 
