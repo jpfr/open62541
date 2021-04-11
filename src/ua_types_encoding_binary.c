@@ -38,6 +38,8 @@
 /* Part 6 §5.1.5: Decoders shall support at least 100 nesting levels */
 #define UA_ENCODING_MAX_RECURSION 100
 
+UA_THREAD_LOCAL UA_Boolean UA_borrowOverlayableArrays = 0;
+
 typedef struct {
     /* Pointers to the current and last buffer position */
     u8 *pos;
@@ -480,12 +482,29 @@ Array_decodeBinary(void *UA_RESTRICT *UA_RESTRICT dst, size_t *out_length,
         return UA_STATUSCODE_GOOD;
     }
 
-    /* Filter out arrays that can obviously not be decoded, because the message
-     * is too small for the array length. This prevents the allocation of very
-     * long arrays for bogus messages.*/
     size_t length = (size_t)signed_length;
-    if(ctx->pos + ((type->memSize * length) / 32) > ctx->end)
+
+    if(type->overlayable) {
+        /* Check the length */
+        if(ctx->end < ctx->pos + (type->memSize * length)) {
+            UA_free(*dst);
+            *dst = NULL;
+            return UA_STATUSCODE_BADDECODINGERROR;
+        }
+
+        /* Borrow the array instead of copying it. */
+        if(UA_borrowOverlayableArrays) {
+            *dst = ctx->pos;
+            *out_length = length;
+            ctx->pos += type->memSize * length;
+            return UA_STATUSCODE_GOOD;
+        }
+    } else if(ctx->pos + ((type->memSize * length) / 32) > ctx->end) {
+        /* Filter out arrays that can obviously not be decoded, because the message
+         * is too small for the array length. This prevents the allocation of very
+         * long arrays for bogus messages.*/
         return UA_STATUSCODE_BADDECODINGERROR;
+    }
 
     /* Allocate memory */
     *dst = UA_calloc(length, type->memSize);
@@ -494,11 +513,6 @@ Array_decodeBinary(void *UA_RESTRICT *UA_RESTRICT dst, size_t *out_length,
 
     if(type->overlayable) {
         /* memcpy overlayable array */
-        if(ctx->end < ctx->pos + (type->memSize * length)) {
-            UA_free(*dst);
-            *dst = NULL;
-            return UA_STATUSCODE_BADDECODINGERROR;
-        }
         memcpy(*dst, ctx->pos, type->memSize * length);
         ctx->pos += type->memSize * length;
     } else {
