@@ -112,8 +112,8 @@ typedef int64_t UA_Int64;
  * ^^^^^^
  * An integer value between 0 and 18 446 744 073 709 551 615. */
 typedef uint64_t UA_UInt64;
-#define UA_UINT64_MIN (uint64_t)0
-#define UA_UINT64_MAX (uint64_t)18446744073709551615ULL
+#define UA_UINT64_MIN 0ULL
+#define UA_UINT64_MAX 18446744073709551615ULL
 
 /**
  * Float
