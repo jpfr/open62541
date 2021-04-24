@@ -28,6 +28,96 @@ struct UA_MonitoredItem;
 #endif
 
 /**
+ * Internal Node Identifier
+ * ========================
+ *
+ * Internally the SDK does not immediately use ExpandedNodeId, but an indirect
+ * tagged pointer format. This saves space and improves speed. An InternalNodeId
+ * can contain four different representations. It is assumed that pointers to
+ * the heap are aligned to the word-size. The lowest two bit of the pointer are
+ * used for tagging.
+ *
+ * - The lowest bits are 00: Contains an "immediate" binary encoding of numeric
+ *   NodeId that fits entirely into an uintptr_t.
+ *
+ * - The lowest bits are 001: Contains a pointer to a NodeId. The NodeId is
+ *   cleared up with the InternalNodeId.
+ *
+ * - The lowest bits are 101: Contains a "borrowed" pointer to a NodeId. The
+ *   NodeId is not cleared up with the InternalNodeId.
+ *
+ * - The lowest bits are 011: Contains a pointer to an ExpandedNodeId. The
+ *   ExpandedNodeId is cleared up with the InternalNodeId.
+ *
+ * - The lowest bits are 111: Contains a "borrowed" pointer to an
+ *   ExpandedNodeId. The ExpandedNodeId is not cleared up with the
+ *   InternalNodeId.
+ */
+
+typedef union {
+#if SIZE_MAX >= UA_UINT32_MAX
+    uintptr_t immediate; /* Small encoding of numerical ids. At least 32bit, */
+#else
+    UA_UInt32 immediate;
+#endif
+    UA_NodeId *id;
+    UA_ExpandedNodeId *expandedId;
+} UA_InternalNodeId;
+
+static UA_INLINE void
+UA_InternalNodeId_init(UA_InternalNodeId *id) { id->immediate = 0; }
+
+void UA_EXPORT
+UA_InternalNodeId_clear(UA_InternalNodeId *id);
+
+/* Macro to generate ns0 ids. On 32bit archs and smaller, the numerical part of
+ * the identifier is expected to fit into 24bit. */
+#if SIZE_MAX >= UA_UINT64_MAX
+# define UA_INTERNALNODEID_NS0(ns0Id) \
+    ((UA_InternalNodeId){((uintptr_t)ns0Id) << 32})
+#else
+# define UA_INTERNALNODEID_NS0(ns0Id) \
+    ((UA_InternalNodeId){ns0Id << 8})
+#endif
+
+/* Makes a deep copy */
+UA_StatusCode UA_EXPORT
+UA_InternalNodeId_copy(UA_InternalNodeId in,
+                       UA_InternalNodeId *out);
+
+/* Test if an ExpandedNodeId or a local NodeId */
+UA_Boolean UA_EXPORT
+UA_InternalNodeId_isLocal(UA_InternalNodeId id);
+
+UA_Order UA_EXPORT
+UA_InternalNodeId_order(UA_InternalNodeId p1, UA_InternalNodeId p2);
+
+static UA_INLINE UA_Boolean
+UA_InternalNodeId_equal(UA_InternalNodeId p1, UA_InternalNodeId p2) {
+    return (UA_InternalNodeId_order(p1, p2) == UA_ORDER_EQ);
+}
+
+/* Might copy the (Expanded) NodeId */
+UA_StatusCode UA_EXPORT
+UA_InternalNodeId_fromNodeId(UA_InternalNodeId *out, const UA_NodeId *in);
+UA_StatusCode UA_EXPORT
+UA_InternalNodeId_fromExpandedNodeId(UA_InternalNodeId *out,
+                                     const UA_ExpandedNodeId *in);
+
+/* Points to the original memory. Cannot fail */
+UA_InternalNodeId UA_EXPORT
+UA_InternalNodeId_borrowFromNodeId(const UA_NodeId *id);
+UA_InternalNodeId UA_EXPORT
+UA_InternalNodeId_borrowFromExpandedNodeId(const UA_ExpandedNodeId *id);
+
+/* Points to the memory from the InternalNodeId. Cannot fail. For the NodeId,
+ * check before if this is an ExpandedNodeId as that information is lost. */
+UA_NodeId UA_EXPORT
+UA_NodeId_borrowFromInternalNodeId(UA_InternalNodeId id);
+UA_ExpandedNodeId UA_EXPORT
+UA_ExpandedNodeId_borrowFromInternalNodeId(UA_InternalNodeId id);
+
+/**
  * .. _information-modelling:
  *
  * Information Modelling
