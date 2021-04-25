@@ -110,8 +110,9 @@ UA_InternalNodeId_borrowFromNodeId(const UA_NodeId *id);
 UA_InternalNodeId UA_EXPORT
 UA_InternalNodeId_borrowFromExpandedNodeId(const UA_ExpandedNodeId *id);
 
-/* Points to the memory from the InternalNodeId. Cannot fail. For the NodeId,
- * check before if this is an ExpandedNodeId as that information is lost. */
+/* Points to the memory from the InternalNodeId. Cannot fail. For borrowing a
+ * NodeId, check before if this is an ExpandedNodeId, as that information is
+ * lost. */
 UA_NodeId UA_EXPORT
 UA_NodeId_borrowFromInternalNodeId(UA_InternalNodeId id);
 UA_ExpandedNodeId UA_EXPORT
@@ -353,7 +354,7 @@ typedef struct {
     struct aa_entry nameTreeEntry;
     UA_UInt32 targetIdHash;      /* Hash of the target's NodeId */
     UA_UInt32 targetNameHash;    /* Hash of the target's BrowseName */
-    UA_ExpandedNodeId targetId;
+    UA_InternalNodeId targetId;
 } UA_ReferenceTarget;
 
 /* List of reference targets with the same reference type and direction */
