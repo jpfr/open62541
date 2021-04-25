@@ -29,7 +29,7 @@ getArgumentsVariableNode(UA_Server *server, const UA_NodeHead *head,
             continue;
         for(UA_ReferenceTarget *t = UA_NodeReferenceKind_firstTarget(rk);
             t; t = UA_NodeReferenceKind_nextTarget(rk, t)) {
-            const UA_Node *refTarget = UA_NODESTORE_GETFROMREF(server, t);
+            const UA_Node *refTarget = UA_NODESTORE_GETINTERNAL(server, t->targetId);
             if(!refTarget)
                 continue;
             if(refTarget->head.nodeClass == UA_NODECLASS_VARIABLE &&
@@ -146,6 +146,7 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
         return;
 
     UA_Boolean found = false;
+    UA_InternalNodeId methodId = UA_InternalNodeId_borrowFromNodeId(&request->methodId);
     for(size_t i = 0; i < object->head.referencesSize && !found; ++i) {
         const UA_NodeReferenceKind *rk = &object->head.references[i];
         if(rk->isInverse)
@@ -154,8 +155,7 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
             continue;
         for(UA_ReferenceTarget *t = UA_NodeReferenceKind_firstTarget(rk);
             t; t = UA_NodeReferenceKind_nextTarget(rk, t)) {
-            if(UA_ExpandedNodeId_isLocal(&t->targetId) &&
-               UA_NodeId_equal(&t->targetId.nodeId, &request->methodId)) {
+            if(UA_InternalNodeId_equal(t->targetId, methodId)) {
                 found = true;
                 break;
             }
@@ -202,11 +202,11 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
              * (or sub-type) from the DI model */
             for(UA_ReferenceTarget *t = UA_NodeReferenceKind_firstTarget(rk);
                 t && !found; t = UA_NodeReferenceKind_nextTarget(rk, t)) {
-                if(!UA_ExpandedNodeId_isLocal(&t->targetId))
+                if(!UA_InternalNodeId_isLocal(t->targetId))
                     continue;
                 
-                if(!isNodeInTree_singleRef(server, &t->targetId.nodeId,
-                                           &functionGroupNodeId,
+                if(!isNodeInTree_singleRef(server, t->targetId,
+                              UA_InternalNodeId_borrowFromNodeId(&functionGroupNodeId),
                                            UA_REFERENCETYPEINDEX_HASSUBTYPE))
                     continue;
 
@@ -218,15 +218,16 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
                         continue;
                     const UA_NodeId * refId = 
                         UA_NODESTORE_GETREFERENCETYPEID(server, rkInner->referenceTypeIndex);
-                    if(!isNodeInTree_singleRef(server, refId, &organizedByNodeId,
+                    if(!isNodeInTree_singleRef(server,
+                              UA_InternalNodeId_borrowFromNodeId(refId),
+                              UA_InternalNodeId_borrowFromNodeId(&organizedByNodeId),
                                                UA_REFERENCETYPEINDEX_HASSUBTYPE))
                         continue;
                     
                     for(UA_ReferenceTarget *t2 = UA_NodeReferenceKind_firstTarget(rkInner);
                         t2; t2 = UA_NodeReferenceKind_nextTarget(rkInner, t2)) {
-                        if(!UA_ExpandedNodeId_isLocal(&t2->targetId))
-                            continue;
-                        if(UA_NodeId_equal(&t2->targetId.nodeId, &request->methodId)) {
+                        if(UA_InternalNodeId_equal(t2->targetId,
+                              UA_InternalNodeId_borrowFromNodeId(&request->methodId))) {
                             found = true;
                             break;
                         }

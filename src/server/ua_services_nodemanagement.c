@@ -167,8 +167,9 @@ checkParentReference(UA_Server *server, UA_Session *session, const UA_NodeHead *
     }
 
     /* Test if the referencetype is hierarchical */
-    const UA_NodeId hierarchRefs = UA_NODEID_NUMERIC(0, UA_NS0ID_HIERARCHICALREFERENCES);
-    if(!isNodeInTree_singleRef(server, referenceTypeId, &hierarchRefs,
+    UA_InternalNodeId hierarchRefs = UA_INTERNALNODEID_NS0(UA_NS0ID_HIERARCHICALREFERENCES);
+    UA_InternalNodeId reftypeId = UA_InternalNodeId_borrowFromNodeId(referenceTypeId);
+    if(!isNodeInTree_singleRef(server, reftypeId, hierarchRefs,
                                UA_REFERENCETYPEINDEX_HASSUBTYPE)) {
         logAddNode(&server->config.logger, session, &head->nodeId,
                    "Reference type to the parent is not hierarchical");
@@ -516,10 +517,10 @@ isMandatoryChild(UA_Server *server, UA_Session *session,
         if(rk->isInverse)
             continue;
 
+        UA_InternalNodeId mandId = UA_InternalNodeId_borrowFromNodeId(&mandatoryId);
         for(UA_ReferenceTarget *t = UA_NodeReferenceKind_firstTarget(rk);
             t; t = UA_NodeReferenceKind_nextTarget(rk, t)) {
-            if(UA_ExpandedNodeId_isLocal(&t->targetId) &&
-               UA_NodeId_equal(&mandatoryId, &t->targetId.nodeId)) {
+            if(UA_InternalNodeId_equal(mandId, t->targetId)) {
                 UA_NODESTORE_RELEASE(server, child);
                 return true;
             }
@@ -631,16 +632,17 @@ copyChild(UA_Server *server, UA_Session *session,
          * addnode_finish. That way, we can call addnode_finish also on children that were
          * manually added by the user during addnode_begin and addnode_finish. */
         /* For now we keep all the modelling rule references and delete all others */
-        const UA_NodeId nodeId_typesFolder= UA_NODEID_NUMERIC(0, UA_NS0ID_TYPESFOLDER);
+        UA_InternalNodeId typesFolderId = UA_INTERNALNODEID_NS0(UA_NS0ID_TYPESFOLDER);
         const UA_ReferenceTypeSet reftypes_aggregates = 
             UA_REFTYPESET(UA_REFERENCETYPEINDEX_AGGREGATES);
+
         UA_ReferenceTypeSet reftypes_skipped;
         /* Check if the hasModellingRule-reference is required (configured or node in an 
-            instance declaration) */
+         * instance declaration) */
+        UA_InternalNodeId destId = UA_InternalNodeId_borrowFromNodeId(destinationNodeId);
         if(server->config.modellingRulesOnInstances ||
-         isNodeInTree(server, destinationNodeId, &nodeId_typesFolder, &reftypes_aggregates)) {
-            reftypes_skipped =
-                UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASMODELLINGRULE);
+           isNodeInTree(server, destId, typesFolderId, &reftypes_aggregates)) {
+            reftypes_skipped = UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASMODELLINGRULE);
         } else {
             UA_ReferenceTypeSet_init(&reftypes_skipped);
         }
@@ -832,6 +834,8 @@ AddNode_addRefs(UA_Server *server, UA_Session *session, const UA_NodeId *nodeId,
             typeDefinitionId = &baseObjectType;
     }
 
+    UA_InternalNodeId parentIntId = UA_InternalNodeId_borrowFromNodeId(parentNodeId);
+
     /* Get the node type. There must be a typedefinition for variables, objects
      * and type-nodes. See the above checks. */
     if(!UA_NodeId_isNull(typeDefinitionId)) {
@@ -891,10 +895,11 @@ AddNode_addRefs(UA_Server *server, UA_Session *session, const UA_NodeId *nodeId,
             /* Abstract variable is allowed if parent is a children of a
              * base data variable. An abstract variable may be part of an
              * object type which again is below BaseObjectType */
-            const UA_NodeId variableTypes = UA_NODEID_NUMERIC(0, UA_NS0ID_BASEDATAVARIABLETYPE);
-            const UA_NodeId objectTypes = UA_NODEID_NUMERIC(0, UA_NS0ID_BASEOBJECTTYPE);
-            if(!isNodeInTree(server, parentNodeId, &variableTypes, &refTypes) &&
-               !isNodeInTree(server, parentNodeId, &objectTypes, &refTypes)) {
+            UA_InternalNodeId variableTypes =
+                UA_INTERNALNODEID_NS0(UA_NS0ID_BASEDATAVARIABLETYPE);
+            UA_InternalNodeId objectTypes = UA_INTERNALNODEID_NS0(UA_NS0ID_BASEOBJECTTYPE);
+            if(!isNodeInTree(server, parentIntId, variableTypes, &refTypes) &&
+               !isNodeInTree(server, parentIntId, objectTypes, &refTypes)) {
                 logAddNode(&server->config.logger, session, nodeId,
                            "Type of variable node must be a "
                            "VariableType and not cannot be abstract");
@@ -913,17 +918,17 @@ AddNode_addRefs(UA_Server *server, UA_Session *session, const UA_NodeId *nodeId,
             if(retval != UA_STATUSCODE_GOOD)
                 goto cleanup;
 
-
             /* Object node created of an abstract ObjectType. Only allowed if
              * within BaseObjectType folder or if it's an event (subType of
              * BaseEventType) */
-            const UA_NodeId objectTypes = UA_NODEID_NUMERIC(0, UA_NS0ID_BASEOBJECTTYPE);
+            UA_InternalNodeId objectTypes = UA_INTERNALNODEID_NS0(UA_NS0ID_BASEOBJECTTYPE);
             UA_Boolean isInBaseObjectType =
-                isNodeInTree(server, parentNodeId, &objectTypes, &refTypes);
+                isNodeInTree(server, parentIntId, objectTypes, &refTypes);
             
-            const UA_NodeId eventTypes = UA_NODEID_NUMERIC(0, UA_NS0ID_BASEEVENTTYPE);
+            UA_InternalNodeId eventTypes = UA_INTERNALNODEID_NS0(UA_NS0ID_BASEEVENTTYPE);
+            UA_InternalNodeId typeId = UA_InternalNodeId_borrowFromNodeId(&type->head.nodeId);
             UA_Boolean isInBaseEventType =
-                isNodeInTree_singleRef(server, &type->head.nodeId, &eventTypes,
+                isNodeInTree_singleRef(server, typeId, eventTypes,
                                        UA_REFERENCETYPEINDEX_HASSUBTYPE);
             
             if(!isInBaseObjectType &&
@@ -1410,13 +1415,14 @@ checkSetIsDynamicVariable(UA_Server *server, UA_Session *session,
         return res;
 
     /* Is the variable under the server object? */
-    UA_NodeId serverNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER);
-    if(isNodeInTree(server, nodeId, &serverNodeId, &reftypes_hierarchical))
+    UA_InternalNodeId intNodeId = UA_InternalNodeId_borrowFromNodeId(nodeId);
+    UA_InternalNodeId serverNodeId = UA_INTERNALNODEID_NS0(UA_NS0ID_SERVER);
+    if(isNodeInTree(server, intNodeId, serverNodeId, &reftypes_hierarchical))
         return UA_STATUSCODE_GOOD;
 
     /* Is the variable in the type hierarchy? */
-    UA_NodeId typesNodeId = UA_NODEID_NUMERIC(0, UA_NS0ID_TYPESFOLDER);
-    if(isNodeInTree(server, nodeId, &typesNodeId, &reftypes_hierarchical))
+    UA_InternalNodeId typesNodeId = UA_INTERNALNODEID_NS0(UA_NS0ID_TYPESFOLDER);
+    if(isNodeInTree(server, intNodeId, typesNodeId, &reftypes_hierarchical))
         return UA_STATUSCODE_GOOD;
 
     /* Is the variable a property of a method node (InputArguments /
@@ -1656,9 +1662,9 @@ removeIncomingReferences(UA_Server *server, UA_Session *session, const UA_NodeHe
             *UA_NODESTORE_GETREFERENCETYPEID(server, rk->referenceTypeIndex);
         for(UA_ReferenceTarget *t = UA_NodeReferenceKind_firstTarget(rk);
             t; t = UA_NodeReferenceKind_nextTarget(rk, t)) {
-            if(!UA_ExpandedNodeId_isLocal(&t->targetId))
+            if(!UA_InternalNodeId_isLocal(t->targetId))
                 continue;
-            item.sourceNodeId = t->targetId.nodeId;
+            item.sourceNodeId = UA_NodeId_borrowFromInternalNodeId(t->targetId);
             Operation_deleteReference(server, session, NULL, &item, &dummy);
         }
     }
@@ -1676,9 +1682,10 @@ hasParentRef(const UA_NodeHead *head, const UA_ReferenceTypeSet *refSet,
             continue;
         for(UA_ReferenceTarget *t = UA_NodeReferenceKind_firstTarget(rk);
             t; t = UA_NodeReferenceKind_nextTarget(rk, t)) {
-            if(!UA_ExpandedNodeId_isLocal(&t->targetId))
+            if(!UA_InternalNodeId_isLocal(t->targetId))
                 continue;
-            if(!RefTree_containsNodeId(refTree, &t->targetId.nodeId))
+            UA_NodeId targetId = UA_NodeId_borrowFromInternalNodeId(t->targetId);
+            if(!RefTree_containsNodeId(refTree, &targetId))
                 return true;
         }
     }
@@ -1762,12 +1769,8 @@ autoDeleteChildren(UA_Server *server, UA_Session *session, RefTree *refTree,
         /* Loop over the references */
         for(UA_ReferenceTarget *t = UA_NodeReferenceKind_firstTarget(refs);
             t; t = UA_NodeReferenceKind_nextTarget(refs, t)) {
-            /* References an external server? */
-            if(!UA_ExpandedNodeId_isLocal(&t->targetId))
-               continue;
-
             /* Get the child */
-            const UA_Node *child = UA_NODESTORE_GET(server, &t->targetId.nodeId);
+            const UA_Node *child = UA_NODESTORE_GETINTERNAL(server, t->targetId);
             if(!child)
                 continue;
 

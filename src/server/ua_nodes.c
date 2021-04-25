@@ -293,7 +293,7 @@ cmpRefTargetId(const void *a, const void *b) {
         return AA_CMP_LESS;
     if(aa->targetIdHash > bb->targetIdHash)
         return AA_CMP_MORE;
-    return (enum aa_cmp)UA_ExpandedNodeId_order(&aa->targetId, &bb->targetId);
+    return (enum aa_cmp)UA_InternalNodeId_order(aa->targetId, bb->targetId);
 }
 
 static enum aa_cmp
@@ -335,7 +335,7 @@ UA_ReferenceTarget *
 UA_NodeReferenceKind_findTarget(const UA_NodeReferenceKind *kind,
                                 const UA_ExpandedNodeId *targetId) {
     UA_ReferenceTarget tmpTarget;
-    tmpTarget.targetId = *targetId;
+    tmpTarget.targetId = UA_InternalNodeId_borrowFromExpandedNodeId(targetId);
     tmpTarget.targetIdHash = UA_ExpandedNodeId_hash(targetId);
     struct aa_head _refIdTree =
         { kind->idTreeRoot, cmpRefTargetId,
@@ -344,10 +344,25 @@ UA_NodeReferenceKind_findTarget(const UA_NodeReferenceKind *kind,
 }
 
 const UA_Node *
-UA_NODESTORE_GETFROMREF(UA_Server *server, const UA_ReferenceTarget *target) {
-    if(!UA_ExpandedNodeId_isLocal(&target->targetId))
+UA_NODESTORE_GETINTERNAL(UA_Server *server, UA_InternalNodeId nodeid) {
+    /* Immediate numerical encoding */
+    if(UA_LIKELY((nodeid.immediate & UA_INTERNALNODEID_MASK_POINTER) == 0)) {
+        UA_NodeId id = {0};
+#if SIZE_MAX >= UA_UINT64_MAX
+        id.namespaceIndex = (UA_UInt16)(nodeid.immediate >> 8);
+        id.identifier.numeric = (UA_UInt32)(nodeid.immediate >> 32);
+#else
+        id.namespaceIndex = ((UA_Byte)nodeid.immediate) >> 2;
+        id.identifier.numeric = nodeid.immediate >> 8;
+#endif
+        return UA_NODESTORE_GET(server, &id);
+    }
+
+    UA_Boolean expanded = (nodeid.immediate & UA_INTERNALNODEID_MASK_EXPANDED);
+    if(expanded)
         return NULL;
-    return UA_NODESTORE_GET(server, &target->targetId.nodeId);
+    nodeid.immediate &= ~(uintptr_t)UA_INTERNALNODEID_MASK;
+    return UA_NODESTORE_GET(server, nodeid.id);
 }
 
 /* General node handling methods. There is no UA_Node_new() method here.
@@ -481,7 +496,7 @@ UA_ViewNode_copy(const UA_ViewNode *src, UA_ViewNode *dst) {
 }
 
 static UA_StatusCode
-addReferenceTarget(UA_NodeReferenceKind *refs, const UA_ExpandedNodeId *target,
+addReferenceTarget(UA_NodeReferenceKind *refs, UA_InternalNodeId target,
                    UA_UInt32 targetNameHash);
 
 UA_StatusCode
@@ -526,7 +541,7 @@ UA_Node_copy(const UA_Node *src, UA_Node *dst) {
             /* Copy all the targets */
             for(UA_ReferenceTarget *t = UA_NodeReferenceKind_firstTarget(srefs);
                 t; t = UA_NodeReferenceKind_nextTarget(srefs, t)) {
-                retval = addReferenceTarget(drefs, &t->targetId, t->targetNameHash);
+                retval = addReferenceTarget(drefs, t->targetId, t->targetNameHash);
                 if(retval != UA_STATUSCODE_GOOD)
                     break;
             }
@@ -793,20 +808,21 @@ UA_Node_setAttributes(UA_Node *node, const void *attributes, const UA_DataType *
 /*********************/
 
 static UA_StatusCode
-addReferenceTarget(UA_NodeReferenceKind *refs, const UA_ExpandedNodeId *target,
+addReferenceTarget(UA_NodeReferenceKind *refs, UA_InternalNodeId target,
                    UA_UInt32 targetNameHash) {
     UA_ReferenceTarget *entry = (UA_ReferenceTarget*)
         UA_malloc(sizeof(UA_ReferenceTarget));
     if(!entry)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
-    UA_StatusCode retval = UA_ExpandedNodeId_copy(target, &entry->targetId);
+    UA_StatusCode retval = UA_InternalNodeId_copy(target, &entry->targetId);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_free(entry);
         return retval;
     }
 
-    entry->targetIdHash = UA_ExpandedNodeId_hash(target);
+    UA_ExpandedNodeId tmpId = UA_ExpandedNodeId_borrowFromInternalNodeId(target);
+    entry->targetIdHash = UA_ExpandedNodeId_hash(&tmpId);
     entry->targetNameHash = targetNameHash;
 
     /* Insert to the id lookup binary search tree. Only the root is kept in refs
@@ -834,13 +850,13 @@ addReferenceKind(UA_NodeHead *head, UA_Byte refTypeIndex, UA_Boolean isForward,
         return UA_STATUSCODE_BADOUTOFMEMORY;
     head->references = refs;
 
+    UA_InternalNodeId target = UA_InternalNodeId_borrowFromExpandedNodeId(targetNodeId);
     UA_NodeReferenceKind *newRef = &refs[head->referencesSize];
     newRef->referenceTypeIndex = refTypeIndex;
     newRef->isInverse = !isForward;
     newRef->idTreeRoot = NULL;
     newRef->nameTreeRoot = NULL;
-    UA_StatusCode retval =
-        addReferenceTarget(newRef, targetNodeId, targetBrowseNameHash);
+    UA_StatusCode retval = addReferenceTarget(newRef, target, targetBrowseNameHash);
     if(retval != UA_STATUSCODE_GOOD) {
         if(head->referencesSize == 0) {
             UA_free(head->references);
@@ -876,7 +892,9 @@ UA_Node_addReference(UA_Node *node, UA_Byte refTypeIndex, UA_Boolean isForward,
             return UA_STATUSCODE_BADDUPLICATEREFERENCENOTALLOWED;
 
         /* Add to existing ReferenceKind */
-        return addReferenceTarget(refs, targetNodeId, targetBrowseNameHash);
+        UA_InternalNodeId target =
+            UA_InternalNodeId_borrowFromExpandedNodeId(targetNodeId);
+        return addReferenceTarget(refs, target, targetBrowseNameHash);
     }
 
     /* Add new ReferenceKind for the target */
@@ -910,7 +928,7 @@ UA_Node_deleteReference(UA_Node *node, UA_Byte refTypeIndex, UA_Boolean isForwar
         /* Ok, delete the reference */
         aa_remove(&_refIdTree, target);
         aa_remove(&_refNameTree, target);
-        UA_ExpandedNodeId_clear(&target->targetId);
+        UA_InternalNodeId_clear(&target->targetId);
         UA_free(target);
 
         refs->idTreeRoot = _refIdTree.root;
@@ -957,7 +975,7 @@ UA_Node_deleteReferencesSubset(UA_Node *node, const UA_ReferenceTypeSet *keepSet
         UA_ReferenceTarget *target;
         while((target = (UA_ReferenceTarget*)_refIdTree.root)) {
             aa_remove(&_refIdTree, target);
-            UA_ExpandedNodeId_clear(&target->targetId);
+            UA_InternalNodeId_clear(&target->targetId);
             UA_free(target);
         }
         head->referencesSize--;

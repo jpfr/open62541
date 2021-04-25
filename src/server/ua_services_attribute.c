@@ -771,7 +771,9 @@ compatibleValueDataType(UA_Server *server, const UA_DataType *dataType,
     /* For actual values, the constraint DataType may be a subtype of the
      * DataType of the value. E.g. UtcTime is subtype of DateTime. But it still
      * is a DateTime value when transferred over the wire. */
-    if(isNodeInTree_singleRef(server, constraintDataType, &dataType->typeId,
+    UA_InternalNodeId typeId = UA_InternalNodeId_borrowFromNodeId(&dataType->typeId);
+    UA_InternalNodeId constraintId = UA_InternalNodeId_borrowFromNodeId(constraintDataType);
+    if(isNodeInTree_singleRef(server, constraintId, typeId,
                               UA_REFERENCETYPEINDEX_HASSUBTYPE))
         return true;
 
@@ -795,13 +797,16 @@ compatibleDataTypes(UA_Server *server, const UA_NodeId *dataType,
         return true;
 
     /* Is the DataType a subtype of the constraint type? */
-    if(isNodeInTree_singleRef(server, dataType, constraintDataType,
+    UA_InternalNodeId typeId = UA_InternalNodeId_borrowFromNodeId(dataType);
+    UA_InternalNodeId constraintId = UA_InternalNodeId_borrowFromNodeId(constraintDataType);
+    if(isNodeInTree_singleRef(server, typeId, constraintId,
                               UA_REFERENCETYPEINDEX_HASSUBTYPE))
         return true;
 
     /* The constraint is an enum -> allow writing Int32 */
+    UA_InternalNodeId enumId = UA_InternalNodeId_borrowFromNodeId(&enumNodeId);
     if(UA_NodeId_equal(dataType, &UA_TYPES[UA_TYPES_INT32].typeId) &&
-       isNodeInTree_singleRef(server, constraintDataType, &enumNodeId,
+       isNodeInTree_singleRef(server, constraintId, enumId,
                               UA_REFERENCETYPEINDEX_HASSUBTYPE))
         return true;
 

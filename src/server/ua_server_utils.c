@@ -61,7 +61,7 @@ getNodeType(UA_Server *server, const UA_NodeHead *head) {
         const UA_ReferenceTarget *rt =
             UA_NodeReferenceKind_firstTarget(&head->references[i]);
         UA_assert(rt);
-        const UA_Node *type = UA_NODESTORE_GET(server, &rt->targetId.nodeId);
+        const UA_Node *type = UA_NODESTORE_GETINTERNAL(server, rt->targetId);
         if(!type)
             continue;
         if(type->head.nodeClass == typeNodeClass)

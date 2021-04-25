@@ -267,13 +267,13 @@ UA_Node_hasSubTypeOrInstances(const UA_NodeHead *head);
 
 /* Recursively searches "upwards" in the tree following specific reference types */
 UA_Boolean
-isNodeInTree(UA_Server *server, const UA_NodeId *leafNode,
-             const UA_NodeId *nodeToFind, const UA_ReferenceTypeSet *relevantRefs);
+isNodeInTree(UA_Server *server, UA_InternalNodeId leafNode,
+             UA_InternalNodeId nodeToFind, const UA_ReferenceTypeSet *relevantRefs);
 
 /* Convenience function with just a single ReferenceTypeIndex */
 UA_Boolean
-isNodeInTree_singleRef(UA_Server *server, const UA_NodeId *leafNode,
-                       const UA_NodeId *nodeToFind, const UA_Byte relevantRefTypeIndex);
+isNodeInTree_singleRef(UA_Server *server, UA_InternalNodeId leafNode,
+                       UA_InternalNodeId nodeToFind, const UA_Byte relevantRefTypeIndex);
 
 /* Returns an array with the hierarchy of nodes. The start nodes can be returned
  * as well. The returned array starts at the leaf and continues "upwards" or
@@ -598,7 +598,7 @@ UA_StatusCode writeNs0VariableArray(UA_Server *server, UA_UInt32 id, void *v,
 
 /* Returns NULL if the target is an external Reference (per the ExpandedNodeId) */
 const UA_Node *
-UA_NODESTORE_GETFROMREF(UA_Server *server, const UA_ReferenceTarget *target);
+UA_NODESTORE_GETINTERNAL(UA_Server *server, UA_InternalNodeId nodeid);
 
 #define UA_NODESTORE_RELEASE(server, node)                              \
     server->config.nodestore.releaseNode(server->config.nodestore.context, node)

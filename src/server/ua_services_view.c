@@ -62,21 +62,21 @@ matchClassMask(const UA_Node *node, UA_UInt32 nodeClassMask) {
 /* Keeps track of visited nodes to detect circular references */
 struct ref_history {
     struct ref_history *parent; /* the previous element */
-    const UA_NodeId *id; /* the id of the node at this depth */
+    UA_InternalNodeId id;       /* the id of the node at this depth */
     UA_UInt16 depth;
 };
 
 static UA_Boolean
-isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode,
-                       const UA_NodeId *nodeToFind, struct ref_history *visitedRefs,
+isNodeInTreeNoCircular(UA_Server *server, UA_InternalNodeId leafNode,
+                       UA_InternalNodeId nodeToFind, struct ref_history *visitedRefs,
                        const UA_ReferenceTypeSet *relevantRefs) {
-    if(UA_NodeId_equal(nodeToFind, leafNode))
+    if(UA_InternalNodeId_equal(nodeToFind, leafNode))
         return true;
 
     if(visitedRefs->depth >= UA_MAX_TREE_RECURSE)
         return false;
 
-    const UA_Node *node = UA_NODESTORE_GET(server, leafNode);
+    const UA_Node *node = UA_NODESTORE_GETINTERNAL(server, leafNode);
     if(!node)
         return false;
 
@@ -94,7 +94,7 @@ isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode,
         for(UA_ReferenceTarget *target = UA_NodeReferenceKind_firstTarget(rk);
             target; target = UA_NodeReferenceKind_nextTarget(rk, target)) {
             /* Don't follow remote targets */
-            if(!UA_ExpandedNodeId_isLocal(&target->targetId))
+            if(!UA_InternalNodeId_isLocal(target->targetId))
                 continue;
 
             /* Check if we already have seen the referenced node and skip to
@@ -105,7 +105,7 @@ isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode,
                 struct ref_history *last = visitedRefs;
                 UA_Boolean skip = false;
                 while(last) {
-                    if(UA_NodeId_equal(last->id, &target->targetId.nodeId)) {
+                    if(UA_InternalNodeId_equal(last->id, target->targetId)) {
                         skip = true;
                         break;
                     }
@@ -116,12 +116,12 @@ isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode,
             }
 
             /* Stack-allocate the visitedRefs structure for the next depth */
-            struct ref_history nextVisitedRefs = {visitedRefs, &target->targetId.nodeId,
-                                                  (UA_UInt16)(visitedRefs->depth+1)};
+            struct ref_history nextVisitedRefs = {visitedRefs, target->targetId,
+                (UA_UInt16)(visitedRefs->depth+1)};
 
             /* Recurse */
             UA_Boolean foundRecursive =
-                isNodeInTreeNoCircular(server, &target->targetId.nodeId, nodeToFind,
+                isNodeInTreeNoCircular(server, target->targetId, nodeToFind,
                                        &nextVisitedRefs, relevantRefs);
             if(foundRecursive) {
                 UA_NODESTORE_RELEASE(server, node);
@@ -135,15 +135,15 @@ isNodeInTreeNoCircular(UA_Server *server, const UA_NodeId *leafNode,
 }
 
 UA_Boolean
-isNodeInTree(UA_Server *server, const UA_NodeId *leafNode,
-             const UA_NodeId *nodeToFind, const UA_ReferenceTypeSet *relevantRefs) {
+isNodeInTree(UA_Server *server, UA_InternalNodeId leafNode,
+             UA_InternalNodeId nodeToFind, const UA_ReferenceTypeSet *relevantRefs) {
     struct ref_history visitedRefs = {NULL, leafNode, 0};
     return isNodeInTreeNoCircular(server, leafNode, nodeToFind, &visitedRefs, relevantRefs);
 }
 
 UA_Boolean
-isNodeInTree_singleRef(UA_Server *server, const UA_NodeId *leafNode,
-                       const UA_NodeId *nodeToFind, const UA_Byte relevantRefTypeIndex) {
+isNodeInTree_singleRef(UA_Server *server, const UA_InternalNodeId leafNode,
+                       UA_InternalNodeId nodeToFind, const UA_Byte relevantRefTypeIndex) {
     UA_ReferenceTypeSet reftypes = UA_REFTYPESET(relevantRefTypeIndex);
     return isNodeInTree(server, leafNode, nodeToFind, &reftypes);
 }
@@ -281,13 +281,13 @@ RefTree_containsNodeId(RefTree *rt, const UA_NodeId *target) {
 
 static UA_StatusCode
 browseRecursiveInner(UA_Server *server, RefTree *rt, UA_UInt16 depth, UA_Boolean skip,
-                     const UA_NodeId *nodeId, UA_BrowseDirection browseDirection,
+                     UA_InternalNodeId nodeId, UA_BrowseDirection browseDirection,
                      const UA_ReferenceTypeSet *refTypes, UA_UInt32 nodeClassMask) {
     /* Have we reached the max recursion depth? */
     if(depth >= UA_MAX_TREE_RECURSE)
         return UA_STATUSCODE_GOOD;
 
-    const UA_Node *node = UA_NODESTORE_GET(server, nodeId);
+    const UA_Node *node = UA_NODESTORE_GETINTERNAL(server, nodeId);
     if(!node)
         return UA_STATUSCODE_BADNODEIDUNKNOWN;
 
@@ -321,12 +321,15 @@ browseRecursiveInner(UA_Server *server, RefTree *rt, UA_UInt16 depth, UA_Boolean
 
         for(UA_ReferenceTarget *target = UA_NodeReferenceKind_firstTarget(rk);
             target; target = UA_NodeReferenceKind_nextTarget(rk, target)) {
-            if(UA_ExpandedNodeId_isLocal(&target->targetId))
+            if(UA_InternalNodeId_isLocal(target->targetId)) {
                 retval = browseRecursiveInner(server, rt, (UA_UInt16)(depth+1), false,
-                                              &target->targetId.nodeId, browseDirection,
+                                              target->targetId, browseDirection,
                                               refTypes, nodeClassMask);
-            else
-                retval = RefTree_add(rt, &target->targetId, NULL);
+            } else {
+                UA_ExpandedNodeId tmp =
+                    UA_ExpandedNodeId_borrowFromInternalNodeId(target->targetId);
+                retval = RefTree_add(rt, &tmp, NULL);
+            }
             if(retval != UA_STATUSCODE_GOOD)
                 goto cleanup;
         }
@@ -354,13 +357,15 @@ browseRecursive(UA_Server *server, size_t startNodesSize, const UA_NodeId *start
         if(browseDirection == UA_BROWSEDIRECTION_FORWARD ||
            browseDirection == UA_BROWSEDIRECTION_BOTH)
             retval |= browseRecursiveInner(server, &rt, 0, !includeStartNodes,
-                                           &startNodes[i], UA_BROWSEDIRECTION_FORWARD,
-                                           refTypes, nodeClassMask);
+                                           UA_InternalNodeId_borrowFromNodeId(&startNodes[i]),
+                                           UA_BROWSEDIRECTION_FORWARD, refTypes,
+                                           nodeClassMask);
         if(browseDirection == UA_BROWSEDIRECTION_INVERSE ||
            browseDirection == UA_BROWSEDIRECTION_BOTH)
             retval |= browseRecursiveInner(server, &rt, 0, !includeStartNodes,
-                                           &startNodes[i], UA_BROWSEDIRECTION_INVERSE,
-                                           refTypes, nodeClassMask);
+                                           UA_InternalNodeId_borrowFromNodeId(&startNodes[i]),
+                                           UA_BROWSEDIRECTION_INVERSE, refTypes,
+                                           nodeClassMask);
         if(retval != UA_STATUSCODE_GOOD)
             break;
     }
@@ -468,7 +473,7 @@ ContinuationPoint_clear(ContinuationPoint *cp) {
 /* Target node on top of the stack */
 static UA_StatusCode UA_FUNC_ATTR_WARN_UNUSED_RESULT
 addReferenceDescription(UA_Server *server, RefResult *rr, const UA_NodeReferenceKind *ref,
-                        UA_UInt32 mask, const UA_ExpandedNodeId *nodeId, const UA_Node *curr) {
+                        UA_UInt32 mask, UA_InternalNodeId nodeId, const UA_Node *curr) {
     /* Ensure capacity is left */
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     if(rr->size >= rr->capacity) {
@@ -480,7 +485,8 @@ addReferenceDescription(UA_Server *server, RefResult *rr, const UA_NodeReference
     UA_ReferenceDescription *descr = &rr->descr[rr->size];
 
     /* Fields without access to the actual node */
-    retval = UA_ExpandedNodeId_copy(nodeId, &descr->nodeId);
+    UA_ExpandedNodeId tmp = UA_ExpandedNodeId_borrowFromInternalNodeId(nodeId);
+    retval = UA_ExpandedNodeId_copy(&tmp, &descr->nodeId);
     if(mask & UA_BROWSERESULTMASK_REFERENCETYPEID)
         retval |= UA_NodeId_copy(UA_NODESTORE_GETREFERENCETYPEID(server, ref->referenceTypeIndex),
                                  &descr->referenceTypeId);
@@ -576,7 +582,7 @@ browseReferences(UA_Server *server, const UA_NodeHead *head,
             ref = UA_NodeReferenceKind_firstTarget(rk);
         for(; ref; ref = UA_NodeReferenceKind_nextTarget(rk, ref)) {
             /* Get the node if it is not a remote reference */
-            const UA_Node *target = UA_NODESTORE_GETFROMREF(server, ref);
+            const UA_Node *target = UA_NODESTORE_GETINTERNAL(server, ref->targetId);
             /* Test if the node class matches */
             if(target && !matchClassMask(target, bd->nodeClassMask)) {
                 UA_NODESTORE_RELEASE(server, target);
@@ -591,13 +597,14 @@ browseReferences(UA_Server *server, const UA_NodeHead *head,
                     UA_NODESTORE_RELEASE(server, target);
                 cp->nextRefKindIndex = rk->referenceTypeIndex;
                 UA_ExpandedNodeId_clear(&cp->nextTarget);
-                return UA_ExpandedNodeId_copy(&ref->targetId,
-                                              &cp->nextTarget);
+                UA_ExpandedNodeId tmp =
+                    UA_ExpandedNodeId_borrowFromInternalNodeId(ref->targetId);
+                return UA_ExpandedNodeId_copy(&tmp, &cp->nextTarget);
             }
 
             /* Copy the node description. Target is on top of the stack */
             retval = addReferenceDescription(server, rr, rk, bd->resultMask,
-                                             &ref->targetId, target);
+                                             ref->targetId, target);
             if(target)
                 UA_NODESTORE_RELEASE(server, target);
             if(retval != UA_STATUSCODE_GOOD)
@@ -905,15 +912,18 @@ static UA_StatusCode
 recursiveAddBrowseHashTarget(RefTree *results, struct aa_head *head,
                              const UA_ReferenceTarget *rt) {
     UA_assert(rt);
-    UA_StatusCode res = RefTree_add(results, &rt->targetId, NULL);
+    UA_ExpandedNodeId tmp = UA_ExpandedNodeId_borrowFromInternalNodeId(rt->targetId);
+    UA_StatusCode res = RefTree_add(results, &tmp, NULL);
     UA_ReferenceTarget *prev = (UA_ReferenceTarget*)aa_prev(head, rt);
     while(prev && prev->targetNameHash == rt->targetNameHash) {
-        res |= RefTree_add(results, &prev->targetId, NULL);
+        tmp = UA_ExpandedNodeId_borrowFromInternalNodeId(prev->targetId);
+        res |= RefTree_add(results, &tmp, NULL);
         prev = (UA_ReferenceTarget*)aa_prev(head, prev);
     }
     UA_ReferenceTarget *next= (UA_ReferenceTarget*)aa_next(head, rt);
     while(next && next->targetNameHash == rt->targetNameHash) {
-        res |= RefTree_add(results, &next->targetId, NULL);
+        tmp = UA_ExpandedNodeId_borrowFromInternalNodeId(next->targetId);
+        res |= RefTree_add(results, &tmp, NULL);
         next = (UA_ReferenceTarget*)aa_next(head, next);
     }
     return res;

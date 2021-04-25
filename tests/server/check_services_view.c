@@ -246,14 +246,15 @@ START_TEST(Service_Browse_ReferenceTypes) {
     /* get the bitfield index of the hassubtype reference */
     UA_ReferenceTypeSet subTypeIdx;
     UA_NodeId hasSubtype = UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE);
-    UA_NodeId hierarchTypeId = UA_NODEID_NUMERIC(0, UA_NS0ID_HIERARCHICALREFERENCES);
     referenceTypeIndices(server, &hasSubtype, &subTypeIdx, false);
 
     /* count how many references are hierarchical */
+    UA_InternalNodeId hierarchTypeId = UA_INTERNALNODEID_NS0(UA_NS0ID_HIERARCHICALREFERENCES);
     size_t hierarch_refs = 0;
     for(size_t i = 0; i < br.referencesSize; i++) {
-        if(isNodeInTree(server, &br.references[i].referenceTypeId,
-                        &hierarchTypeId, &subTypeIdx))
+        if(isNodeInTree(server,
+                        UA_InternalNodeId_borrowFromNodeId(&br.references[i].referenceTypeId),
+                        hierarchTypeId, &subTypeIdx))
             hierarch_refs += 1;
     }
 
