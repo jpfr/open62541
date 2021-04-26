@@ -169,8 +169,8 @@ checkParentReference(UA_Server *server, UA_Session *session, const UA_NodeHead *
     /* Test if the referencetype is hierarchical */
     UA_InternalNodeId hierarchRefs = UA_INTERNALNODEID_NS0(UA_NS0ID_HIERARCHICALREFERENCES);
     UA_InternalNodeId reftypeId = UA_InternalNodeId_borrowFromNodeId(referenceTypeId);
-    if(!isNodeInTree_singleRef(server, reftypeId, hierarchRefs,
-                               UA_REFERENCETYPEINDEX_HASSUBTYPE)) {
+    if(!isNodeInTree(server, reftypeId, hierarchRefs,
+                     UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASSUBTYPE))) {
         logAddNode(&server->config.logger, session, &head->nodeId,
                    "Reference type to the parent is not hierarchical");
         return UA_STATUSCODE_BADREFERENCETYPEIDINVALID;
@@ -641,7 +641,7 @@ copyChild(UA_Server *server, UA_Session *session,
          * instance declaration) */
         UA_InternalNodeId destId = UA_InternalNodeId_borrowFromNodeId(destinationNodeId);
         if(server->config.modellingRulesOnInstances ||
-           isNodeInTree(server, destId, typesFolderId, &reftypes_aggregates)) {
+           isNodeInTree(server, destId, typesFolderId, reftypes_aggregates)) {
             reftypes_skipped = UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASMODELLINGRULE);
         } else {
             UA_ReferenceTypeSet_init(&reftypes_skipped);
@@ -898,8 +898,8 @@ AddNode_addRefs(UA_Server *server, UA_Session *session, const UA_NodeId *nodeId,
             UA_InternalNodeId variableTypes =
                 UA_INTERNALNODEID_NS0(UA_NS0ID_BASEDATAVARIABLETYPE);
             UA_InternalNodeId objectTypes = UA_INTERNALNODEID_NS0(UA_NS0ID_BASEOBJECTTYPE);
-            if(!isNodeInTree(server, parentIntId, variableTypes, &refTypes) &&
-               !isNodeInTree(server, parentIntId, objectTypes, &refTypes)) {
+            if(!isNodeInTree(server, parentIntId, variableTypes, refTypes) &&
+               !isNodeInTree(server, parentIntId, objectTypes, refTypes)) {
                 logAddNode(&server->config.logger, session, nodeId,
                            "Type of variable node must be a "
                            "VariableType and not cannot be abstract");
@@ -923,13 +923,13 @@ AddNode_addRefs(UA_Server *server, UA_Session *session, const UA_NodeId *nodeId,
              * BaseEventType) */
             UA_InternalNodeId objectTypes = UA_INTERNALNODEID_NS0(UA_NS0ID_BASEOBJECTTYPE);
             UA_Boolean isInBaseObjectType =
-                isNodeInTree(server, parentIntId, objectTypes, &refTypes);
+                isNodeInTree(server, parentIntId, objectTypes, refTypes);
             
             UA_InternalNodeId eventTypes = UA_INTERNALNODEID_NS0(UA_NS0ID_BASEEVENTTYPE);
             UA_InternalNodeId typeId = UA_InternalNodeId_borrowFromNodeId(&type->head.nodeId);
             UA_Boolean isInBaseEventType =
-                isNodeInTree_singleRef(server, typeId, eventTypes,
-                                       UA_REFERENCETYPEINDEX_HASSUBTYPE);
+                isNodeInTree(server, typeId, eventTypes,
+                             UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASSUBTYPE));
             
             if(!isInBaseObjectType &&
                !(isInBaseEventType && UA_NodeId_isNull(parentNodeId))) {
@@ -1417,12 +1417,12 @@ checkSetIsDynamicVariable(UA_Server *server, UA_Session *session,
     /* Is the variable under the server object? */
     UA_InternalNodeId intNodeId = UA_InternalNodeId_borrowFromNodeId(nodeId);
     UA_InternalNodeId serverNodeId = UA_INTERNALNODEID_NS0(UA_NS0ID_SERVER);
-    if(isNodeInTree(server, intNodeId, serverNodeId, &reftypes_hierarchical))
+    if(isNodeInTree(server, intNodeId, serverNodeId, reftypes_hierarchical))
         return UA_STATUSCODE_GOOD;
 
     /* Is the variable in the type hierarchy? */
     UA_InternalNodeId typesNodeId = UA_INTERNALNODEID_NS0(UA_NS0ID_TYPESFOLDER);
-    if(isNodeInTree(server, intNodeId, typesNodeId, &reftypes_hierarchical))
+    if(isNodeInTree(server, intNodeId, typesNodeId, reftypes_hierarchical))
         return UA_STATUSCODE_GOOD;
 
     /* Is the variable a property of a method node (InputArguments /

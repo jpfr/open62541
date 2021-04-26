@@ -136,18 +136,11 @@ isNodeInTreeNoCircular(UA_Server *server, UA_InternalNodeId leafNode,
 
 UA_Boolean
 isNodeInTree(UA_Server *server, UA_InternalNodeId leafNode,
-             UA_InternalNodeId nodeToFind, const UA_ReferenceTypeSet *relevantRefs) {
+             UA_InternalNodeId nodeToFind, const UA_ReferenceTypeSet relevantRefs) {
     struct ref_history visitedRefs = {NULL, leafNode, 0};
-    return isNodeInTreeNoCircular(server, leafNode, nodeToFind, &visitedRefs, relevantRefs);
+    return isNodeInTreeNoCircular(server, leafNode, nodeToFind, &visitedRefs, &relevantRefs);
 }
 
-UA_Boolean
-isNodeInTree_singleRef(UA_Server *server, const UA_InternalNodeId leafNode,
-                       UA_InternalNodeId nodeToFind, const UA_Byte relevantRefTypeIndex) {
-    UA_ReferenceTypeSet reftypes = UA_REFTYPESET(relevantRefTypeIndex);
-    return isNodeInTree(server, leafNode, nodeToFind, &reftypes);
-}
- 
 static enum ZIP_CMP
 cmpTarget(const void *a, const void *b) {
     const RefEntry *aa = (const RefEntry*)a;

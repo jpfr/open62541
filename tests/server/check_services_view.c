@@ -254,7 +254,7 @@ START_TEST(Service_Browse_ReferenceTypes) {
     for(size_t i = 0; i < br.referencesSize; i++) {
         if(isNodeInTree(server,
                         UA_InternalNodeId_borrowFromNodeId(&br.references[i].referenceTypeId),
-                        hierarchTypeId, &subTypeIdx))
+                        hierarchTypeId, subTypeIdx))
             hierarch_refs += 1;
     }
 

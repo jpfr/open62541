@@ -205,9 +205,9 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
                 if(!UA_InternalNodeId_isLocal(t->targetId))
                     continue;
                 
-                if(!isNodeInTree_singleRef(server, t->targetId,
-                              UA_InternalNodeId_borrowFromNodeId(&functionGroupNodeId),
-                                           UA_REFERENCETYPEINDEX_HASSUBTYPE))
+                if(!isNodeInTree(server, t->targetId,
+                                 UA_InternalNodeId_borrowFromNodeId(&functionGroupNodeId),
+                                 UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASSUBTYPE)))
                     continue;
 
                 /* Search for the called method with reference Organize (or
@@ -218,10 +218,10 @@ callWithMethodAndObject(UA_Server *server, UA_Session *session,
                         continue;
                     const UA_NodeId * refId = 
                         UA_NODESTORE_GETREFERENCETYPEID(server, rkInner->referenceTypeIndex);
-                    if(!isNodeInTree_singleRef(server,
-                              UA_InternalNodeId_borrowFromNodeId(refId),
-                              UA_InternalNodeId_borrowFromNodeId(&organizedByNodeId),
-                                               UA_REFERENCETYPEINDEX_HASSUBTYPE))
+                    if(!isNodeInTree(server,
+                                     UA_InternalNodeId_borrowFromNodeId(refId),
+                                     UA_InternalNodeId_borrowFromNodeId(&organizedByNodeId),
+                                     UA_REFTYPESET(UA_REFERENCETYPEINDEX_HASSUBTYPE)))
                         continue;
                     
                     for(UA_ReferenceTarget *t2 = UA_NodeReferenceKind_firstTarget(rkInner);
