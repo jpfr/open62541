@@ -287,13 +287,9 @@ UA_ExpandedNodeId_borrowFromInternalNodeId(UA_InternalNodeId id) {
 
 static enum aa_cmp
 cmpRefTargetId(const void *a, const void *b) {
-    const UA_ReferenceTarget *aa = (const UA_ReferenceTarget*)a;
-    const UA_ReferenceTarget *bb = (const UA_ReferenceTarget*)b;
-    if(aa->targetIdHash < bb->targetIdHash)
-        return AA_CMP_LESS;
-    if(aa->targetIdHash > bb->targetIdHash)
-        return AA_CMP_MORE;
-    return (enum aa_cmp)UA_InternalNodeId_order(aa->targetId, bb->targetId);
+    const UA_InternalNodeId *idA = (const UA_InternalNodeId*)a;
+    const UA_InternalNodeId *idB = (const UA_InternalNodeId*)b;
+    return (enum aa_cmp)UA_InternalNodeId_order(*idA, *idB);
 }
 
 static enum aa_cmp
@@ -309,7 +305,8 @@ cmpRefTargetName(const void *a, const void *b) {
 
 /* Reusable binary search tree "heads". Just switch out the root pointer. */
 static const struct aa_head refIdTree =
-    { NULL, cmpRefTargetId, offsetof(UA_ReferenceTarget, idTreeEntry), 0 };
+    { NULL, cmpRefTargetId, offsetof(UA_ReferenceTarget, idTreeEntry),
+      offsetof(UA_ReferenceTarget, targetId) };
 const struct aa_head refNameTree =
     { NULL, cmpRefTargetName, offsetof(UA_ReferenceTarget, nameTreeEntry),
       offsetof(UA_ReferenceTarget, targetNameHash) };
@@ -318,7 +315,8 @@ UA_ReferenceTarget *
 UA_NodeReferenceKind_firstTarget(const UA_NodeReferenceKind *kind) {
     struct aa_head _refIdTree =
         { kind->idTreeRoot, cmpRefTargetId,
-          offsetof(UA_ReferenceTarget, idTreeEntry), 0 };
+          offsetof(UA_ReferenceTarget, idTreeEntry),
+          offsetof(UA_ReferenceTarget, targetId) };
     return (UA_ReferenceTarget*)aa_min(&_refIdTree);
 }
 
@@ -327,7 +325,8 @@ UA_NodeReferenceKind_nextTarget(const UA_NodeReferenceKind *kind,
                                 const UA_ReferenceTarget *current) {
     struct aa_head _refIdTree =
         { kind->idTreeRoot, cmpRefTargetId,
-          offsetof(UA_ReferenceTarget, idTreeEntry), 0 };
+          offsetof(UA_ReferenceTarget, idTreeEntry),
+          offsetof(UA_ReferenceTarget, targetId) };
     return (UA_ReferenceTarget*)aa_next(&_refIdTree, current);
 }
 
@@ -336,10 +335,10 @@ UA_NodeReferenceKind_findTarget(const UA_NodeReferenceKind *kind,
                                 const UA_ExpandedNodeId *targetId) {
     UA_ReferenceTarget tmpTarget;
     tmpTarget.targetId = UA_InternalNodeId_borrowFromExpandedNodeId(targetId);
-    tmpTarget.targetIdHash = UA_ExpandedNodeId_hash(targetId);
     struct aa_head _refIdTree =
         { kind->idTreeRoot, cmpRefTargetId,
-          offsetof(UA_ReferenceTarget, idTreeEntry), 0 };
+          offsetof(UA_ReferenceTarget, idTreeEntry),
+          offsetof(UA_ReferenceTarget, targetId) };
     return (UA_ReferenceTarget*)aa_find(&_refIdTree, &tmpTarget);
 }
 
@@ -821,8 +820,6 @@ addReferenceTarget(UA_NodeReferenceKind *refs, UA_InternalNodeId target,
         return retval;
     }
 
-    UA_ExpandedNodeId tmpId = UA_ExpandedNodeId_borrowFromInternalNodeId(target);
-    entry->targetIdHash = UA_ExpandedNodeId_hash(&tmpId);
     entry->targetNameHash = targetNameHash;
 
     /* Insert to the id lookup binary search tree. Only the root is kept in refs

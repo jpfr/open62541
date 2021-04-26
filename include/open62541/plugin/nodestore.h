@@ -352,9 +352,8 @@ UA_ReferenceTypeSet_contains(const UA_ReferenceTypeSet *set, UA_Byte index) {
 typedef struct {
     struct aa_entry idTreeEntry; /* Binary-Tree for fast lookup */
     struct aa_entry nameTreeEntry;
-    UA_UInt32 targetIdHash;      /* Hash of the target's NodeId */
-    UA_UInt32 targetNameHash;    /* Hash of the target's BrowseName */
     UA_InternalNodeId targetId;
+    UA_UInt32 targetNameHash;    /* Hash of the target's BrowseName */
 } UA_ReferenceTarget;
 
 /* List of reference targets with the same reference type and direction */
