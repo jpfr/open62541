@@ -401,6 +401,13 @@ setupOfTypeFilter(UA_ContentFilterElement *element){
     setupOperandArrays(element);
 }
 
+static void
+setupEqualsFilter(UA_ContentFilterElement *element){
+    element->filterOperator = UA_FILTEROPERATOR_EQUALS;
+    element->filterOperandsSize = 2;
+    setupOperandArrays(element);
+}
+
 /*static void
 setupElementOperand(UA_ContentFilterElement *element, size_t count, UA_UInt32 *indexes){
     for(size_t i = 0; i < count; ++i) {
@@ -465,9 +472,10 @@ START_TEST(notOperatorValidation) {
 
     checkForEvent(&createResult, false);
     deleteMonitoredItems();
+   UA_free(filter.whereClause.elements[0].filterOperands->content.decoded.data);
 
     condition = false;
-    UA_Variant_setScalar(&literalContent, &condition, &UA_TYPES[UA_TYPES_BOOLEAN]);
+    UA_Variant_setScalarCopy(&literalContent, &condition, &UA_TYPES[UA_TYPES_BOOLEAN]);
     setupLiteralOperand(&filter.whereClause.elements[0], 1, &literalContent);
     createResult = addMonitoredItem(handler_events_simple, &filter, true);
     ck_assert_uint_eq(createResult.statusCode, UA_STATUSCODE_GOOD);
@@ -478,6 +486,7 @@ START_TEST(notOperatorValidation) {
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     checkForEvent(&createResult, true);
     deleteMonitoredItems();
+    UA_EventFilter_clear(&filter);
 } END_TEST
 
 // Test Case "ofType-Operator" Description:
@@ -526,6 +535,7 @@ START_TEST(ofTypeOperatorValidation) {
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     checkForEvent(&createResult, true);
     deleteMonitoredItems();
+    UA_EventFilter_clear(&filter);
 } END_TEST
 
 START_TEST(orTypeOperatorValidation) {
@@ -534,6 +544,41 @@ START_TEST(orTypeOperatorValidation) {
 
 START_TEST(andTypeOperatorValidation) {
 
+} END_TEST
+
+START_TEST(equalOperatorValidation) {
+    //setup event filter
+    UA_EventFilter filter;
+    UA_EventFilter_init(&filter);
+    setupSelectClauses();
+    filter.selectClauses = selectClauses;
+    filter.selectClausesSize = defaultSlectClauseSize;
+    setupContentFilter(&filter.whereClause, 1);
+    setupEqualsFilter(&filter.whereClause.elements[0]);
+    //setup operands
+    UA_UInt32 left = 62541;
+    UA_UInt32 right = 62541;
+    UA_Variant literalContent[2];
+    memset(literalContent, 0, sizeof(UA_Variant) * 2);
+    UA_Variant_setScalarCopy(&literalContent[0], &left, &UA_TYPES[UA_TYPES_UINT32]);
+    UA_Variant_setScalarCopy(&literalContent[1], &right, &UA_TYPES[UA_TYPES_UINT32]);
+    setupLiteralOperand(&filter.whereClause.elements[0], 2, literalContent);
+    //setup event
+    eventType = EventType_A_Layer_1;
+    UA_NodeId eventNodeId;
+    UA_StatusCode retval = eventSetup(&eventNodeId);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    // add a monitored item (with filter)
+    UA_MonitoredItemCreateResult createResult = addMonitoredItem(handler_events_simple, &filter, true);
+    ck_assert_uint_eq(createResult.statusCode, UA_STATUSCODE_GOOD);
+    monitoredItemId = createResult.monitoredItemId;
+    // trigger the event
+    retval = triggerEventLocked(eventNodeId, UA_NODEID_NUMERIC(0, UA_NS0ID_SERVER), NULL, UA_TRUE);
+    ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
+    checkForEvent(&createResult, true);
+
+    deleteMonitoredItems();
+    UA_EventFilter_clear(&filter);
 } END_TEST
 
 //printf("Status: %s", UA_StatusCode_name(retval));
@@ -546,6 +591,7 @@ static Suite *testSuite_Client(void) {
     tcase_add_test(tc_server, ofTypeOperatorValidation);
     tcase_add_test(tc_server, orTypeOperatorValidation);
     tcase_add_test(tc_server, andTypeOperatorValidation);
+    tcase_add_test(tc_server, equalOperatorValidation);
     suite_add_tcase(s, tc_server);
     return s;
 }
