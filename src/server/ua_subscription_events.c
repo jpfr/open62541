@@ -429,48 +429,42 @@ isNumericSigned(UA_UInt32 dataTypeKind){
     return false;
 }
 
-/* Allowed targetTyoes are uin64, int64 */
 static UA_StatusCode
-implicitNumericCast(UA_Variant *variant, const UA_DataType *targetType, void *data){
-    if(targetType == &UA_TYPES[UA_TYPES_UINT64]) {
-        if(variant->type == &UA_TYPES[UA_TYPES_UINT64]) {
-            *(UA_UInt64 *)data = *(UA_UInt64 *)variant->data;
-        } else if(variant->type == &UA_TYPES[UA_TYPES_UINT32]) {
-            *(UA_UInt64 *)data = *(UA_UInt32 *)variant->data;
-        } else if(variant->type == &UA_TYPES[UA_TYPES_UINT16]) {
-            *(UA_UInt64 *)data = *(UA_UInt16 *)variant->data;
-        } else if(variant->type == &UA_TYPES[UA_TYPES_BYTE]) {
-            *(UA_UInt64 *)data = *(UA_Byte *)variant->data;
-        } else {
-            return UA_STATUSCODE_BADTYPEMISMATCH;
-        }
-        return UA_STATUSCODE_GOOD;
+implicitNumericVariantTransformation(UA_Variant *variant, void *data){
+    if(variant->type == &UA_TYPES[UA_TYPES_UINT64]){
+        *(UA_UInt64 *)data = *(UA_UInt64 *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_UINT64]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_UINT32]){
+        *(UA_UInt64 *)data = *(UA_UInt32 *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_UINT64]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_UINT16]){
+        *(UA_UInt64 *)data = *(UA_UInt16 *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_UINT64]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_BYTE]){
+        *(UA_UInt64 *)data = *(UA_Byte *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_UINT64]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_INT64]){
+        *(UA_Int64 *)data = *(UA_Int64 *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_INT64]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_INT32]){
+        *(UA_Int64 *)data = *(UA_Int32 *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_INT64]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_INT16]){
+        *(UA_Int64 *)data = *(UA_Int16 *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_INT64]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_SBYTE]){
+        *(UA_Int64 *)data = *(UA_SByte *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_INT64]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_DOUBLE]){
+        *(UA_Double *)data = *(UA_Double *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_DOUBLE]);
+    } else if(variant->type == &UA_TYPES[UA_TYPES_SBYTE]){
+        *(UA_Double *)data = *(UA_Float *)variant->data;
+        UA_Variant_setScalar(variant, data, &UA_TYPES[UA_TYPES_DOUBLE]);
+    } else {
+        return UA_STATUSCODE_BADTYPEMISMATCH;
     }
-    if(targetType == &UA_TYPES[UA_TYPES_INT64]) {
-        if(variant->type == &UA_TYPES[UA_TYPES_INT64]) {
-            *(UA_Int64 *)data = *(UA_Int64 *)variant->data;
-        } else if(variant->type == &UA_TYPES[UA_TYPES_INT32]) {
-            *(UA_Int64 *)data = *(UA_Int32 *)variant->data;
-        } else if(variant->type == &UA_TYPES[UA_TYPES_INT16]) {
-            *(UA_Int64 *)data = *(UA_Int16 *)variant->data;
-        } else if(variant->type == &UA_TYPES[UA_TYPES_SBYTE]) {
-            *(UA_Int64 *)data = *(UA_SByte *)variant->data;
-        } else {
-            return UA_STATUSCODE_BADTYPEMISMATCH;
-        }
-        return UA_STATUSCODE_GOOD;
-    }
-    if(targetType == &UA_TYPES[UA_TYPES_DOUBLE]) {
-        if(variant->type == &UA_TYPES[UA_TYPES_DOUBLE]) {
-            *(UA_Double *)data = *(UA_Double *)variant->data;
-        } else if(variant->type == &UA_TYPES[UA_TYPES_FLOAT]) {
-            *(UA_Double *)data = *(UA_Float *)variant->data;
-        } else {
-            return UA_STATUSCODE_BADTYPEMISMATCH;
-        }
-        return UA_STATUSCODE_GOOD;
-    }
-    return UA_STATUSCODE_BADTYPEMISMATCH;
+    return UA_STATUSCODE_GOOD;
 }
 
 /*
@@ -631,78 +625,38 @@ compareOperation(UA_Variant *firstOperand, UA_Variant *secondOperand, UA_FilterO
         //todo error handling
     }
 
+
     switch(op) {
-    case UA_FILTEROPERATOR_EQUALS:
+    case UA_FILTEROPERATOR_EQUALS:{
+        UA_Byte variantContent[16];
         switch(rule) {
-        case 1:{
-            UA_UInt64 uint64_o1 = 0, uint64_o2 = 0;
-            implicitNumericCast(firstCompareOperand, &UA_TYPES[UA_TYPES_UINT64], &uint64_o1);
-            implicitNumericCast(secondCompareOperand, &UA_TYPES[UA_TYPES_UINT64], &uint64_o2);
-            if(uint64_o1 == uint64_o2)
-                return UA_STATUSCODE_GOOD;
-            break;}
-        case 2:{
-            UA_Int64 int64_o1 = 0, int64_o2 = 0;
-            implicitNumericCast(firstCompareOperand, &UA_TYPES[UA_TYPES_INT64], &int64_o1);
-            implicitNumericCast(secondCompareOperand, &UA_TYPES[UA_TYPES_INT64], &int64_o2);
-            if(int64_o1 == int64_o2)
-                return UA_STATUSCODE_GOOD;
-            break;}
-        case 3:
-            if(UA_String_equal((UA_String *)firstCompareOperand->data, (UA_String *)secondCompareOperand->data))
-                return UA_STATUSCODE_GOOD;
-            break;
-        case 4:
-            if(UA_NodeId_equal((UA_NodeId *)firstCompareOperand->data, (UA_NodeId *)secondCompareOperand->data))
-                return UA_STATUSCODE_GOOD;
-            break;
-        case 5:
-            if(*(UA_Boolean *)firstCompareOperand->data == *(UA_Boolean *)secondCompareOperand->data)
-                return UA_STATUSCODE_GOOD;
-            break;
-        case 6:
-            //todo compare of floats with epsilon
-            if(*(UA_Double *)firstCompareOperand->data == *(UA_Double *)secondCompareOperand->data)
-                return UA_STATUSCODE_GOOD;
-            break;
-        case 7:
-            if(UA_ExpandedNodeId_equal((UA_ExpandedNodeId *)firstCompareOperand->data, (UA_ExpandedNodeId *)secondCompareOperand->data))
-                return UA_STATUSCODE_GOOD;
-            break;
-        case 8:
-            if(UA_Guid_equal((UA_Guid *)firstCompareOperand->data, (UA_Guid *)secondCompareOperand->data))
-                return UA_STATUSCODE_GOOD;
-            break;
-        case 9:
-            if(*(UA_UInt32 *)firstCompareOperand->data == *(UA_UInt32 *)secondCompareOperand->data)
-                return UA_STATUSCODE_GOOD;
-            break;
-        case 10:{
-            UA_LocalizedText *localizedText_a = (UA_LocalizedText *)firstCompareOperand->data;
-            UA_LocalizedText *localizedText_b = (UA_LocalizedText *)secondCompareOperand->data;
-            if(UA_String_equal(&localizedText_a->locale, &localizedText_b->locale) &&
-                UA_String_equal(&localizedText_a->text, &localizedText_b->text)){
-                return UA_STATUSCODE_GOOD;
-            }
+        case 1: // Fallthrough
+        case 2: {
+            memset(&variantContent, 0, sizeof(UA_Byte) * 16);
+            implicitNumericVariantTransformation(firstCompareOperand, variantContent);
+            implicitNumericVariantTransformation(secondCompareOperand, &variantContent[8]);
             break;
         }
-        case 11:{
-            UA_QualifiedName *qualifiedName_a = (UA_QualifiedName *)firstCompareOperand->data;
-            UA_QualifiedName *qualifiedName_b = (UA_QualifiedName *)secondCompareOperand->data;
-            if(UA_String_equal(&qualifiedName_a->name, &qualifiedName_b->name) &&
-               qualifiedName_a->namespaceIndex == qualifiedName_b->namespaceIndex){
-                return UA_STATUSCODE_GOOD;
-            }
-            break;
-        }
+        case 3: // Fallthrough
+        case 4: // Fallthrough
+        case 5: // Fallthrough
+        case 6: // Fallthrough
+        case 7: // Fallthrough
+        case 8: // Fallthrough
+        case 9: // Fallthrough
+        case 10: // Fallthrough
+        case 11: // Fallthrough
         case 12:
-            if(UA_String_equal((UA_String *)firstCompareOperand->data, (UA_String *)secondCompareOperand->data))
-                return UA_STATUSCODE_GOOD;
             break;
         default:
             return UA_STATUSCODE_BADNOMATCH;
         }
+        // This case handles all equal compares
+        if(UA_order(firstCompareOperand, secondCompareOperand, &UA_TYPES[UA_TYPES_VARIANT]) == UA_ORDER_EQ) {
+            return UA_STATUSCODE_GOOD;
+        }
         break;
+    }
     case UA_FILTEROPERATOR_GREATERTHAN:
         switch(rule) {
         case 1:
