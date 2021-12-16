@@ -12,7 +12,6 @@
 
 #ifdef UA_ENABLE_SUBSCRIPTIONS_EVENTS
 
-//forward declaration
 static UA_StatusCode
 evaluateWhereClauseContentFilter(UA_Server *server, UA_Session *session,
                                  const UA_NodeId *eventNode,
@@ -60,7 +59,7 @@ UA_Server_createEvent(UA_Server *server, const UA_NodeId eventType,
 
     /* Create an ObjectNode which represents the event */
     UA_QualifiedName name;
-    // set a dummy name. This is not used.
+    /*  set a dummy name. This is not used. */
     name = UA_QUALIFIEDNAME(0,"E");
     UA_NodeId newNodeId = UA_NODEID_NULL;
     UA_ObjectAttributes oAttr = UA_ObjectAttributes_default;
@@ -332,9 +331,9 @@ ofTypeOperator(UA_Server *server, UA_Session *session,
         UA_Variant_clear(&typeNodeIdVariant);
         return UA_STATUSCODE_BADINTERNALERROR;
     }
-    //check if the eventtype-nodeid is equal to the given oftype argument
+    /* check if the eventtype-nodeid is equal to the given oftype argument */
     result = UA_NodeId_equal((UA_NodeId*) typeNodeIdVariant.data, literalOperandNodeId);
-    //check if the eventtype-nodeid is a subtype of the given oftype argument
+    /* check if the eventtype-nodeid is a subtype of the given oftype argument */
     if(!result)
         result = isNodeInTree_singleRef(server,
                                         (UA_NodeId*) typeNodeIdVariant.data,
@@ -467,6 +466,43 @@ implicitNumericVariantTransformation(UA_Variant *variant, void *data){
     return UA_STATUSCODE_GOOD;
 }
 
+/* 0 -> Same Type, 1 -> Implicit Cast, 2 -> Only explicit Cast, -1 -> cast invalid */
+static UA_SByte convertLookup[21][21] = {
+    { 0, 1,-1,-1, 1,-1, 1,-1, 1, 1, 1,-1, 1,-1, 2,-1,-1, 1, 1, 1,-1},
+    { 2, 0,-1,-1, 1,-1, 1,-1, 1, 1, 1,-1, 1,-1, 2,-1,-1, 1, 1, 1,-1},
+    {-1,-1, 0,-1,-1,-1,-1, 2,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1},
+    {-1,-1,-1, 0,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, 2,-1,-1,-1,-1,-1,-1},
+    { 2,2,-1,-1, 0,-1, 2,-1, 2, 2, 2,-1, 2,-1, 2,-1,-1, 2, 2, 2,-1},
+    {-1,-1,-1,-1,-1, 0,-1,-1,-1,-1,-1, 2,-1,-1, 1,-1,-1,-1,-1,-1,-1},
+    { 2, 2,-1,-1, 1,-1, 0,-1, 2, 2, 2,-1, 2,-1, 2,-1,-1, 2, 2, 2,-1},
+    {-1,-1, 2,-1,-1,-1,-1, 0,-1,-1,-1,-1,-1,-1, 2,-1,-1,-1,-1,-1,-1},
+    { 2, 2,-1,-1, 1,-1, 1,-1, 0, 1, 1,-1, 2,-1, 2,-1,-1, 2, 1, 1,-1},
+    { 2, 2,-1,-1, 1,-1, 1,-1, 2, 0, 1,-1, 2, 2, 2,-1,-1, 2, 2, 1,-1},
+    { 2, 2,-1,-1, 1,-1, 1,-1, 2, 2, 0,-1, 2, 2, 2,-1,-1, 2, 2, 2,-1},
+    {-1,-1,-1,-1,-1, 1,-1,-1,-1,-1,-1, 0,-1,-1, 1,-1,-1,-1,-1,-1,-1},
+    { 2, 2,-1,-1, 1,-1, 1,-1, 1, 1, 1,-1, 0,-1, 2,-1,-1, 1, 1, 1,-1},
+    {-1,-1,-1,-1,-1,-1,-1,-1,-1, 1, 1,-1,-1, 0,-1,-1,-1, 2, 1, 1,-1},
+    { 1, 1,-1, 2, 1, 2, 1, 1, 1, 1, 1, 2, 1,-1, 0, 2, 2, 1, 1, 1,-1},
+    {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, 1, 0,-1,-1,-1,-1,-1},
+    {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, 1, 1, 0,-1,-1,-1,-1},
+    { 2, 2,-1,-1, 1,-1, 1,-1, 1, 1, 1,-1, 2, 1, 2,-1,-1, 0, 1, 1,-1},
+    { 2, 2,-1,-1, 1,-1, 1,-1, 2, 1, 1,-1, 2, 2, 2,-1,-1, 2, 0, 1,-1},
+    { 2, 2,-1,-1, 1,-1, 1,-1, 2, 2, 1,-1, 2, 2, 2,-1,-1, 2, 2, 0,-1},
+    {-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, 0}
+};
+
+/* This array maps the index of the
+ * standard DataType-Kind order to the
+ * order of the type convertion array */
+static UA_Byte dataTypeKindIndex[30] = {
+    0,   12,  1,  8, 17,
+    9,   18, 10, 19,  6,
+    4,   14,  3,  7,  2,
+    20,  11,  5, 13, 16,
+    15, 255,255,255,255,
+    255,255,255,255,255
+};
+
 /*
  * The OPC UA Standard defines in Part 4 several data type casting-rules. (see 1.04 part 4 Table 122)
  * Return:
@@ -477,63 +513,10 @@ implicitNumericVariantTransformation(UA_Variant *variant, void *data){
  */
 static UA_SByte
 checkTypeCastingOption(const UA_DataType *cast_target, const UA_DataType *cast_source) {
-
-    UA_DataTypeKind kindConversionRule[21] = {
-        UA_DATATYPEKIND_BOOLEAN,
-        UA_DATATYPEKIND_BYTE,
-        UA_DATATYPEKIND_BYTESTRING,
-        UA_DATATYPEKIND_DATETIME,
-        UA_DATATYPEKIND_DOUBLE,
-        UA_DATATYPEKIND_EXPANDEDNODEID,
-        UA_DATATYPEKIND_FLOAT,
-        UA_DATATYPEKIND_GUID,
-        UA_DATATYPEKIND_INT16,
-        UA_DATATYPEKIND_INT32,
-        UA_DATATYPEKIND_INT64,
-        UA_DATATYPEKIND_NODEID,
-        UA_DATATYPEKIND_SBYTE,
-        UA_DATATYPEKIND_STATUSCODE,
-        UA_DATATYPEKIND_STRING,
-        UA_DATATYPEKIND_LOCALIZEDTEXT,
-        UA_DATATYPEKIND_QUALIFIEDNAME,
-        UA_DATATYPEKIND_UINT16,
-        UA_DATATYPEKIND_UINT32,
-        UA_DATATYPEKIND_UINT64,
-        UA_DATATYPEKIND_XMLELEMENT
-    };
-
-    UA_Byte firstOperatorTypeKindIndex = UA_BYTE_MAX, secondOperatorTypeKindIndex = UA_BYTE_MAX;
-    for(UA_Byte i = 0; i < 21; ++i) {
-        if(cast_target->typeKind == kindConversionRule[i])
-            firstOperatorTypeKindIndex = i;
-        if(cast_source->typeKind == kindConversionRule[i])
-            secondOperatorTypeKindIndex = i;
-    }
-
-    //0 -> Same Type, 1 -> Implicit Cast, 2 -> Only explicit Cast, -1 -> cast invalid
-    UA_SByte convertLookup[21][21] = {
-        {0, 1, -1, -1, 1, -1, 1, -1, 1, 1, 1, -1, 1, -1, 2, -1, -1, 1, 1, 1, -1},
-        {2, 0, -1, -1, 1, -1, 1, -1, 1, 1, 1, -1, 1, -1, 2, -1, -1, 1, 1, 1, -1},
-        {-1, -1, 0, -1, -1, -1, -1, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-        {-1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 2, -1, -1, -1, -1, -1, -1},
-        {2, 2, -1, -1, 0, -1, 2, -1, 2, 2, 2, -1, 2, -1, 2, -1, -1, 2, 2, 2, -1},
-        {-1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, 2, -1, -1, 1, -1, -1, -1, -1, -1, -1},
-        {2, 2, -1, -1, 1, -1, 0, -1, 2, 2, 2, -1, 2, -1, 2, -1, -1, 2, 2, 2, -1},
-        {-1, -1, 2, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, 2, -1, -1, -1, -1, -1, -1},
-        {2, 2, -1, -1, 1, -1, 1, -1, 0, 1, 1, -1, 2, -1, 2, -1, -1, 2, 1, 1, -1},
-        {2, 2, -1, -1, 1, -1, 1, -1, 2, 0, 1, -1, 2, 2, 2, -1, -1, 2, 2, 1, -1},
-        {2, 2, -1, -1, 1, -1, 1, -1, 2, 2, 0, -1, 2, 2, 2, -1, -1, 2, 2, 2, -1},
-        {-1, -1, -1, -1, -1, 1, -1, -1, -1, -1, -1, 0, -1, -1, 1, -1, -1, -1, -1, -1, -1},
-        {2, 2, -1, -1, 1, -1, 1, -1, 1, 1, 1, -1, 0, -1, 2, -1, -1, 1, 1, 1, -1},
-        {-1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, -1, -1, 0, -1, -1, -1, 2, 1, 1, -1},
-        {1, 1, -1, 2, 1, 2, 1, 1, 1, 1, 1, 2, 1, -1, 0, 2, 2, 1, 1, 1, -1},
-        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 0, -1, -1, -1, -1, -1},
-        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 0, -1, -1, -1, -1},
-        {2, 2, -1, -1, 1, -1, 1, -1, 1, 1, 1, -1, 2, 1, 2, -1, -1, 0, 1, 1, -1},
-        {2, 2, -1, -1, 1, -1, 1, -1, 2, 1, 1, -1, 2, 2, 2, -1, -1, 2, 0, 1, -1},
-        {2, 2, -1, -1, 1, -1, 1, -1, 2, 2, 1, -1, 2, 2, 2, -1, -1, 2, 2, 0, -1},
-        {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0}
-    };
+    UA_Byte firstOperatorTypeKindIndex = UA_BYTE_MAX;
+    UA_Byte secondOperatorTypeKindIndex = UA_BYTE_MAX;
+    firstOperatorTypeKindIndex = dataTypeKindIndex[cast_target->typeKind];
+    secondOperatorTypeKindIndex = dataTypeKindIndex[cast_source->typeKind];
 
     if(firstOperatorTypeKindIndex == UA_BYTE_MAX || secondOperatorTypeKindIndex == UA_BYTE_MAX)
         return -1;
@@ -550,16 +533,16 @@ checkTypeCastingOption(const UA_DataType *cast_target, const UA_DataType *cast_s
  */
 static UA_StatusCode
 compareOperation(UA_Variant *firstOperand, UA_Variant *secondOperand, UA_FilterOperator op) {
-    //get precedence of the operand types
+    /* get precedence of the operand types */
     UA_Int16 firstOperand_precedence = UA_DataType_getPrecedence(firstOperand->type);
     UA_Int16 secondOperand_precedence = UA_DataType_getPrecedence(secondOperand->type);
-    //if the types are not equal and one of the precedence-ranks is -1, then there is
-    //no implicit conversion possible and therefore no compare
+    /* if the types are not equal and one of the precedence-ranks is -1, then there is
+       no implicit conversion possible and therefore no compare */
     if(!UA_NodeId_equal(&firstOperand->type->typeId, &secondOperand->type->typeId) &&
        (firstOperand_precedence == -1 || secondOperand_precedence == -1)){
         return UA_STATUSCODE_BADTYPEMISMATCH;
     }
-    //check if the precedence order of the operators is swapped
+    /* check if the precedence order of the operators is swapped */
     UA_Variant *firstCompareOperand = firstOperand;
     UA_Variant *secondCompareOperand = secondOperand;
     if (firstOperand_precedence < secondOperand_precedence){
@@ -573,92 +556,95 @@ compareOperation(UA_Variant *firstOperand, UA_Variant *secondOperand, UA_FilterO
         return UA_STATUSCODE_BADTYPEMISMATCH;
     }
 
-    UA_Int32 rule = -1;
+    /* The operand Data-Types influence the behavior and steps for the comparison.
+     * We need to check the operand types and store a rule which is used to select
+     * the right behavior afterwards. */
+    UA_Int32 compareHandlingRule = -1;
     if(castRule == 0 &&
        isNumericUnsigned(firstCompareOperand->type->typeKind)) {
-        rule = 1; //signed integer operation
+        compareHandlingRule = 1; /* signed integer operation */
     } else if(castRule == 0 &&
         (isNumericSigned(firstCompareOperand->type->typeKind) ||
          firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_DATETIME)) {
-        rule = 2;
+        compareHandlingRule = 2;
     } else if(castRule == 0 &&
               (firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_STRING ||
                firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_BYTESTRING)){
-        rule = 3;
+        compareHandlingRule = 3;
     } else if(castRule == 0 &&
               firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_NODEID){
-        rule = 4;
+        compareHandlingRule = 4;
     } else if(castRule == 0 &&
               firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_BOOLEAN){
-        rule = 5;
+        compareHandlingRule = 5;
     } else if(castRule == 0 &&
               (firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_DOUBLE ||
                firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_FLOAT)){
-        rule = 6;
+        compareHandlingRule = 6;
     } else if(castRule == 0 &&
              firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_EXPANDEDNODEID){
-        rule = 7;
+        compareHandlingRule = 7;
     } else if(castRule == 0 &&
              firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_GUID){
-        rule = 8;
+        compareHandlingRule = 8;
     } else if(castRule == 0 &&
              firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_STATUSCODE){
-        rule = 9;
+        compareHandlingRule = 9;
     } else if(castRule == 0 &&
               firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_LOCALIZEDTEXT){
-        rule = 10;
+        compareHandlingRule = 10;
     } else if(castRule == 0 &&
              firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_QUALIFIEDNAME){
-        rule = 11;
+        compareHandlingRule = 11;
     } else if(castRule == 0 &&
               firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_XMLELEMENT){
-        rule = 12;
+        compareHandlingRule = 12;
     } else if(castRule == 1 &&
               firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_BOOLEAN &&
               isNumericUnsigned(secondCompareOperand->type->typeKind)){
-        rule = 100;
+        compareHandlingRule = 100;
     } else if(castRule == 1 &&
               firstCompareOperand->type->typeKind == (UA_UInt32) UA_DATATYPEKIND_BOOLEAN &&
               isNumericSigned(secondCompareOperand->type->typeKind)) {
-        rule = 101;
+        compareHandlingRule = 101;
     } else if(castRule == 1){
-        //todo error handling
+        /* todo error handling */
     }
 
 
     switch(op) {
     case UA_FILTEROPERATOR_EQUALS:{
         UA_Byte variantContent[16];
-        switch(rule) {
-        case 1: // Fallthrough
+        switch(compareHandlingRule) {
+        case 1: /*  Fallthrough */
         case 2: {
             memset(&variantContent, 0, sizeof(UA_Byte) * 16);
             implicitNumericVariantTransformation(firstCompareOperand, variantContent);
             implicitNumericVariantTransformation(secondCompareOperand, &variantContent[8]);
             break;
         }
-        case 3: // Fallthrough
-        case 4: // Fallthrough
-        case 5: // Fallthrough
-        case 6: // Fallthrough
-        case 7: // Fallthrough
-        case 8: // Fallthrough
-        case 9: // Fallthrough
-        case 10: // Fallthrough
-        case 11: // Fallthrough
+        case 3: /*  Fallthrough */
+        case 4: /*  Fallthrough */
+        case 5: /*  Fallthrough */
+        case 6: /*  Fallthrough */
+        case 7: /*  Fallthrough */
+        case 8: /*  Fallthrough */
+        case 9: /*  Fallthrough */
+        case 10: /*  Fallthrough */
+        case 11: /*  Fallthrough */
         case 12:
             break;
         default:
             return UA_STATUSCODE_BADNOMATCH;
         }
-        // This case handles all equal compares
+        /*  This case handles all equal compares */
         if(UA_order(firstCompareOperand, secondCompareOperand, &UA_TYPES[UA_TYPES_VARIANT]) == UA_ORDER_EQ) {
             return UA_STATUSCODE_GOOD;
         }
         break;
     }
     case UA_FILTEROPERATOR_GREATERTHAN:
-        switch(rule) {
+        switch(compareHandlingRule) {
         case 1:
             if(*(UA_UInt64 *)firstCompareOperand->data > *(UA_UInt64 *)secondCompareOperand->data)
                 return UA_STATUSCODE_GOOD;
@@ -672,7 +658,7 @@ compareOperation(UA_Variant *firstOperand, UA_Variant *secondOperand, UA_FilterO
         }
         break;
     case UA_FILTEROPERATOR_LESSTHAN:
-        switch(rule) {
+        switch(compareHandlingRule) {
         case 1:
             if(*(UA_UInt64 *)firstCompareOperand->data < *(UA_UInt64 *)secondCompareOperand->data)
                 return UA_STATUSCODE_GOOD;
@@ -686,7 +672,7 @@ compareOperation(UA_Variant *firstOperand, UA_Variant *secondOperand, UA_FilterO
         }
         break;
     case UA_FILTEROPERATOR_GREATERTHANOREQUAL:
-        switch(rule) {
+        switch(compareHandlingRule) {
         case 1:
             if(*(UA_UInt64 *)firstCompareOperand->data >= *(UA_UInt64 *)secondCompareOperand->data)
                 return UA_STATUSCODE_GOOD;
@@ -700,7 +686,7 @@ compareOperation(UA_Variant *firstOperand, UA_Variant *secondOperand, UA_FilterO
         }
         break;
     case UA_FILTEROPERATOR_LESSTHANOREQUAL:
-        switch(rule) {
+        switch(compareHandlingRule) {
         case 1:
             if(*(UA_UInt64 *)firstOperand->data <= *(UA_UInt64 *)secondOperand->data)
                 return UA_STATUSCODE_GOOD;
@@ -735,7 +721,7 @@ compareOperator(UA_Server *server, UA_Session *session,
     if(UA_Variant_isEmpty(&secondOperand)) {
         return UA_STATUSCODE_BADFILTEROPERANDINVALID;
     }
-    //ToDo remove the following restriction: Add support for arrays
+    /* ToDo remove the following restriction: Add support for arrays */
     if(!UA_Variant_isScalar(&firstOperand) || !UA_Variant_isScalar(&secondOperand)){
         return UA_STATUSCODE_BADFILTEROPERATORUNSUPPORTED;
     }
@@ -981,7 +967,7 @@ notOperator(UA_Server *server, UA_Session *session,
         resolveOperand(server, session, eventNode, contentFilter,
                        contentFilterResult, valueResult, index, 0));
     valueResult[index].type = &UA_TYPES[UA_TYPES_BOOLEAN];
-    //invert result
+    /* invert result */
     if(res == UA_STATUSCODE_GOOD) {
         return UA_STATUSCODE_BADNOMATCH;
     }
@@ -1006,18 +992,18 @@ evaluateWhereClauseContentFilter(UA_Server *server, UA_Session *session,
     UA_ContentFilterElement *pElement = &contentFilter->elements[index];
     switch(pElement->filterOperator) {
         case UA_FILTEROPERATOR_INVIEW:
-            //Fallthrough
+            /* Fallthrough */
         case UA_FILTEROPERATOR_RELATEDTO:
             /* Not allowed for event WhereClause according to 7.17.3 in Part 4 */
             return UA_STATUSCODE_BADEVENTFILTERINVALID;
         case UA_FILTEROPERATOR_EQUALS:
-            //Fallthrough
+            /* Fallthrough */
         case UA_FILTEROPERATOR_GREATERTHAN:
-            //Fallthrough
+            /* Fallthrough */
         case UA_FILTEROPERATOR_LESSTHAN:
-            //Fallthrough
+            /* Fallthrough */
         case UA_FILTEROPERATOR_GREATERTHANOREQUAL:
-            //Fallthrough
+            /* Fallthrough */
         case UA_FILTEROPERATOR_LESSTHANOREQUAL:
             contentFilterResult->elementResults[index].statusCode =
                 compareOperator(server, session, eventNode, contentFilter,
@@ -1031,13 +1017,13 @@ evaluateWhereClauseContentFilter(UA_Server *server, UA_Session *session,
                             contentFilterResult, valueResult, index, 0, pElement);
             break;
         case UA_FILTEROPERATOR_BETWEEN:
-            //ToDo currently only numeric types are allowed
+            /* ToDo currently only numeric types are allowed */
             contentFilterResult->elementResults[index].statusCode =
                 betweenOperator(server, session, eventNode, contentFilter,
                                 contentFilterResult, valueResult, index, 0, pElement);
             break;
         case UA_FILTEROPERATOR_INLIST:
-            //ToDo currently only numeric types are allowed
+            /* ToDo currently only numeric types are allowed */
             contentFilterResult->elementResults[index].statusCode =
                 inListOperator(server, session, eventNode, contentFilter,
                                contentFilterResult, valueResult, index, 0, pElement);
@@ -1096,7 +1082,7 @@ UA_Server_evaluateWhereClauseContentFilter(UA_Server *server, UA_Session *sessio
                                            UA_ContentFilterResult *contentFilterResult) {
     if(contentFilter->elementsSize == 0)
         return UA_STATUSCODE_GOOD;
-    //TODO add maximum lenth size to the server config
+    /* TODO add maximum lenth size to the server config */
     if (contentFilter->elementsSize > 256)
         return UA_STATUSCODE_BADINVALIDARGUMENT;
     UA_STACKARRAY(UA_Variant, valueResult, contentFilter->elementsSize);
@@ -1128,7 +1114,7 @@ UA_Server_filterEvent(UA_Server *server, UA_Session *session,
         return UA_STATUSCODE_BADOUTOFMEMORY;
     efl->eventFieldsSize = filter->selectClausesSize;
 
-    //empty event filter result
+    /* empty event filter result */
     UA_EventFilterResult_init(result);
     result->selectClauseResultsSize = filter->selectClausesSize;
     result->selectClauseResults = (UA_StatusCode *)
@@ -1138,7 +1124,7 @@ UA_Server_filterEvent(UA_Server *server, UA_Session *session,
         UA_EventFilterResult_clear(result);
         return UA_STATUSCODE_BADOUTOFMEMORY;
     }
-    //prepare content filter result structure
+    /* prepare content filter result structure */
     if(filter->whereClause.elementsSize != 0) {
         result->whereClauseResult.elementResultsSize = filter->whereClause.elementsSize;
         result->whereClauseResult.elementResults = (UA_ContentFilterElementResult *)
@@ -1532,7 +1518,7 @@ UA_Event_staticSelectClauseValidation(UA_Server *server,
         return;
     for(size_t i = 0; i < eventFilter->selectClausesSize; ++i) {
         result[i] = UA_STATUSCODE_GOOD;
-        ///typedefenitionid or browsepath of any clause is not NULL ?
+        /* /typedefenitionid or browsepath of any clause is not NULL ? */
         if(UA_NodeId_isNull(&eventFilter->selectClauses[i].typeDefinitionId)) {
             result[i] = UA_STATUSCODE_BADTYPEDEFINITIONINVALID;
             continue;
@@ -1550,7 +1536,7 @@ UA_Event_staticSelectClauseValidation(UA_Server *server,
             result[i] = UA_STATUSCODE_BADBROWSENAMEINVALID;
             continue;
         }
-        //eventType is a subtype of BaseEventType ?
+        /* eventType is a subtype of BaseEventType ? */
         UA_NodeId baseEventTypeId = UA_NODEID_NUMERIC(0, UA_NS0ID_BASEEVENTTYPE);
         if(!isNodeInTree_singleRef(
             server, &eventFilter->selectClauses[i].typeDefinitionId,
@@ -1558,13 +1544,13 @@ UA_Event_staticSelectClauseValidation(UA_Server *server,
             result[i] = UA_STATUSCODE_BADTYPEDEFINITIONINVALID;
             continue;
         }
-        //attributeId is valid ?
+        /* attributeId is valid ? */
         if(!((0 < eventFilter->selectClauses[i].attributeId) &&
              (eventFilter->selectClauses[i].attributeId < 28))) {
             result[i] = UA_STATUSCODE_BADATTRIBUTEIDINVALID;
             continue;
         }
-        //browsePath contains null ?
+        /* browsePath contains null ? */
         for(size_t j = 0; j < eventFilter->selectClauses[i].browsePathSize; ++j) {
             if(UA_QualifiedName_isNull(
                 &eventFilter->selectClauses[i].browsePath[j])) {
@@ -1574,10 +1560,10 @@ UA_Event_staticSelectClauseValidation(UA_Server *server,
         }
         if(result[i] != UA_STATUSCODE_GOOD)
             continue;
-        //indexRange is defined ?
+        /*indexRange is defined ? */
         if(!UA_String_equal(&eventFilter->selectClauses[i].indexRange,
                             &UA_STRING_NULL)) {
-            //indexRange is parsable ?
+            /* indexRange is parsable ? */
             UA_NumericRange numericRange = UA_NUMERICRANGE("");
             if(UA_NumericRange_parse(&numericRange,
                                      eventFilter->selectClauses[i].indexRange) !=
@@ -1586,7 +1572,7 @@ UA_Event_staticSelectClauseValidation(UA_Server *server,
                 continue;
             }
             UA_free(numericRange.dimensions);
-            //attributeId is value ?
+            /* attributeId is value ? */
             if(eventFilter->selectClauses[i].attributeId != UA_ATTRIBUTEID_VALUE) {
                 result[i] = UA_STATUSCODE_BADTYPEMISMATCH;
                 continue;
