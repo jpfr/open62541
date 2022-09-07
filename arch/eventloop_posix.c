@@ -28,17 +28,6 @@ UA_EventLoopPOSIX_nextCyclicTime(UA_EventLoop *public_el) {
 }
 
 static UA_StatusCode
-UA_EventLoopPOSIX_addTimedCallback(UA_EventLoop *public_el,
-                                   UA_Callback callback,
-                                   void *application, void *data,
-                                   UA_DateTime date,
-                                   UA_UInt64 *callbackId) {
-    UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX*)public_el;
-    return UA_Timer_addTimedCallback(&el->timer, callback, application,
-                                     data, date, callbackId);
-}
-
-static UA_StatusCode
 UA_EventLoopPOSIX_addCyclicCallback(UA_EventLoop *public_el,
                                     UA_Callback cb,
                                     void *application, void *data,
@@ -426,7 +415,6 @@ UA_EventLoop_new_POSIX(const UA_Logger *logger) {
     el->eventLoop.addCyclicCallback = UA_EventLoopPOSIX_addCyclicCallback;
     el->eventLoop.modifyCyclicCallback = UA_EventLoopPOSIX_modifyCyclicCallback;
     el->eventLoop.removeCyclicCallback = UA_EventLoopPOSIX_removeCyclicCallback;
-    el->eventLoop.addTimedCallback = UA_EventLoopPOSIX_addTimedCallback;
     el->eventLoop.addDelayedCallback = UA_EventLoopPOSIX_addDelayedCallback;
 
     el->eventLoop.registerEventSource =

@@ -117,18 +117,27 @@ struct UA_EventLoop {
     UA_DateTime (*dateTime_nowMonotonic)(UA_EventLoop *el);
     UA_Int64    (*dateTime_localTimeUtcOffset)(UA_EventLoop *el);
 
-    /* Cyclic and Delayed Callbacks
-     * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     * Cyclic callbacks are executed regularly with an interval. A delayed
-     * callback is executed in the next cycle of the EventLoop. The memory for
-     * the delayed callback is freed after the execution. */
+    /* Cyclic Callbacks
+     * ~~~~~~~~~~~~~~~~
+     * Cyclic callbacks are executed regularly with an interval. A timed
+     * callback for a single execution can be implemented as a cyclic callback
+     * that removes itself during the first execution. */
 
     /* Time of the next cyclic callback. Returns the max DateTime if no cyclic
      * callback is registered. */
     UA_DateTime (*nextCyclicTime)(UA_EventLoop *el);
 
     /* The execution interval is in ms. Returns the callbackId if the pointer is
-     * non-NULL. */
+     * non-NULL.
+     *
+     * If the baseTime pointer is non-NULL, then the execution time is always at
+     * an interval multiple after the base-time. If not set, the current
+     * dateTime_nowMonotonic is the baseTime.
+     *
+     * The timerPolicy argument indicates how to handle missed intervals or
+     * delay due to overload. Return to a multiple of the interval after the
+     * original baseTime or reset the baseTime to "now" after a missed
+     * interval. */
     UA_StatusCode
     (*addCyclicCallback)(UA_EventLoop *el, UA_Callback cb, void *application,
                          void *data, UA_Double interval_ms, UA_DateTime *baseTime,
@@ -141,10 +150,12 @@ struct UA_EventLoop {
 
     void (*removeCyclicCallback)(UA_EventLoop *el, UA_UInt64 callbackId);
 
-    /* Like a cyclic callback, but executed only once */
-    UA_StatusCode
-    (*addTimedCallback)(UA_EventLoop *el, UA_Callback cb, void *application,
-                        void *data, UA_DateTime date, UA_UInt64 *callbackId);
+    /* Delayed Callbacks
+     * ~~~~~~~~~~~~~~~~~
+     * The registered delayed callbacks are executed once in each cycle of the
+     * EventLoop (between the cyclic callbacks and polling for events with a
+     * timeout). The memory for the delayed callback is freed after the
+     * execution. */
 
     void (*addDelayedCallback)(UA_EventLoop *el, UA_DelayedCallback *dc);
 
