@@ -58,20 +58,6 @@ START_TEST(checkGetNamespaceById) {
     UA_String_clear(&searchResultNamespace);
 } END_TEST
 
-static void timedCallbackHandler(UA_Server *s, void *data) {
-    *((UA_Boolean*)data) = false;  // stop the server via a timedCallback
-}
-
-START_TEST(checkServer_run) {
-    UA_Boolean running = true;
-    // 0 is in the past so the server will terminate on the first iteration
-    UA_StatusCode ret;
-    ret = UA_Server_addTimedCallback(server, &timedCallbackHandler, &running, 0, NULL);
-    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
-    ret = UA_Server_run(server, &running);
-    ck_assert_int_eq(ret, UA_STATUSCODE_GOOD);
-} END_TEST
-
 int main(void) {
     Suite *s = suite_create("server");
 
@@ -80,7 +66,6 @@ int main(void) {
     tcase_add_test(tc_call, checkGetConfig);
     tcase_add_test(tc_call, checkGetNamespaceByName);
     tcase_add_test(tc_call, checkGetNamespaceById);
-    tcase_add_test(tc_call, checkServer_run);
     suite_add_tcase(s, tc_call);
 
     SRunner *sr = srunner_create(s);

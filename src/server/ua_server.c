@@ -395,17 +395,6 @@ setServerShutdown(UA_Server *server) {
 /*******************/
 
 UA_StatusCode
-UA_Server_addTimedCallback(UA_Server *server, UA_ServerCallback callback,
-                           void *data, UA_DateTime date, UA_UInt64 *callbackId) {
-    UA_LOCK(&server->serviceMutex);
-    UA_StatusCode retval = server->config.eventLoop->
-        addTimedCallback(server->config.eventLoop, (UA_Callback)callback,
-                         server, data, date, callbackId);
-    UA_UNLOCK(&server->serviceMutex);
-    return retval;
-}
-
-UA_StatusCode
 addRepeatedCallback(UA_Server *server, UA_ServerCallback callback,
                     void *data, UA_Double interval_ms, UA_UInt64 *callbackId) {
     return server->config.eventLoop->

@@ -428,23 +428,6 @@ UA_Server_run_shutdown(UA_Server *server);
  * Add a callback to the server that is executed at a defined time.
  * The callback can also be registered with a cyclic interval. */
 
-/* Add a callback for execution at a specified time. If the indicated time lies
- * in the past, then the callback is executed at the next iteration of the
- * server's main loop.
- *
- * @param server The server object.
- * @param callback The callback that shall be added.
- * @param data Data that is forwarded to the callback.
- * @param date The timestamp for the execution time.
- * @param callbackId Set to the identifier of the repeated callback . This can
- *        be used to cancel the callback later on. If the pointer is null, the
- *        identifier is not set.
- * @return Upon success, ``UA_STATUSCODE_GOOD`` is returned. An error code
- *         otherwise. */
-UA_StatusCode UA_EXPORT UA_THREADSAFE
-UA_Server_addTimedCallback(UA_Server *server, UA_ServerCallback callback,
-                           void *data, UA_DateTime date, UA_UInt64 *callbackId);
-
 /* Add a callback for cyclic repetition to the server.
  *
  * @param server The server object.
