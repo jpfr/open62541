@@ -629,16 +629,6 @@ UA_Client_sendAsyncRequest(UA_Client *client, const void *request,
 /*******************/
 
 UA_StatusCode
-UA_Client_addTimedCallback(UA_Client *client, UA_ClientCallback callback,
-                           void *data, UA_DateTime date, UA_UInt64 *callbackId) {
-    if(!client->config.eventLoop)
-        return UA_STATUSCODE_BADINTERNALERROR;
-    return client->config.eventLoop->
-        addTimedCallback(client->config.eventLoop, (UA_Callback)callback,
-                         client, data, date, callbackId);
-}
-
-UA_StatusCode
 UA_Client_addRepeatedCallback(UA_Client *client, UA_ClientCallback callback,
                               void *data, UA_Double interval_ms, UA_UInt64 *callbackId) {
     if(!client->config.eventLoop)

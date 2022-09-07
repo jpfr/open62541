@@ -672,23 +672,6 @@ __UA_Client_AsyncServiceEx(UA_Client *client, const void *request,
 
 typedef void (*UA_ClientCallback)(UA_Client *client, void *data);
 
-/* Add a callback for execution at a specified time. If the indicated time lies
- * in the past, then the callback is executed at the next iteration of the
- * server's main loop.
- *
- * @param client The client object.
- * @param callback The callback that shall be added.
- * @param data Data that is forwarded to the callback.
- * @param date The timestamp for the execution time.
- * @param callbackId Set to the identifier of the repeated callback . This can
- *        be used to cancel the callback later on. If the pointer is null, the
- *        identifier is not set.
- * @return Upon success, UA_STATUSCODE_GOOD is returned. An error code
- *         otherwise. */
-UA_StatusCode UA_EXPORT
-UA_Client_addTimedCallback(UA_Client *client, UA_ClientCallback callback,
-                           void *data, UA_DateTime date, UA_UInt64 *callbackId);
-
 /* Add a callback for cyclic repetition to the client.
  *
  * @param client The client object.
