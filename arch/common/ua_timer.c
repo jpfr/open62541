@@ -66,13 +66,31 @@ UA_Timer_init(UA_Timer *t) {
     UA_LOCK_INIT(&t->timerMutex);
 }
 
-static UA_StatusCode
-addCallback(UA_Timer *t, UA_ApplicationCallback callback, void *application,
-            void *data, UA_DateTime nextTime, UA_UInt64 interval,
-            UA_TimerPolicy timerPolicy, UA_UInt64 *callbackId) {
-    /* A callback method needs to be present */
+/* Adding repeated callbacks: Add an entry with the "nextTime" timestamp in the
+ * future. This will be picked up in the next iteration and inserted at the
+ * correct place. So that the next execution takes place at "nextTime". */
+UA_StatusCode
+UA_Timer_addRepeatedCallback(UA_Timer *t, UA_ApplicationCallback callback,
+                             void *application, void *data, UA_Double interval_ms,
+                             UA_DateTime *baseTime, UA_TimerPolicy timerPolicy,
+                             UA_UInt64 *callbackId) {
+    /* The interval needs to be positive */
+    UA_Int64 interval = (UA_Int64)(interval_ms * UA_DATETIME_MSEC);
+    if(interval <= 0)
+        return UA_STATUSCODE_BADINTERNALERROR;
+
+    /* A callback must be set */
     if(!callback)
         return UA_STATUSCODE_BADINTERNALERROR;
+
+    /* Compute the first time for execution */
+    UA_DateTime currentTime = UA_DateTime_nowMonotonic();
+    UA_DateTime nextTime;
+    if(baseTime == NULL) {
+        nextTime = currentTime + interval; /* Use "now" as the basetime */
+    } else {
+        nextTime = calculateNextTime(currentTime, *baseTime, interval);
+    }
 
     /* Allocate the repeated callback structure */
     UA_TimerEntry *te = (UA_TimerEntry*)UA_malloc(sizeof(UA_TimerEntry));
@@ -92,53 +110,13 @@ addCallback(UA_Timer *t, UA_ApplicationCallback callback, void *application,
     if(callbackId)
         *callbackId = te->id;
 
+    /* Insert to both trees */
+    UA_LOCK(&t->timerMutex);
     aa_insert(&t->root, te);
     aa_insert(&t->idRoot, te);
+    UA_UNLOCK(&t->timerMutex);
+
     return UA_STATUSCODE_GOOD;
-}
-
-UA_StatusCode
-UA_Timer_addTimedCallback(UA_Timer *t, UA_ApplicationCallback callback,
-                          void *application, void *data, UA_DateTime date,
-                          UA_UInt64 *callbackId) {
-    UA_LOCK(&t->timerMutex);
-    UA_StatusCode res = addCallback(t, callback, application, data, date,
-                                    0, UA_TIMER_HANDLE_CYCLEMISS_WITH_CURRENTTIME,
-                                    callbackId);
-    UA_UNLOCK(&t->timerMutex);
-    return res;
-}
-
-/* Adding repeated callbacks: Add an entry with the "nextTime" timestamp in the
- * future. This will be picked up in the next iteration and inserted at the
- * correct place. So that the next execution takes place ät "nextTime". */
-UA_StatusCode
-UA_Timer_addRepeatedCallback(UA_Timer *t, UA_ApplicationCallback callback,
-                             void *application, void *data, UA_Double interval_ms,
-                             UA_DateTime *baseTime, UA_TimerPolicy timerPolicy,
-                             UA_UInt64 *callbackId) {
-    /* The interval needs to be positive */
-    if(interval_ms <= 0.0)
-        return UA_STATUSCODE_BADINTERNALERROR;
-    UA_UInt64 interval = (UA_UInt64)(interval_ms * UA_DATETIME_MSEC);
-    if(interval == 0)
-        return UA_STATUSCODE_BADINTERNALERROR;
-
-    /* Compute the first time for execution */
-    UA_DateTime currentTime = UA_DateTime_nowMonotonic();
-    UA_DateTime nextTime;
-    if(baseTime == NULL) {
-        /* Use "now" as the basetime */
-        nextTime = currentTime + (UA_DateTime)interval;
-    } else {
-        nextTime = calculateNextTime(currentTime, *baseTime, (UA_DateTime)interval);
-    }
-
-    UA_LOCK(&t->timerMutex);
-    UA_StatusCode res = addCallback(t, callback, application, data, nextTime,
-                                    interval, timerPolicy, callbackId);
-    UA_UNLOCK(&t->timerMutex);
-    return res;
 }
 
 UA_StatusCode
@@ -146,10 +124,8 @@ UA_Timer_changeRepeatedCallback(UA_Timer *t, UA_UInt64 callbackId,
                                 UA_Double interval_ms, UA_DateTime *baseTime,
                                 UA_TimerPolicy timerPolicy) {
     /* The interval needs to be positive */
-    if(interval_ms <= 0.0)
-        return UA_STATUSCODE_BADINTERNALERROR;
-    UA_UInt64 interval = (UA_UInt64)(interval_ms * UA_DATETIME_MSEC);
-    if(interval == 0)
+    UA_Int64 interval = (UA_Int64)(interval_ms * UA_DATETIME_MSEC);
+    if(interval <= 0)
         return UA_STATUSCODE_BADINTERNALERROR;
 
     UA_LOCK(&t->timerMutex);
@@ -166,14 +142,13 @@ UA_Timer_changeRepeatedCallback(UA_Timer *t, UA_UInt64 callbackId,
      * creation of a new repeated callback. */
     UA_DateTime currentTime = UA_DateTime_nowMonotonic();
     if(baseTime == NULL) {
-        /* Use "now" as the basetime */
-        te->nextTime = currentTime + (UA_DateTime)interval;
+        te->nextTime = currentTime + interval; /* Use "now" as the basetime */
     } else {
-        te->nextTime = calculateNextTime(currentTime, *baseTime, (UA_DateTime)interval);
+        te->nextTime = calculateNextTime(currentTime, *baseTime, interval);
     }
 
     /* Update the remaining parameters and re-insert */
-    te->interval = interval;
+    te->interval = (UA_UInt64)interval;
     te->timerPolicy = timerPolicy;
     aa_insert(&t->root, te);
 
@@ -199,27 +174,11 @@ UA_Timer_process(UA_Timer *t, UA_DateTime nowMonotonic,
                  void *executionApplication) {
     UA_LOCK(&t->timerMutex);
     UA_TimerEntry *first;
-    while((first = (UA_TimerEntry*)aa_min(&t->root)) &&
-          first->nextTime <= nowMonotonic) {
+    while((first = (UA_TimerEntry*)aa_min(&t->root)) && first->nextTime <= nowMonotonic) {
+        /* Remove before the nextTime value is modified */
         aa_remove(&t->root, first);
 
-        /* Reinsert / remove to their new position first. Because the callback
-         * can interact with the zip tree and expects the same entries in the
-         * root and idRoot trees. */
-
-        if(first->interval == 0) {
-            aa_remove(&t->idRoot, first);
-            if(first->callback) {
-                UA_UNLOCK(&t->timerMutex);
-                executionCallback(executionApplication, first->callback,
-                                  first->application, first->data);
-                UA_LOCK(&t->timerMutex);
-            }
-            UA_free(first);
-            continue;
-        }
-
-        /* Set the time for the next execution. Prevent an infinite loop by
+        /* Compute the time for the next execution. Prevent an infinite loop by
          * forcing the execution time in the next iteration.
          *
          * If the timer policy is "CurrentTime", then there is at least the
@@ -236,12 +195,11 @@ UA_Timer_process(UA_Timer *t, UA_DateTime nowMonotonic,
                 first->nextTime = nowMonotonic + (UA_DateTime)first->interval;
         }
 
+        /* Reinsert the entry to the new position first. Because the callback
+         * can modify the entry. */
         aa_insert(&t->root, first);
 
-        if(!first->callback)
-            continue;
-
-        /* Unlock the mutes before dropping into the callback. So that the timer
+        /* Unlock the mutex before dropping into the callback. So that the timer
          * itself can be edited within the callback. When we return, only the
          * pointer to t must still exist. */
         UA_ApplicationCallback cb = first->callback;

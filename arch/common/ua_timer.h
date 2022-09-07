@@ -60,11 +60,6 @@ UA_DateTime
 UA_Timer_nextRepeatedTime(UA_Timer *t);
 
 UA_StatusCode
-UA_Timer_addTimedCallback(UA_Timer *t, UA_ApplicationCallback callback,
-                          void *application, void *data, UA_DateTime date,
-                          UA_UInt64 *callbackId);
-
-UA_StatusCode
 UA_Timer_addRepeatedCallback(UA_Timer *t, UA_ApplicationCallback callback,
                              void *application, void *data, UA_Double interval_ms,
                              UA_DateTime *baseTime, UA_TimerPolicy timerPolicy,
