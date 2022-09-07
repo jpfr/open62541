@@ -1,6 +1,15 @@
 This changelog reports changes visible through the public API. Internal refactorings and bug
 fixes are not reported here.
 
+2022-09-07 Julius Pfrommer <julius.pfrommer at iosb.fraunhofer.de>
+
+ * Removed timed callbacks
+
+   The functionality is redundant with cyclic callbacks that remove
+   themselves from within the callback. The internal usage all has
+   shifted to delayed callbacks where previously timed callbacks had
+   been used.
+
 2022-08-07 Julius Pfrommer <julius.pfrommer at iosb.fraunhofer.de>
 
  * JSON decoding based on JSON5
