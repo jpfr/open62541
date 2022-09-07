@@ -152,12 +152,18 @@ struct UA_EventLoop {
 
     /* Delayed Callbacks
      * ~~~~~~~~~~~~~~~~~
-     * The registered delayed callbacks are executed once in each cycle of the
-     * EventLoop (between the cyclic callbacks and polling for events with a
-     * timeout). The memory for the delayed callback is freed after the
+     * Delayed callbacks are executed once by the EventLoop and then
+     * deregistered automatically. A typical use case is to delay a resource
+     * cleanup to a point where it is known that the resource has no remaining
+     * users "upwards in the call stack".
+     *
+     * The execution happens in the cycle of the EventLoop between the handling
+     * of timed cyclic callbacks and polling for (network) events. The memory
+     * for the delayed callback is NOT automatically freed after the
      * execution. */
 
     void (*addDelayedCallback)(UA_EventLoop *el, UA_DelayedCallback *dc);
+    void (*removeDelayedCallback)(UA_EventLoop *el, UA_DelayedCallback *dc);
 
     /* EventSources
      * ~~~~~~~~~~~~
