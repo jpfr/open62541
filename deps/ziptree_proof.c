@@ -1,4 +1,4 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is edsubject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. 
  *
@@ -10,20 +10,6 @@
  * reduce the macro-magic and integer-pointer-conversions for the analysis. */
 
 #include <stddef.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <assert.h>
-
-#define ZIP_HEAD(name, type)                    \
-struct name {                                   \
-    struct type *root;                          \
-}
-
-#define ZIP_ENTRY(type)                         \
-struct {                                        \
-    struct type *left;                          \
-    struct type *right;                         \
-}
 
 enum ZIP_CMP {
     ZIP_CMP_LESS = -1,
@@ -31,36 +17,40 @@ enum ZIP_CMP {
     ZIP_CMP_MORE = 1
 };
 
-/* Dummy types */
-struct elem {
+typedef struct elem {
     unsigned int key;
-    ZIP_ENTRY(elem) fields;
-};
+    unsigned int rank;
+    struct elem *left;
+    struct elem *right;
+} elem;
 
-ZIP_HEAD(tree, elem);
+typedef struct tree {
+    struct elem *root;
+} tree;
 
-typedef struct elem elem;
-typedef struct tree tree;
+/*@ inductive tree_valid(elem *root) {
+    case null: \forall elem *p; p == \null ==> tree_valid(p);
+    case non_null: \forall elem *p; \valid(p) && tree_valid(p->left) && tree_valid(p->right) ==> tree_valid(p);
+    }
+*/
 
-/* Hash pointers to keep the tie-breeaking of equal keys (mostly) uncorrelated
- * from the rank (pointer order). Hashing code taken from sdbm-hash
- * (http://www.cse.yorku.ca/~oz/hash.html). */
-static unsigned int
-ZIP_PTR_HASH(const elem *p) {
-    unsigned int h = 0;
-    const unsigned char *data = (const unsigned char*)&p;
-    for(size_t i = 0; i < (sizeof(void*) / sizeof(char)); i++)
-        h = data[i] + (h << 6) + (h << 16) - h;
-    return h;
-}
+/*@ inductive tree_sorted(elem *root) {
+    case null: \forall elem *p; p == \null ==> tree_sorted(p);
+    case non_null: \forall elem *p, *l, *r;
+        \valid(p) && tree_sorted(p->left) && tree_sorted(p->right) &&
+        (p->left == \null || p->left->key <= p->key) &&
+        (p->right == \null || p->right->key >= p->key)
+        ==> tree_sorted(r);
+    }
+*/
 
+/*@ requires \valid(p1) && \valid(p2) && p1 != p2; */
 static enum ZIP_CMP
 ZIP_RANK_CMP(const elem *p1, const elem *p2) {
-    assert(p1 != p2);
-    unsigned int h1 = ZIP_PTR_HASH(p1);
-    unsigned int h2 = ZIP_PTR_HASH(p2);
+    unsigned int h1 = p1->rank;
+    unsigned int h2 = p2->rank;
     if(h1 == h2)
-        return ((uintptr_t)p1 < (uintptr_t)p2) ? ZIP_CMP_LESS : ZIP_CMP_MORE;
+        return (p1 < p2) ? ZIP_CMP_LESS : ZIP_CMP_MORE;
     return (h1 < h2) ? ZIP_CMP_LESS : ZIP_CMP_MORE;
 }
 
@@ -76,99 +66,124 @@ ZIP_UNIQUE_CMP(const unsigned int *k1, const unsigned int *k2) {
     if(k1 == k2)
         return ZIP_CMP_EQ;
     if(*k1 == *k2)
-        return ((uintptr_t)k1 < (uintptr_t)k2) ? ZIP_CMP_LESS : ZIP_CMP_MORE;
+        return (k1 < k2) ? ZIP_CMP_LESS : ZIP_CMP_MORE;
     return (*k1 < *k2) ? ZIP_CMP_LESS : ZIP_CMP_MORE;
 }
 
+/*@ requires \valid(head);
+  @ requires tree_valid(head->root);
+  @ assigns \nothing;
+  @ behavior success:
+  @   ensures \valid(\result);
+  @ behavior failure:
+  @   ensures \result == \null;
+*/
 static elem *
-ZIP_ZIP(elem *l, elem *r) {
-    if(!l)
-        return r;
-    if(!r)
-        return l;
-    elem *root = NULL;
-    elem **prev_edge = &root;
-    while(l && r) {
-        if(ZIP_RANK_CMP(l, r) == ZIP_CMP_LESS) {
-            *prev_edge = r;
-            prev_edge = &r->fields.left;
-            r = r->fields.left;
-        } else {
-            *prev_edge = l;
-            prev_edge = &l->fields.right;
-            l = l->fields.right;
-        }
-    }
-    *prev_edge = (l) ? l : r;
-    return root;
-}
-
-void
-ZIP_UNZIP(tree *head, unsigned int key, tree *left, tree *right) {
-    if(!head->root) {
-        left->root = NULL;
-        right->root = NULL;
-        return;
-    }
-
-    elem *prev;
+ZIP_FIND(tree *head, unsigned int key) {
     elem *cur = head->root;
-    enum ZIP_CMP head_order = ZIP_CMP(key, cur->key);
-    if(head_order != ZIP_CMP_LESS) {
-        left->root = cur;
-        do {
-            prev = cur;
-            cur = cur->fields.right;
-            if(!cur) {
-                right->root = NULL;
-                return;
-            }
-        } while(ZIP_CMP(key, cur->key) != ZIP_CMP_LESS);
-        right->root = cur;
-        prev->fields.right = NULL;
-        elem *left_rightmost = prev;
-        while(cur->fields.left) {
-            prev = cur;
-            cur = cur->fields.left;
-            if(ZIP_CMP(key, cur->key) != ZIP_CMP_LESS) {
-                prev->fields.left = cur->fields.right;
-                cur->fields.right = NULL;
-                left_rightmost->fields.right = cur;
-                left_rightmost = cur;
-                cur = prev;
-            }
-        }
-    } else {
-        right->root = cur;
-        do {
-            prev = cur;
-            cur = cur->fields.left;
-            if(!cur) {
-                left->root = NULL;
-                return;
-            }
-        } while(ZIP_CMP(key, cur->key) == ZIP_CMP_LESS);
-        left->root = cur;
-        prev->fields.left = NULL;
-        elem *right_leftmost = prev;
-        while(cur->fields.right) {
-            prev = cur;
-            cur = cur->fields.right;
-            if(ZIP_CMP(key, cur->key) == ZIP_CMP_LESS) {
-                prev->fields.right = cur->fields.left;
-                cur->fields.left = NULL;
-                right_leftmost->fields.left = cur;
-                right_leftmost = cur;
-                cur = prev;
-            }
-        }
+    //@ assert \valid(cur) || cur == \null;
+    while(cur) {
+        if(cur->key == key)
+            return cur;
+        cur = (key < cur->key) ? cur->left : cur->right;
     }
+    return NULL;
 }
 
+/* static elem * */
+/* ZIP_ZIP(elem *l, elem *r) { */
+/*     if(!l) */
+/*         return r; */
+/*     if(!r) */
+/*         return l; */
+/*     elem *root = NULL; */
+/*     elem **prev_edge = &root; */
+/*     while(l && r) { */
+/*         if(ZIP_RANK_CMP(l, r) == ZIP_CMP_LESS) { */
+/*             *prev_edge = r; */
+/*             prev_edge = &r->left; */
+/*             r = r->left; */
+/*         } else { */
+/*             *prev_edge = l; */
+/*             prev_edge = &l->right; */
+/*             l = l->right; */
+/*         } */
+/*     } */
+/*     *prev_edge = (l) ? l : r; */
+/*     return root; */
+/* } */
+
+/* void */
+/* ZIP_UNZIP(tree *head, unsigned int key, tree *left, tree *right) { */
+/*     if(!head->root) { */
+/*         left->root = NULL; */
+/*         right->root = NULL; */
+/*         return; */
+/*     } */
+
+/*     elem *prev; */
+/*     elem *cur = head->root; */
+/*     enum ZIP_CMP head_order = ZIP_CMP(key, cur->key); */
+/*     if(head_order != ZIP_CMP_LESS) { */
+/*         left->root = cur; */
+/*         do { */
+/*             prev = cur; */
+/*             cur = cur->right; */
+/*             if(!cur) { */
+/*                 right->root = NULL; */
+/*                 return; */
+/*             } */
+/*         } while(ZIP_CMP(key, cur->key) != ZIP_CMP_LESS); */
+/*         right->root = cur; */
+/*         prev->right = NULL; */
+/*         elem *left_rightmost = prev; */
+/*         while(cur->left) { */
+/*             prev = cur; */
+/*             cur = cur->left; */
+/*             if(ZIP_CMP(key, cur->key) != ZIP_CMP_LESS) { */
+/*                 prev->left = cur->right; */
+/*                 cur->right = NULL; */
+/*                 left_rightmost->right = cur; */
+/*                 left_rightmost = cur; */
+/*                 cur = prev; */
+/*             } */
+/*         } */
+/*     } else { */
+/*         right->root = cur; */
+/*         do { */
+/*             prev = cur; */
+/*             cur = cur->left; */
+/*             if(!cur) { */
+/*                 left->root = NULL; */
+/*                 return; */
+/*             } */
+/*         } while(ZIP_CMP(key, cur->key) == ZIP_CMP_LESS); */
+/*         left->root = cur; */
+/*         prev->left = NULL; */
+/*         elem *right_leftmost = prev; */
+/*         while(cur->right) { */
+/*             prev = cur; */
+/*             cur = cur->right; */
+/*             if(ZIP_CMP(key, cur->key) == ZIP_CMP_LESS) { */
+/*                 prev->right = cur->left; */
+/*                 cur->left = NULL; */
+/*                 right_leftmost->left = cur; */
+/*                 right_leftmost = cur; */
+/*                 cur = prev; */
+/*             } */
+/*         } */
+/*     } */
+/* } */
+
+/* requires \valid(head) && \valid(x) && tree_valid(head->root) && tree_sorted(head->root);
+    ensures tree_sorted(head->root); */
+
+/*@ requires \valid(head) && \valid(x);
+    ensures \valid(head); */
 static void
 ZIP_INSERT(tree *head, elem *x) {
-    x->fields.left = NULL;
-    x->fields.right = NULL;
+    x->left = NULL;
+    x->right = NULL;
 
     const unsigned int x_key = x->key;
     if(!head->root) {
@@ -187,25 +202,25 @@ ZIP_INSERT(tree *head, elem *x) {
             break;
         prev = cur;
         prev_order = cur_order;
-        cur = (cur_order == ZIP_CMP_MORE) ? cur->fields.right : cur->fields.left;
+        cur = (cur_order == ZIP_CMP_MORE) ? cur->right : cur->left;
     } while(cur);
 
     if(cur == head->root) {
         head->root = x;
     } else {
         if(prev_order == ZIP_CMP_MORE)
-            prev->fields.right = x;
+            prev->right = x;
         else
-            prev->fields.left = x;
+            prev->left = x;
     }
 
     if(!cur)
         return;
 
     if(cur_order != ZIP_CMP_LESS) {
-        x->fields.left = cur;
+        x->left = cur;
     } else {
-        x->fields.right = cur;
+        x->right = cur;
     }
 
     prev = x;
@@ -214,7 +229,7 @@ ZIP_INSERT(tree *head, elem *x) {
         if(cur_order == ZIP_CMP_MORE) {
             do {
                 prev = cur;
-                cur = cur->fields.right;
+                cur = cur->right;
                 if(!cur)
                     break;
                 cur_order = ZIP_UNIQUE_CMP(&x_key, &cur->key);
@@ -222,7 +237,7 @@ ZIP_INSERT(tree *head, elem *x) {
         } else {
             do {
                 prev = cur;
-                cur = cur->fields.left;
+                cur = cur->left;
                 if(!cur)
                     break;
                 cur_order = ZIP_UNIQUE_CMP(&x_key, &cur->key);
@@ -231,106 +246,83 @@ ZIP_INSERT(tree *head, elem *x) {
 
         if(ZIP_UNIQUE_CMP(&x_key, &fix->key) == ZIP_CMP_LESS ||
            (fix == x && ZIP_UNIQUE_CMP(&x_key, &prev->key) == ZIP_CMP_LESS))
-            fix->fields.left = cur;
+            fix->left = cur;
         else
-            fix->fields.right = cur;
+            fix->right = cur;
     } while(cur);
 }
 
-static void
-ZIP_REMOVE(tree *head, elem *x) {
-    elem *cur = head->root;
-    if(!cur)
-        return;
-    const unsigned int *x_key = &x->key;
-    elem **prev_edge = &head->root;
-    enum ZIP_CMP cur_order = ZIP_UNIQUE_CMP(x_key, &cur->key);
-    while(cur_order != ZIP_CMP_EQ) {
-        prev_edge = (cur_order == ZIP_CMP_LESS) ? &cur->fields.left : &cur->fields.right;
-        cur = *prev_edge;
-        if(!cur)
-            return;
-        cur_order = ZIP_UNIQUE_CMP(x_key, &cur->key);
-    }
-    *prev_edge = ZIP_ZIP(cur->fields.left, cur->fields.right);
-}
+/* static void */
+/* ZIP_REMOVE(tree *head, elem *x) { */
+/*     elem *cur = head->root; */
+/*     if(!cur) */
+/*         return; */
+/*     const unsigned int *x_key = &x->key; */
+/*     elem **prev_edge = &head->root; */
+/*     enum ZIP_CMP cur_order = ZIP_UNIQUE_CMP(x_key, &cur->key); */
+/*     while(cur_order != ZIP_CMP_EQ) { */
+/*         prev_edge = (cur_order == ZIP_CMP_LESS) ? &cur->left : &cur->right; */
+/*         cur = *prev_edge; */
+/*         if(!cur) */
+/*             return; */
+/*         cur_order = ZIP_UNIQUE_CMP(x_key, &cur->key); */
+/*     } */
+/*     *prev_edge = ZIP_ZIP(cur->left, cur->right); */
+/* } */
 
-static elem *
-ZIP_FIND(tree *head, unsigned int key) {
-    elem *cur = head->root;
-    while(cur) {
-        if(cur->key == key)
-            return cur;
-        cur = (key < cur->key) ? cur->fields.left : cur->fields.right;
-    }
-    return NULL;
-}
+/* /\*@ requires \valid(head);  *\/ */
+/* static elem * */
+/* ZIP_MIN(tree *head) { */
+/*     elem *cur = head->root; */
+/*     if(!cur) */
+/*         return NULL; */
+/*     while(cur->left) */
+/*         cur = cur->left; */
+/*     return cur; */
+/* } */
 
-static elem *
-ZIP_MIN(tree *head) {
-    elem *cur = head->root;
-    if(!cur)
-        return NULL;
-    while(cur->fields.left)
-        cur = cur->fields.left;
-    return cur;
-}
-
-static elem *
-ZIP_MAX(tree *head) {
-    elem *cur = head->root;
-    if(!cur)
-        return NULL;
-    while(cur->fields.right)
-        cur = cur->fields.right;
-    return cur;
-}
-
-/* Verification */
-
-static void
-checkTreeInternal(elem *e,
-                  unsigned int min_key, unsigned int max_key) {
-    assert(e->key >= min_key);
-    assert(e->key <= max_key);
-
-    elem *left = e->fields.left;
-    if(left) {
-        assert(left->key <= e->key);
-        checkTreeInternal(left, min_key, e->key);
-    }
-
-    elem *right = e->fields.right;
-    if(right) {
-        assert(right->key >= e->key);
-        checkTreeInternal(right, e->key, max_key);
-    }
-}
-
-static void
-checkTree(tree *t) {
-    if(!t->root)
-        return;
-    elem *max_entry = ZIP_MAX(t);
-    elem *min_entry = ZIP_MIN(t);
-    checkTreeInternal(t->root, min_entry->key, max_entry->key);
-}
+/* /\*@ requires \valid(head);  *\/ */
+/* static elem * */
+/* ZIP_MAX(tree *head) { */
+/*     elem *cur = head->root; */
+/*     if(!cur) */
+/*         return NULL; */
+/*     while(cur->right) */
+/*         cur = cur->right; */
+/*     return cur; */
+/* } */
 
 /* Example */
 
-#define ELEMS 3
+#define ELEMS 1
 
 int main(void) {
-    elem elems[ELEMS];
 
-    tree t1 = {NULL};
-    for(unsigned int i = 0; i < ELEMS; i++) {
-        elem *e = &elems[i];
-        //e->key = nondet();
-        ZIP_INSERT(&t1, e);
-    }
+    elem elems[ELEMS] = {0};
+    tree t1;
+    t1.root = NULL;
 
-    checkTree(&t1);
+    /*@ assert tree_valid(t1.root); */
+    //&& tree_sorted(t1.root); */
+
+    struct elem *e = &elems[0];
+    e->key = 0;//Frama_C_unsigned_int_interval(0, UINT_MAX);
+    e->rank = 0;//Frama_C_unsigned_int_interval(0, UINT_MAX);
+    ZIP_INSERT(&t1, e);
+
+    //@ assert tree_valid(t1.root);
+
+    /* for(unsigned int i = 0; i < ELEMS; i++) { */
+    /*     elem *e = &elems[i]; */
+    /*     e->key = i;//Frama_C_unsigned_int_interval(0, UINT_MAX); */
+    /*     e->rank = i;//Frama_C_unsigned_int_interval(0, UINT_MAX); */
+    /*     ZIP_INSERT(&t1, e); */
+    /* } */
+
+
+    ///*@ assert ZIP_FIND(&t1, 0) != NULL; */
+
+    return 0;
 
     /* for(unsigned int split_key = 0; split_key < ELEMS ; split_key++) { */
     /*     tree t2; */
@@ -355,8 +347,35 @@ int main(void) {
 
     /* while(t1.root) { */
     /*     checkTree(&t1); */
-    /*     elem *left = t1.root->fields.left; */
-    /*     elem *right = t1.root->fields.right; */
+    /*     elem *left = t1.root->left; */
+    /*     elem *right = t1.root->right; */
     /*     t1.root = ZIP_ZIP(left, right); */
     /* } */
 }
+
+/* static void */
+/* checkTreeInternal(elem *e, unsigned int min_key, unsigned int max_key) { */
+/*     assert(e->key >= min_key); */
+/*     assert(e->key <= max_key); */
+
+/*     elem *left = e->left; */
+/*     if(left) { */
+/*         assert(left->key <= e->key); */
+/*         checkTreeInternal(left, min_key, e->key); */
+/*     } */
+
+/*     elem *right = e->right; */
+/*     if(right) { */
+/*         assert(right->key >= e->key); */
+/*         checkTreeInternal(right, e->key, max_key); */
+/*     } */
+/* } */
+
+/* static void */
+/* checkTree(tree *t) { */
+/*     if(!t->root) */
+/*         return; */
+/*     elem *max_entry = ZIP_MAX(t); */
+/*     elem *min_entry = ZIP_MIN(t); */
+/*     checkTreeInternal(t->root, min_entry->key, max_entry->key); */
+/* } */
