@@ -171,7 +171,14 @@ isTrue(uint8_t expr) {
  * Utility Functions
  * ----------------- */
 
+#ifdef UA_ENABLE_DISCOVERY_SEMAPHORE
+#ifdef _WIN32
+#include <io.h>
+#define UA_fileExists(X) ( _access(X, 0) == 0)
+#else
+#include <unistd.h>
 #define UA_fileExists(X) ( access(X, 0) == 0)
+#endif
 
 void
 UA_cleanupDataTypeWithCustom(const UA_DataTypeArray *customTypes);

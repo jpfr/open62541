@@ -131,14 +131,6 @@ void UA_sleep_ms(unsigned long ms);
 # undef maxStringLength
 #endif
 
-/* Use the standard malloc */
-#ifndef UA_free
-# define UA_free free
-# define UA_malloc malloc
-# define UA_calloc calloc
-# define UA_realloc realloc
-#endif
-
 #ifdef __CODEGEARC__
 #define _snprintf_s(a,b,c,...) snprintf(a,b,__VA_ARGS__)
 #endif
