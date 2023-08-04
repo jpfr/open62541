@@ -648,6 +648,12 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
     /* Check the client signature */
     if(channel->securityMode == UA_MESSAGESECURITYMODE_SIGN ||
        channel->securityMode == UA_MESSAGESECURITYMODE_SIGNANDENCRYPT) {
+
+        if(request->clientSoftwareCertificatesSize == 0) {
+            response->responseHeader.serviceResult = UA_STATUSCODE_BADAPPLICATIONSIGNATUREINVALID;
+            goto securityRejected;
+        }
+
         response->responseHeader.serviceResult =
             checkSignature(server, channel->securityPolicy, channel->channelContext,
                            &session->serverNonce, &request->clientSignature);
