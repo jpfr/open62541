@@ -410,9 +410,8 @@ START_TEST(Client_activateSessionTimeout) {
     /* Manually close the connection. The connection is internally closed at the
      * next iteration of the EventLoop. Hence the next request is sent out. But
      * the connection "actually closes" before receiving the response. */
-    UA_ConnectionManager *cm = client->channel.connectionManager;
-    uintptr_t connId = client->channel.connectionId;
-    cm->closeConnection(cm, connId);
+    UA_ConnectionManager *cm = client->channel.connection->cm;
+    cm->closeConnection(client->channel.connection);
 
     UA_Variant_init(&val);
     retval = UA_Client_readValueAttribute(client, nodeId, &val);

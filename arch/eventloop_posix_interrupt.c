@@ -25,6 +25,7 @@ typedef struct UA_RegisteredSignal {
 
     LIST_ENTRY(UA_RegisteredSignal) listPointers;
 
+    UA_EventSource *es;
     UA_InterruptCallback signalCallback;
     void *context;
     int signal; /* POSIX identifier of the interrupt signal */
@@ -87,7 +88,7 @@ handlePOSIXInterruptEvent(UA_EventSource *es, UA_RegisteredFD *rfd, short event)
 
 static void
 activateSignal(UA_RegisteredSignal *rs) {
-    UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX *)rs->rfd.es->eventLoop;
+    UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX *)rs->es->eventLoop;
     UA_LOCK_ASSERT(&el->elMutex, 1);
 
     if(rs->active)
@@ -139,7 +140,7 @@ activateSignal(UA_RegisteredSignal *rs) {
 
 static void
 deactivateSignal(UA_RegisteredSignal *rs) {
-    UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX *)rs->rfd.es->eventLoop;
+    UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX *)rs->es->eventLoop;
     UA_LOCK_ASSERT(&el->elMutex, 1);
 
     /* Only dectivate if active */
@@ -315,7 +316,7 @@ registerPOSIXInterrupt(UA_InterruptManager *im, uintptr_t interruptHandle,
     }
 
 #ifdef UA_HAVE_EPOLL
-    rs->rfd.es = &im->eventSource;
+    rs->es = &im->eventSource;
 #endif
     rs->signal = (int)interruptHandle;
     rs->signalCallback = callback;

@@ -207,10 +207,9 @@ typedef struct UA_PubSubConnection {
      * defines additional connection properties. For example an MQTT topic name
      * or QoS parameters. In that case a dedicated NetworkCallback is used that
      * takes this ReaderGroup/WriterGroup directly as context. */
-    UA_ConnectionManager *cm;
-    uintptr_t recvChannels[UA_PUBSUB_MAXCHANNELS];
+    UA_Connection *recvChannels[UA_PUBSUB_MAXCHANNELS];
     size_t recvChannelsSize;
-    uintptr_t sendChannel;
+    UA_Connection *sendChannel;
 
     size_t writerGroupsSize;
     LIST_HEAD(, UA_WriterGroup) writerGroups;
@@ -405,7 +404,7 @@ struct UA_WriterGroup {
     /* The ConnectionManager pointer is stored in the Connection. The channels
      * are either stored here or in the Connection, but never both. */
     UA_PubSubConnection *linkedConnection;
-    uintptr_t sendChannel;
+    UA_Connection *sendChannel;
     UA_Boolean deleteFlag;
 
 #ifdef UA_ENABLE_PUBSUB_ENCRYPTION
@@ -647,7 +646,7 @@ struct UA_ReaderGroup {
     /* The ConnectionManager pointer is stored in the Connection. The channels 
      * are either stored here or in the Connection, but never both. */
     UA_PubSubConnection *linkedConnection;
-    uintptr_t recvChannels[UA_PUBSUB_MAXCHANNELS];
+    UA_Connection *recvChannels[UA_PUBSUB_MAXCHANNELS];
     size_t recvChannelsSize;
     UA_Boolean deleteFlag;
 

@@ -392,14 +392,14 @@ processACKResponse(UA_Client *client, const UA_ByteString *chunk) {
 
 static UA_StatusCode
 sendHELMessage(UA_Client *client) {
-    UA_ConnectionManager *cm = client->channel.connectionManager;
     if(!UA_SecureChannel_isConnected(&client->channel))
         return UA_STATUSCODE_BADNOTCONNECTED;
+    UA_Connection *c = client->channel.connection;
+    UA_ConnectionManager *cm = c->cm;
 
     /* Get a buffer */
     UA_ByteString message;
-    UA_StatusCode retval = cm->allocNetworkBuffer(cm, client->channel.connectionId,
-                                                  &message, UA_MINMESSAGESIZE);
+    UA_StatusCode retval = cm->allocNetworkBuffer(c, &message, UA_MINMESSAGESIZE);
     if(retval != UA_STATUSCODE_GOOD)
         return retval;
 
@@ -433,14 +433,13 @@ sendHELMessage(UA_Client *client) {
                                      &UA_TRANSPORT[UA_TRANSPORT_TCPMESSAGEHEADER],
                                      &bufPos, &bufEnd, NULL, NULL);
     if(retval != UA_STATUSCODE_GOOD) {
-        cm->freeNetworkBuffer(cm, client->channel.connectionId, &message);
+        cm->freeNetworkBuffer(c, &message);
         return retval;
     }
 
     /* Send the HEL message */
     message.length = messageHeader.messageSize;
-    retval = cm->sendWithConnection(cm, client->channel.connectionId,
-                                    &UA_KEYVALUEMAP_NULL, &message);
+    retval = cm->sendWithConnection(c, UA_KEYVALUEMAP_NULL, &message);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_INFO(&client->config.logger, UA_LOGCATEGORY_CLIENT, "Sending HEL failed");
         closeSecureChannel(client);
@@ -1416,19 +1415,17 @@ verifyClientApplicationURI(const UA_Client *client) {
 }
 
 static void
-__Client_networkCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                         void *application, void **connectionContext,
-                         UA_ConnectionState state, const UA_KeyValueMap *params,
-                         UA_ByteString msg) {
+__Client_networkCallback(UA_Connection *connection, UA_ConnectionState state,
+                         const UA_KeyValueMap params, UA_ByteString msg) {
     /* Take the client lock */
-    UA_Client *client = (UA_Client*)application;
+    UA_Client *client = (UA_Client*)connection->application;
     UA_LOCK(&client->clientMutex);
 
     UA_LOG_TRACE(&client->config.logger, UA_LOGCATEGORY_CLIENT,
                  "Client network callback");
 
     /* A new connection is not yet registered */
-    if(!*connectionContext) {
+    if(!connection->context) {
         /* Opening the connection failed. The client cannot recover from this. */
         if(state != UA_CONNECTIONSTATE_OPENING &&
            state != UA_CONNECTIONSTATE_ESTABLISHED) {
@@ -1446,9 +1443,8 @@ __Client_networkCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
         }
 
         /* Initialize the client connection and attach to the EventLoop connection */
-        client->channel.connectionManager = cm;
-        client->channel.connectionId = connectionId;
-        *connectionContext = &client->channel;
+        client->channel.connection = connection;
+        connection->context = &client->channel; 
 
         /* If the connection is not fully established we still save the
          * connectionId in the client now so that the connection can be closed
@@ -1621,7 +1617,7 @@ initConnect(UA_Client *client) {
         /* Open the client TCP connection */
         UA_UNLOCK(&client->clientMutex);
         UA_StatusCode res =
-            cm->openConnection(cm, &paramMap, client, NULL, __Client_networkCallback);
+            cm->openConnection(cm, paramMap, client, NULL, __Client_networkCallback);
         UA_LOCK(&client->clientMutex);
         if(res == UA_STATUSCODE_GOOD)
             break;
@@ -1859,28 +1855,28 @@ UA_Client_activateSessionAsync(UA_Client *client,
 }
 
 static void
-__Client_reverseConnectCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                         void *application, void **connectionContext,
-                         UA_ConnectionState state, const UA_KeyValueMap *params,
-                         UA_ByteString msg) {
-
-    UA_Client *client = (UA_Client*)application;
+__Client_reverseConnectCallback(UA_Connection *connection, UA_ConnectionState state,
+                                const UA_KeyValueMap params, UA_ByteString msg) {
+    if(!connection->application)
+        return;
+    UA_Client *client = (UA_Client*)connection->application;
+    UA_ConnectionManager *cm = connection->cm;
 
     UA_LOCK(&client->clientMutex);
 
     /* This is the first call for the listening socket, attach the
      * REVERSE_CONNECT_INDICATOR marker and set the ID to the channel */
-    if(!client->channel.connectionId) {
-        client->channel.connectionId = connectionId;
-        *connectionContext = REVERSE_CONNECT_INDICATOR;
+    if(!client->channel.connection) {
+        client->channel.connection = connection;
+        connection->context = REVERSE_CONNECT_INDICATOR;
     }
 
     /* Last call for the listening connection while it is being closed. Only
      * notify a state change if no reverse connection is being or has been
      * established by now */
-    if(*connectionContext == REVERSE_CONNECT_INDICATOR &&
+    if(connection->context == REVERSE_CONNECT_INDICATOR &&
        state == UA_CONNECTIONSTATE_CLOSING) {
-        if(client->channel.connectionId == connectionId) {
+        if(client->channel.connection == connection) {
             client->channel.state = UA_SECURECHANNELSTATE_CLOSED;
             notifyClientState(client);
         }
@@ -1890,26 +1886,25 @@ __Client_reverseConnectCallback(UA_ConnectionManager *cm, uintptr_t connectionId
 
     /* Second callback for the listening socket, it is now listening for
      * incoming connections */
-    if(client->channel.connectionId == connectionId &&
-       *connectionContext == REVERSE_CONNECT_INDICATOR) {
+    if(client->channel.connection == connection &&
+       connection->context == REVERSE_CONNECT_INDICATOR) {
         client->channel.state = UA_SECURECHANNELSTATE_REVERSE_LISTENING;
         notifyClientState(client);
     }
 
     /* This is a connection initiated by a server, disconnect the listener and
      * reset secure channel information */
-    if(client->channel.connectionId != connectionId) {
-        cm->closeConnection(cm, client->channel.connectionId);
-        client->channel.connectionId = 0;
-        *connectionContext = NULL;
+    if(client->channel.connection != connection) {
+        cm->closeConnection(connection);
+        client->channel.connection = NULL;
+        connection->context = NULL;
     }
 
     /* Forward all calls belonging to the reverse connection estblished by the
      * server to the regular network callback */
-    if(*connectionContext != REVERSE_CONNECT_INDICATOR) {
+    if(connection->context != REVERSE_CONNECT_INDICATOR) {
         UA_UNLOCK(&client->clientMutex);
-        __Client_networkCallback(cm, connectionId, application,
-                                 connectionContext, state, params, msg);
+        __Client_networkCallback(connection, state, params, msg);
         return;
     }
 
@@ -1941,7 +1936,7 @@ UA_Client_startListeningForReverseConnect(UA_Client *client,
     client->channel.config = client->config.localConnectionConfig;
     client->channel.certificateVerification = &client->config.certificateVerification;
     client->channel.processOPNHeader = verifyClientSecurechannelHeader;
-    client->channel.connectionId = 0;
+    client->channel.connection = NULL;
 
     initSecurityPolicy(client);
     if(client->connectStatus != UA_STATUSCODE_GOOD)
@@ -1978,8 +1973,6 @@ UA_Client_startListeningForReverseConnect(UA_Client *client,
         return UA_STATUSCODE_BADINTERNALERROR;
     }
 
-    client->channel.connectionManager = cm;
-
     UA_KeyValuePair params[3];
     bool booleanTrue = true;
     params[0].key = UA_QUALIFIEDNAME(0, "port");
@@ -1995,7 +1988,7 @@ UA_Client_startListeningForReverseConnect(UA_Client *client,
     paramMap.mapSize = 3;
 
     UA_UNLOCK(&client->clientMutex);
-    res = cm->openConnection(cm, &paramMap, client, NULL, __Client_reverseConnectCallback);
+    res = cm->openConnection(cm, paramMap, client, NULL, __Client_reverseConnectCallback);
     UA_LOCK(&client->clientMutex);
 
     /* Opening the TCP connection failed */

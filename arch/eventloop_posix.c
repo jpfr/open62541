@@ -478,16 +478,14 @@ UA_EventLoop_new_POSIX(const UA_Logger *logger) {
 /* Reusable EventSource functionality */
 
 UA_StatusCode
-UA_EventLoopPOSIX_allocNetworkBuffer(UA_ConnectionManager *cm,
-                                     uintptr_t connectionId,
+UA_EventLoopPOSIX_allocNetworkBuffer(UA_Connection *c,
                                      UA_ByteString *buf,
                                      size_t bufSize) {
     return UA_ByteString_allocBuffer(buf, bufSize);
 }
 
 void
-UA_EventLoopPOSIX_freeNetworkBuffer(UA_ConnectionManager *cm,
-                                    uintptr_t connectionId,
+UA_EventLoopPOSIX_freeNetworkBuffer(UA_Connection *c,
                                     UA_ByteString *buf) {
     UA_ByteString_clear(buf);
 }

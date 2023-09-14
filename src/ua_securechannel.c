@@ -83,7 +83,9 @@ hideErrors(UA_TcpErrorMessage *const error) {
 }
 
 UA_Boolean
-UA_SecureChannel_isConnected(UA_SecureChannel *channel) {
+UA_SecureChannel_isConnected(const UA_SecureChannel *channel) {
+    if(!channel->connection)
+        return false;
     return (channel->state > UA_SECURECHANNELSTATE_CLOSED &&
             channel->state < UA_SECURECHANNELSTATE_CLOSING);
 }
@@ -101,9 +103,9 @@ UA_SecureChannel_sendError(UA_SecureChannel *channel, UA_TcpErrorMessage *error)
     header.messageSize = 8 + (4 + 4 + (UA_UInt32)error->reason.length);
 
     /* Get the send buffer from the network layer */
-    UA_ConnectionManager *cm = channel->connectionManager;
+    UA_ConnectionManager *cm = channel->connection->cm;
     UA_ByteString msg = UA_BYTESTRING_NULL;
-    UA_StatusCode retval = cm->allocNetworkBuffer(cm, channel->connectionId,
+    UA_StatusCode retval = cm->allocNetworkBuffer(channel->connection,
                                                   &msg, header.messageSize);
     if(retval != UA_STATUSCODE_GOOD)
         return;
@@ -119,7 +121,7 @@ UA_SecureChannel_sendError(UA_SecureChannel *channel, UA_TcpErrorMessage *error)
                                       &bufPos, &bufEnd, NULL, NULL);
     (void)retval; /* Encoding of these cannot fail */
     msg.length = header.messageSize;
-    cm->sendWithConnection(cm, channel->connectionId, &UA_KEYVALUEMAP_NULL, &msg);
+    cm->sendWithConnection(channel->connection, UA_KEYVALUEMAP_NULL, &msg);
 }
 
 static void
@@ -156,8 +158,8 @@ UA_SecureChannel_shutdown(UA_SecureChannel *channel,
     channel->shutdownReason= shutdownReason;
 
     /* Trigger the async closing of the connection */
-    UA_ConnectionManager *cm = channel->connectionManager;
-    cm->closeConnection(cm, channel->connectionId);
+    UA_ConnectionManager *cm = channel->connection->cm;
+    cm->closeConnection(channel->connection);
     channel->state = UA_SECURECHANNELSTATE_CLOSING;
 }
 
@@ -191,8 +193,7 @@ UA_SecureChannel_clear(UA_SecureChannel *channel) {
     UA_SecureChannel_deleteBuffered(channel);
 
     /* The EventLoop connection is no longer valid */
-    channel->connectionId = 0;
-    channel->connectionManager = NULL;
+    channel->connection = NULL;
 
     /* Set the state to closed */
     channel->state = UA_SECURECHANNELSTATE_CLOSED;
@@ -236,16 +237,16 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
              return UA_STATUSCODE_BADSECURITYMODEREJECTED);
 
     /* Can we use the connection manager? */
-    UA_ConnectionManager *cm = channel->connectionManager;
     if(!UA_SecureChannel_isConnected(channel))
         return UA_STATUSCODE_BADCONNECTIONCLOSED;
+    UA_ConnectionManager *cm = channel->connection->cm;
 
     const UA_SecurityPolicy *sp = channel->securityPolicy;
     UA_CHECK_MEM(sp, return UA_STATUSCODE_BADINTERNALERROR);
 
     /* Allocate the message buffer */
     UA_ByteString buf = UA_BYTESTRING_NULL;
-    UA_StatusCode res = cm->allocNetworkBuffer(cm, channel->connectionId, &buf,
+    UA_StatusCode res = cm->allocNetworkBuffer(channel->connection, &buf,
                                                channel->config.sendBufferSize);
     UA_CHECK_STATUS(res, return res);
 
@@ -293,10 +294,10 @@ UA_SecureChannel_sendAsymmetricOPNMessage(UA_SecureChannel *channel,
 
     /* Send the message, the buffer is freed in the network layer */
     buf.length = encryptedLength;
-    return cm->sendWithConnection(cm, channel->connectionId, &UA_KEYVALUEMAP_NULL, &buf);
+    return cm->sendWithConnection(channel->connection, UA_KEYVALUEMAP_NULL, &buf);
 
  error:
-    cm->freeNetworkBuffer(cm, channel->connectionId, &buf);
+    cm->freeNetworkBuffer(channel->connection, &buf);
     return res;
 }
 
@@ -354,9 +355,9 @@ static UA_StatusCode
 sendSymmetricChunk(UA_MessageContext *mc) {
     UA_SecureChannel *channel = mc->channel;
     const UA_SecurityPolicy *sp = channel->securityPolicy;
-    UA_ConnectionManager *cm = channel->connectionManager;
     if(!UA_SecureChannel_isConnected(channel))
         return UA_STATUSCODE_BADCONNECTIONCLOSED;
+    UA_ConnectionManager *cm = channel->connection->cm;
 
     /* The size of the message payload */
     size_t bodyLength = (uintptr_t)mc->buf_pos -
@@ -414,14 +415,14 @@ sendSymmetricChunk(UA_MessageContext *mc) {
     /* Send the chunk. The buffer is freed in the network layer. If sending goes
      * wrong, the connection is removed in the next iteration of the
      * SecureChannel. Set the SecureChannel to closing already. */
-    res = cm->sendWithConnection(cm, channel->connectionId,
-                                 &UA_KEYVALUEMAP_NULL, &mc->messageBuffer);
+    res = cm->sendWithConnection(channel->connection, UA_KEYVALUEMAP_NULL,
+                                 &mc->messageBuffer);
     if(res != UA_STATUSCODE_GOOD && UA_SecureChannel_isConnected(channel))
         channel->state = UA_SECURECHANNELSTATE_CLOSING;
 
  error:
     /* Free the unused message buffer */
-    cm->freeNetworkBuffer(cm, channel->connectionId, &mc->messageBuffer);
+    cm->freeNetworkBuffer(channel->connection, &mc->messageBuffer);
     return res;
 }
 
@@ -439,11 +440,11 @@ sendSymmetricEncodingCallback(void *data, UA_Byte **buf_pos,
     UA_CHECK_STATUS(res, return res);
 
     /* Set a new buffer for the next chunk */
-    UA_ConnectionManager *cm = mc->channel->connectionManager;
     if(!UA_SecureChannel_isConnected(mc->channel))
         return UA_STATUSCODE_BADCONNECTIONCLOSED;
+    UA_ConnectionManager *cm = mc->channel->connection->cm;
 
-    res = cm->allocNetworkBuffer(cm, mc->channel->connectionId,
+    res = cm->allocNetworkBuffer(mc->channel->connection,
                                  &mc->messageBuffer,
                                  mc->channel->config.sendBufferSize);
     UA_CHECK_STATUS(res, return res);
@@ -461,9 +462,9 @@ UA_MessageContext_begin(UA_MessageContext *mc, UA_SecureChannel *channel,
     UA_CHECK(messageType == UA_MESSAGETYPE_MSG || messageType == UA_MESSAGETYPE_CLO,
              return UA_STATUSCODE_BADINTERNALERROR);
 
-    UA_ConnectionManager *cm = channel->connectionManager;
     if(!UA_SecureChannel_isConnected(channel))
         return UA_STATUSCODE_BADCONNECTIONCLOSED;
+    UA_ConnectionManager *cm = channel->connection->cm;
 
     /* Create the chunking info structure */
     mc->channel = channel;
@@ -476,7 +477,7 @@ UA_MessageContext_begin(UA_MessageContext *mc, UA_SecureChannel *channel,
 
     /* Allocate the message buffer */
     UA_StatusCode res =
-        cm->allocNetworkBuffer(cm, channel->connectionId,
+        cm->allocNetworkBuffer(channel->connection,
                                &mc->messageBuffer,
                                channel->config.sendBufferSize);
     UA_CHECK_STATUS(res, return res);
@@ -505,10 +506,10 @@ UA_MessageContext_finish(UA_MessageContext *mc) {
 
 void
 UA_MessageContext_abort(UA_MessageContext *mc) {
-    UA_ConnectionManager *cm = mc->channel->connectionManager;
     if(!UA_SecureChannel_isConnected(mc->channel))
         return;
-    cm->freeNetworkBuffer(cm, mc->channel->connectionId, &mc->messageBuffer);
+    UA_ConnectionManager *cm = mc->channel->connection->cm;
+    cm->freeNetworkBuffer(mc->channel->connection, &mc->messageBuffer);
 }
 
 UA_StatusCode

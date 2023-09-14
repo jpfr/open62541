@@ -890,9 +890,8 @@ START_TEST(Client_subscription_connectionClose) {
     /* Manually close the connection. The connection is internally closed at the
      * next iteration of the EventLoop. Hence the next request is sent out. But
      * the connection "actually closes" before receiving the response. */
-    UA_ConnectionManager *cm = client->channel.connectionManager;
-    uintptr_t connId = client->channel.connectionId;
-    cm->closeConnection(cm, connId);
+    UA_ConnectionManager *cm = client->channel.connection->cm;
+    cm->closeConnection(client->channel.connection);
 
     notificationReceived = false;
 
@@ -1372,8 +1371,8 @@ START_TEST(Client_subscription_async_sub) {
     ck_assert_uint_eq(countNotificationReceived, 5);
 
     /* Simulate network cable unplugged (no response from server) */
-    UA_ConnectionManager *cm = client->channel.connectionManager;
-    cm->closeConnection(cm, client->channel.connectionId);
+    UA_ConnectionManager *cm = client->channel.connection->cm;
+    cm->closeConnection(client->channel.connection);
     UA_fakeSleep((UA_UInt32)publishingInterval * 100);
 
     ck_assert_uint_lt(client->config.outStandingPublishRequests, 10);

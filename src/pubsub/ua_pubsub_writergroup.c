@@ -1007,18 +1007,18 @@ encodeNetworkMessage(UA_WriterGroup *wg, UA_NetworkMessage *nm,
 
 static void
 sendNetworkMessageBuffer(UA_Server *server, UA_WriterGroup *wg, 
-                         UA_PubSubConnection *connection, uintptr_t connectionId,
+                         UA_PubSubConnection *psc,
+                         UA_Connection *connection,
                          UA_ByteString *buffer) {
     UA_StatusCode res = connection->cm->
-        sendWithConnection(connection->cm, connectionId,
-                           &UA_KEYVALUEMAP_NULL, buffer);
+        sendWithConnection(connection, UA_KEYVALUEMAP_NULL, buffer);
 
     /* Failure, set the WriterGroup into an error mode */
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR_WRITERGROUP(&server->config.logger, wg,
                                  "Sending NetworkMessage failed");
         UA_WriterGroup_setPubSubState(server, wg, UA_PUBSUBSTATE_ERROR, res);
-        UA_PubSubConnection_setPubSubState(server, connection, UA_PUBSUBSTATE_ERROR, res);
+        UA_PubSubConnection_setPubSubState(server, psc, UA_PUBSUBSTATE_ERROR, res);
         return;
     }
 
@@ -1028,7 +1028,7 @@ sendNetworkMessageBuffer(UA_Server *server, UA_WriterGroup *wg,
 
 #ifdef UA_ENABLE_JSON_ENCODING
 static UA_StatusCode
-sendNetworkMessageJson(UA_Server *server, UA_PubSubConnection *connection, UA_WriterGroup *wg,
+sendNetworkMessageJson(UA_Server *server, UA_PubSubConnection *psc, UA_WriterGroup *wg,
                        UA_DataSetMessage *dsm, UA_UInt16 *writerIds, UA_Byte dsmCount) {
     /* Prepare the NetworkMessage */
     UA_NetworkMessage nm;
@@ -1040,21 +1040,17 @@ sendNetworkMessageJson(UA_Server *server, UA_PubSubConnection *connection, UA_Wr
     nm.payloadHeader.dataSetPayloadHeader.dataSetWriterIds = writerIds;
     nm.payload.dataSetPayload.dataSetMessages = dsm;
     nm.publisherIdEnabled = true;
-    nm.publisherIdType = connection->config.publisherIdType;
-    nm.publisherId = connection->config.publisherId;
+    nm.publisherIdType = psc->config.publisherIdType;
+    nm.publisherId = psc->config.publisherId;
 
     /* Compute the message length */
     size_t msgSize = UA_NetworkMessage_calcSizeJson(&nm, NULL, 0, NULL, 0, true);
 
-    UA_ConnectionManager *cm = connection->cm;
-    if(!cm)
-        return UA_STATUSCODE_BADINTERNALERROR;
-
     /* Select the wg sendchannel if configured */
-    uintptr_t sendChannel = connection->sendChannel;
-    if(wg->sendChannel != 0)
+    UA_Connection *sendChannel = psc->sendChannel;
+    if(wg->sendChannel)
         sendChannel = wg->sendChannel;
-    if(sendChannel == 0) {
+    if(!sendChannel) {
         UA_LOG_ERROR_WRITERGROUP(&server->config.logger, wg,
                                  "Cannot send, no open connection");
         return UA_STATUSCODE_BADINTERNALERROR;
@@ -1062,7 +1058,7 @@ sendNetworkMessageJson(UA_Server *server, UA_PubSubConnection *connection, UA_Wr
 
     /* Allocate the buffer */
     UA_ByteString buf;
-    UA_StatusCode res = cm->allocNetworkBuffer(cm, sendChannel, &buf, msgSize);
+    UA_StatusCode res = sendChannel->cm->allocNetworkBuffer(sendChannel, &buf, msgSize);
     UA_CHECK_STATUS(res, return res);
 
     /* Encode the message */
@@ -1070,13 +1066,13 @@ sendNetworkMessageJson(UA_Server *server, UA_PubSubConnection *connection, UA_Wr
     const UA_Byte *bufEnd = &buf.data[msgSize];
     res = UA_NetworkMessage_encodeJson(&nm, &bufPos, &bufEnd, NULL, 0, NULL, 0, true);
     if(res != UA_STATUSCODE_GOOD) {
-        cm->freeNetworkBuffer(cm, sendChannel, &buf);
+        sendChannel->cm->freeNetworkBuffer(sendChannel, &buf);
         return res;
     }
     UA_assert(bufPos == bufEnd);
 
     /* Send the prepared messages */
-    sendNetworkMessageBuffer(server, wg, connection, sendChannel, &buf);
+    sendNetworkMessageBuffer(server, wg, psc, sendChannel, &buf);
     return UA_STATUSCODE_GOOD;
 }
 #endif
@@ -1182,14 +1178,14 @@ generateNetworkMessage(UA_PubSubConnection *connection, UA_WriterGroup *wg,
 }
 
 static UA_StatusCode
-sendNetworkMessageBinary(UA_Server *server, UA_PubSubConnection *connection, UA_WriterGroup *wg,
+sendNetworkMessageBinary(UA_Server *server, UA_PubSubConnection *psc, UA_WriterGroup *wg,
                          UA_DataSetMessage *dsm, UA_UInt16 *writerIds, UA_Byte dsmCount) {
     UA_NetworkMessage nm;
     memset(&nm, 0, sizeof(UA_NetworkMessage));
 
     /* Fill the message structure */
     UA_StatusCode rv =
-        generateNetworkMessage(connection, wg, dsm, writerIds, dsmCount,
+        generateNetworkMessage(psc, wg, dsm, writerIds, dsmCount,
                                &wg->config.messageSettings,
                                &wg->config.transportSettings, &nm);
     UA_CHECK_STATUS(rv, return rv);
@@ -1205,15 +1201,11 @@ sendNetworkMessageBinary(UA_Server *server, UA_PubSubConnection *connection, UA_
     }
 #endif
 
-    UA_ConnectionManager *cm = connection->cm;
-    if(!cm)
-        return UA_STATUSCODE_BADINTERNALERROR;
-
     /* Select the wg sendchannel if configured */
-    uintptr_t sendChannel = connection->sendChannel;
-    if(wg->sendChannel != 0)
+    UA_Connection *sendChannel = psc->sendChannel;
+    if(wg->sendChannel)
         sendChannel = wg->sendChannel;
-    if(sendChannel == 0) {
+    if(!sendChannel) {
         UA_LOG_ERROR_WRITERGROUP(&server->config.logger, wg,
                                  "Cannot send, no open connection");
         return UA_STATUSCODE_BADINTERNALERROR;
@@ -1221,26 +1213,26 @@ sendNetworkMessageBinary(UA_Server *server, UA_PubSubConnection *connection, UA_
 
     /* Allocate the buffer. Allocate on the stack if the buffer is small. */
     UA_ByteString buf = UA_BYTESTRING_NULL;
-    rv = cm->allocNetworkBuffer(cm, sendChannel, &buf, msgSize);
+    rv = sendChannel->cm->allocNetworkBuffer(sendChannel, &buf, msgSize);
     UA_CHECK_STATUS(rv, return rv);
 
     /* Encode and encrypt the message */
     rv = encodeNetworkMessage(wg, &nm, &buf);
     if(rv != UA_STATUSCODE_GOOD) {
-        cm->freeNetworkBuffer(cm, sendChannel, &buf);
+        sendChannel->cm->freeNetworkBuffer(sendChannel, &buf);
         UA_free(nm.payload.dataSetPayload.sizes);
         return rv;
     }
 
     /* Send out the message */
-    sendNetworkMessageBuffer(server, wg, connection, sendChannel, &buf);
+    sendNetworkMessageBuffer(server, wg, psc, sendChannel, &buf);
 
     UA_free(nm.payload.dataSetPayload.sizes);
     return UA_STATUSCODE_GOOD;
 }
 
 static void
-publishRT(UA_Server *server, UA_WriterGroup *writerGroup, UA_PubSubConnection *connection) {
+publishRT(UA_Server *server, UA_WriterGroup *writerGroup, UA_PubSubConnection *psc) {
     UA_LOCK_ASSERT(&server->serviceMutex, 1);
 
     UA_StatusCode res =
@@ -1281,15 +1273,11 @@ publishRT(UA_Server *server, UA_WriterGroup *writerGroup, UA_PubSubConnection *c
     }
 #endif
 
-    UA_ConnectionManager *cm = connection->cm;
-    if(!cm)
-        return;
-
     /* Select the wg sendchannel if configured */
-    uintptr_t sendChannel = connection->sendChannel;
-    if(writerGroup->sendChannel != 0)
+    UA_Connection *sendChannel = psc->sendChannel;
+    if(writerGroup->sendChannel)
         sendChannel = writerGroup->sendChannel;
-    if(sendChannel == 0) {
+    if(!sendChannel) {
         UA_LOG_ERROR_WRITERGROUP(&server->config.logger, writerGroup,
                                  "Cannot send, no open connection");
         return;
@@ -1297,27 +1285,27 @@ publishRT(UA_Server *server, UA_WriterGroup *writerGroup, UA_PubSubConnection *c
 
     /* Copy into the network buffer */
     UA_ByteString outBuf;
-    res = cm->allocNetworkBuffer(cm, sendChannel, &outBuf, buf->length);
+    res = sendChannel->cm->allocNetworkBuffer(sendChannel, &outBuf, buf->length);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR_WRITERGROUP(&server->config.logger, writerGroup,
                                  "PubSub message memory allocation failed");
         return;
     }
     memcpy(outBuf.data, buf->data, buf->length);
-    sendNetworkMessageBuffer(server, writerGroup, connection, sendChannel, &outBuf);
+    sendNetworkMessageBuffer(server, writerGroup, psc, sendChannel, &outBuf);
 }
 
 static void
-sendNetworkMessage(UA_Server *server, UA_WriterGroup *wg, UA_PubSubConnection *connection,
+sendNetworkMessage(UA_Server *server, UA_WriterGroup *wg, UA_PubSubConnection *psc,
                    UA_DataSetMessage *dsm, UA_UInt16 *writerIds, UA_Byte dsmCount) {
     UA_StatusCode res = UA_STATUSCODE_GOOD;
     switch(wg->config.encodingMimeType) {
     case UA_PUBSUB_ENCODING_UADP:
-        res = sendNetworkMessageBinary(server, connection, wg, dsm, writerIds, dsmCount);
+        res = sendNetworkMessageBinary(server, psc, wg, dsm, writerIds, dsmCount);
         break;
 #ifdef UA_ENABLE_JSON_ENCODING
     case UA_PUBSUB_ENCODING_JSON:
-        res = sendNetworkMessageJson(server, connection, wg, dsm, writerIds, dsmCount);
+        res = sendNetworkMessageJson(server, psc, wg, dsm, writerIds, dsmCount);
         break;
 #endif
     default:

@@ -14,7 +14,7 @@
 
 static UA_EventLoop *el;
 static char *testMsg = "open62541";
-static uintptr_t clientId;
+static UA_Connection *clientConnection;
 static UA_Boolean received;
 
 #define ETHERNET_INTERFACE "lo" /* use the loopback interface for testing */
@@ -25,38 +25,36 @@ typedef struct TestContext {
 } TestContext;
 
 static void
-connectionCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                   void *application, void **connectionContext,
-                   UA_ConnectionState status, const UA_KeyValueMap *params,
-                   UA_ByteString msg) {
-    TestContext *ctx = (TestContext*) *connectionContext;
-    if(status == UA_CONNECTIONSTATE_CLOSING) {
+connectionCallback(UA_Connection *connection, UA_ConnectionState state,
+                   const UA_KeyValueMap params, UA_ByteString msg) {
+    TestContext *ctx = (TestContext*)connection->context;
+    if(state == UA_CONNECTIONSTATE_CLOSING) {
         UA_LOG_DEBUG(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                     "Closing connection %u", (unsigned)connectionId);
+                     "Closing connection %u", connection->identifier);
     } else {
         if(msg.length == 0) {
             UA_LOG_DEBUG(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                         "Opening connection %u", (unsigned)connectionId);
+                         "Opening connection %u", connection->identifier);
         } else {
             UA_LOG_DEBUG(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
                          "Received a message of length %u", (unsigned)msg.length);
         }
     }
 
-    if(msg.length == 0 && status == UA_CONNECTIONSTATE_ESTABLISHED) {
+    if(msg.length == 0 && state == UA_CONNECTIONSTATE_ESTABLISHED) {
         ctx->connCount++;
-        clientId = connectionId;
+        clientConnection = connection;
 
         /* The remote-hostname is set during the first callback */
-        if(params->mapSize> 0) {
+        if(params.mapSize> 0) {
             const void *hn =
-                UA_KeyValueMap_getScalar(params, UA_QUALIFIEDNAME(0, "remote-hostname"),
+                UA_KeyValueMap_getScalar(&params, UA_QUALIFIEDNAME(0, "remote-hostname"),
                                          &UA_TYPES[UA_TYPES_STRING]);
             ck_assert(hn != NULL);
         }
     }
 
-    if(status == UA_CONNECTIONSTATE_CLOSING)
+    if(state == UA_CONNECTIONSTATE_CLOSING)
         ctx->connCount--;
 
     if(msg.length > 0) {
@@ -87,7 +85,7 @@ START_TEST(listenETH) {
     UA_Variant_setScalar(&params[2].value, &listen, &UA_TYPES[UA_TYPES_BOOLEAN]);
 
     UA_KeyValueMap kvm = {3, params};
-    UA_StatusCode res = cm->openConnection(cm, &kvm, NULL, &testContext, connectionCallback);
+    UA_StatusCode res = cm->openConnection(cm, kvm, NULL, &testContext, connectionCallback);
     ck_assert_uint_eq(res, UA_STATUSCODE_GOOD);
 
     ck_assert(testContext.connCount == 1);
@@ -140,30 +138,30 @@ START_TEST(connectETH) {
     /* Don't use the address parameter for listening */
     UA_KeyValueMap kvm = {3, &params[1]};
     UA_StatusCode retval =
-        cm->openConnection(cm, &kvm, NULL, &testContext, connectionCallback);
+        cm->openConnection(cm, kvm, NULL, &testContext, connectionCallback);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     size_t listenSockets = testContext.connCount;
 
     /* Open a client connection. Don't use the listen parameter.*/
     kvm.map = params;
-    clientId = 0;
-    retval = cm->openConnection(cm, &kvm, NULL, &testContext, connectionCallback);
+    clientConnection = NULL;
+    retval = cm->openConnection(cm, kvm, NULL, &testContext, connectionCallback);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     for(size_t i = 0; i < 2; i++) {
         UA_DateTime next = el->run(el, 1);
         UA_fakeSleep((UA_UInt32)((next - UA_DateTime_now()) / UA_DATETIME_MSEC));
     }
-    ck_assert(clientId != 0);
+    ck_assert(clientConnection != NULL);
     ck_assert_uint_eq(testContext.connCount, listenSockets + 1);
 
     /* Send a message from the client */
     received = false;
     UA_ByteString snd;
-    retval = cm->allocNetworkBuffer(cm, clientId, &snd, strlen(testMsg));
+    retval = cm->allocNetworkBuffer(clientConnection, &snd, strlen(testMsg));
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     memcpy(snd.data, testMsg, strlen(testMsg));
-    retval = cm->sendWithConnection(cm, clientId, NULL, &snd);
+    retval = cm->sendWithConnection(clientConnection, UA_KEYVALUEMAP_NULL, &snd);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
 
     while(!received) {
@@ -173,7 +171,7 @@ START_TEST(connectETH) {
     ck_assert(received);
 
     /* Close the connection */
-    retval = cm->closeConnection(cm, clientId);
+    retval = cm->closeConnection(clientConnection);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     ck_assert_uint_eq(testContext.connCount, listenSockets + 1);
     for(size_t i = 0; i < 2; i++) {

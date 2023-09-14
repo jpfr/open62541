@@ -65,6 +65,8 @@ typedef struct UA_RegisteredFD UA_RegisteredFD;
 typedef void (*UA_FDCallback)(UA_EventSource *es, UA_RegisteredFD *rfd, short event);
 
 struct UA_RegisteredFD {
+    UA_Connection c;
+    // XXX change the delayed mechanism as this is no longer first
     UA_DelayedCallback dc; /* Used for async closing. Must be the first member
                             * because the rfd is freed by the delayed callback
                             * mechanism. */
@@ -72,8 +74,6 @@ struct UA_RegisteredFD {
     ZIP_ENTRY(UA_RegisteredFD) zipPointers; /* Register FD in the EventSource */
     UA_FD fd;
     short listenEvents; /* UA_FDEVENT_IN | UA_FDEVENT_OUT*/
-
-    UA_EventSource *es; /* Backpointer to the EventSource */
     UA_FDCallback eventSourceCB;
 };
 
@@ -146,14 +146,12 @@ UA_StatusCode
 UA_EventLoopPOSIX_allocateRXBuffer(UA_POSIXConnectionManager *pcm);
 
 UA_StatusCode
-UA_EventLoopPOSIX_allocNetworkBuffer(UA_ConnectionManager *cm,
-                                     uintptr_t connectionId,
+UA_EventLoopPOSIX_allocNetworkBuffer(UA_Connection *c,
                                      UA_ByteString *buf,
                                      size_t bufSize);
 
 void
-UA_EventLoopPOSIX_freeNetworkBuffer(UA_ConnectionManager *cm,
-                                    uintptr_t connectionId,
+UA_EventLoopPOSIX_freeNetworkBuffer(UA_Connection *c,
                                     UA_ByteString *buf);
 
 /*

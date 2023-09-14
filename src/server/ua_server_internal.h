@@ -209,11 +209,8 @@ ZIP_FUNCTIONS(UA_ReferenceNameTree, UA_ReferenceTargetTreeElem, nameTreeEntry,
 /**************************/
 
 void
-serverNetworkCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                      void *application, void **connectionContext,
-                      UA_ConnectionState state,
-                      const UA_KeyValueMap *params,
-                      UA_ByteString msg);
+serverNetworkCallback(UA_Connection *connection, UA_ConnectionState state,
+                      const UA_KeyValueMap params, UA_ByteString msg);
 
 UA_StatusCode
 sendServiceFault(UA_SecureChannel *channel, UA_UInt32 requestId,

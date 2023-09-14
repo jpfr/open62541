@@ -106,8 +106,7 @@ struct UA_SecureChannel {
     UA_ConnectionConfig config;
 
     /* Connection handling in the EventLoop */
-    UA_ConnectionManager *connectionManager;
-    uintptr_t connectionId;
+    UA_Connection *connection;
 
     /* Rules for revolving the token with a renew OPN request: The client is
      * allowed to accept messages with the old token until the OPN response has
@@ -183,7 +182,7 @@ UA_SecureChannel_setSecurityPolicy(UA_SecureChannel *channel,
                                    const UA_ByteString *remoteCertificate);
 
 UA_Boolean
-UA_SecureChannel_isConnected(UA_SecureChannel *channel);
+UA_SecureChannel_isConnected(const UA_SecureChannel *channel);
 
 /* When a fatal error occurs the Server shall send an Error Message to the
  * Client and close the socket. When a Client encounters one of these errors, it
@@ -348,8 +347,9 @@ signAndEncryptSym(UA_MessageContext *messageContext,
 #define UA_LOG_CHANNEL_INTERNAL(LOGGER, LEVEL, CHANNEL, MSG, ...)       \
     if(UA_LOGLEVEL <= UA_LOGLEVEL_##LEVEL) {                            \
         UA_LOG_##LEVEL(LOGGER, UA_LOGCATEGORY_SECURECHANNEL,            \
-                       "TCP %lu\t| SC %" PRIu32 "\t| " MSG "%.0s", \
-                       (long unsigned)(CHANNEL)->connectionId,          \
+                       "TCP %lu\t| SC %" PRIu32 "\t| " MSG "%.0s",      \
+                       UA_SecureChannel_isConnected((CHANNEL)) ?        \
+                         (long unsigned)(CHANNEL)->connection->identifier : 0, \
                        (CHANNEL)->securityToken.channelId, __VA_ARGS__); \
     }
 

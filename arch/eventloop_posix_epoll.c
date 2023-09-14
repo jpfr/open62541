@@ -108,7 +108,7 @@ UA_EventLoopPOSIX_pollFDs(UA_EventLoopPOSIX *el, UA_DateTime listenTimeout) {
         } else {
             revent = UA_FDEVENT_ERR;
         }
-        rfd->eventSourceCB(rfd->es, rfd, revent);
+        rfd->eventSourceCB(&rfd->c.cm->eventSource, rfd, revent);
     }
     return UA_STATUSCODE_GOOD;
 }

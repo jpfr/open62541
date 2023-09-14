@@ -22,6 +22,9 @@ typedef struct UA_EventLoop UA_EventLoop;
 struct UA_EventSource;
 typedef struct UA_EventSource UA_EventSource;
 
+struct UA_Connection;
+typedef struct UA_Connection UA_Connection;
+
 struct UA_ConnectionManager;
 typedef struct UA_ConnectionManager UA_ConnectionManager;
 
@@ -255,7 +258,11 @@ struct UA_EventSource {
  * it can keep a session to an MQTT broker open which is used by individual
  * connections that are each bound to an MQTT topic. */
 
-/* The ConnectionCallback is the only interface from the connection back to
+/**
+ * Connection Callback
+ * ~~~~~~~~~~~~~~~~~~~
+ *
+ * The ConnectionCallback is the only interface from the connection back to
  * the application.
  *
  * - The connectionId is initially unknown to the target application and
@@ -276,11 +283,35 @@ struct UA_EventSource {
  *
  * - The msg ByteString is the message (or packet) received on the
  *   connection. Can be empty. */
+
 typedef void
 (*UA_ConnectionManager_connectionCallback)
-     (UA_ConnectionManager *cm, uintptr_t connectionId,
-      void *application, void **connectionContext, UA_ConnectionState state,
-      const UA_KeyValueMap *params, UA_ByteString msg);
+    (UA_Connection *connection, UA_ConnectionState state,
+     const UA_KeyValueMap params, UA_ByteString msg);
+
+/**
+ * Connection
+ * ~~~~~~~~~~
+ *
+ * A connection is created by the ConnectionManager based on the given
+ * parameters. A new connection is announced to the application via the supplied
+ * callback method-pointer. The user is free to modify application, context and
+ * callback. When the callback is called with a CLOSING connection state, then
+ * the connection pointer must not be accessed afterwads.
+ */
+
+struct UA_Connection {
+    UA_UInt32 identifier;
+    UA_ConnectionManager *cm;
+    void *application;
+    void *context;
+    UA_ConnectionManager_connectionCallback callback;
+};
+
+/**
+ * Connection Manager
+ * ~~~~~~~~~~~~~~~~~~
+ */
 
 struct UA_ConnectionManager {
     /* Every ConnectionManager is treated like an EventSource from the
@@ -327,9 +358,9 @@ struct UA_ConnectionManager {
      * hostname. Each protocol implementation documents whether multiple
      * connections might be opened at once. */
     UA_StatusCode
-    (*openConnection)(UA_ConnectionManager *cm, const UA_KeyValueMap *params,
+    (*openConnection)(UA_ConnectionManager *cm, const UA_KeyValueMap params,
                       void *application, void *context,
-                      UA_ConnectionManager_connectionCallback connectionCallback);
+                      UA_ConnectionManager_connectionCallback callback);
 
     /* Send a message over a Connection
      * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -341,8 +372,8 @@ struct UA_ConnectionManager {
      * Some ConnectionManagers can accept additional parameters for sending. For
      * example a tx-time for sending in time-synchronized TSN settings. */
     UA_StatusCode
-    (*sendWithConnection)(UA_ConnectionManager *cm, uintptr_t connectionId,
-                          const UA_KeyValueMap *params, UA_ByteString *buf);
+    (*sendWithConnection)(UA_Connection *connection, const UA_KeyValueMap params,
+                          UA_ByteString *buf);
 
     /* Close a Connection
      * ~~~~~~~~~~~~~~~~~~
@@ -352,7 +383,7 @@ struct UA_ConnectionManager {
      * that are actively closed and those that are closed remotely. The return
      * code is non-good only if the connection is already closed. */
     UA_StatusCode
-    (*closeConnection)(UA_ConnectionManager *cm, uintptr_t connectionId);
+    (*closeConnection)(UA_Connection *connection);
 
     /* Buffer Management
      * ~~~~~~~~~~~~~~~~~
@@ -361,11 +392,10 @@ struct UA_ConnectionManager {
      * connectionId is part of the API to enable cases where memory is
      * statically allocated for every connection */
     UA_StatusCode
-    (*allocNetworkBuffer)(UA_ConnectionManager *cm, uintptr_t connectionId,
-                          UA_ByteString *buf, size_t bufSize);
+    (*allocNetworkBuffer)(UA_Connection *connection, UA_ByteString *buf,
+                          size_t bufSize);
     void
-    (*freeNetworkBuffer)(UA_ConnectionManager *cm, uintptr_t connectionId,
-                         UA_ByteString *buf);
+    (*freeNetworkBuffer)(UA_Connection *connection, UA_ByteString *buf);
 };
 
 /**

@@ -7,16 +7,14 @@
 UA_ByteString *testConnectionLastSentBuf;
 
 static UA_StatusCode
-testOpenConnection(UA_ConnectionManager *cm,
-                    const UA_KeyValueMap *params,
+testOpenConnection(UA_ConnectionManager *cm, const UA_KeyValueMap params,
                     void *application, void *context,
                     UA_ConnectionManager_connectionCallback connectionCallback) {
     return UA_STATUSCODE_BADNOTCONNECTED;
 }
 
 static UA_StatusCode
-testSendWithConnection(UA_ConnectionManager *cm, uintptr_t connectionId,
-                       const UA_KeyValueMap *params,
+testSendWithConnection(UA_Connection *c, const UA_KeyValueMap params,
                        UA_ByteString *buf) {
     if(testConnectionLastSentBuf) {
         UA_ByteString_clear(testConnectionLastSentBuf);
@@ -29,19 +27,18 @@ testSendWithConnection(UA_ConnectionManager *cm, uintptr_t connectionId,
 }
 
 static UA_StatusCode
-testCloseConnection(UA_ConnectionManager *cm, uintptr_t connectionId) {
+testCloseConnection(UA_Connection *c) {
     return UA_STATUSCODE_GOOD;
 }
 
 static UA_StatusCode
-testAllocNetworkBuffer(UA_ConnectionManager *cm, uintptr_t connectionId,
-                        UA_ByteString *buf, size_t bufSize) {
+testAllocNetworkBuffer(UA_Connection *c, UA_ByteString *buf,
+                       size_t bufSize) {
     return UA_ByteString_allocBuffer(buf, bufSize);
 }
 
 static void
-testFreeNetworkBuffer(UA_ConnectionManager *cm, uintptr_t connectionId,
-                      UA_ByteString *buf) {
+testFreeNetworkBuffer(UA_Connection *c, UA_ByteString *buf) {
     UA_ByteString_clear(buf);
 }
 

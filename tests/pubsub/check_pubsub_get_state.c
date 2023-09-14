@@ -492,7 +492,7 @@ START_TEST(Test_error_case) {
     UA_PubSubConnection *tmpConnection;
     TAILQ_FOREACH(tmpConnection, &server->pubSubManager.connections, listEntry) {
        if(UA_NodeId_equal(&tmpConnection->identifier, &ConnId_1)) {
-           close((int)tmpConnection->sendChannel);
+           close((int)tmpConnection->sendChannel->identifier);
        }
     }
 

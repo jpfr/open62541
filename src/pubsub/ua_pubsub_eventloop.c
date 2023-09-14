@@ -15,19 +15,29 @@
 /********************/
 
 static UA_StatusCode
-UA_PubSubConnection_connectUDP(UA_Server *server, UA_PubSubConnection *c);
+UA_PubSubConnection_connectUDP(UA_Server *server,
+                               UA_ConnectionManager *cm,
+                               UA_PubSubConnection *c);
 
 static UA_StatusCode
-UA_PubSubConnection_connectETH(UA_Server *server, UA_PubSubConnection *c);
+UA_PubSubConnection_connectETH(UA_Server *server,
+                               UA_ConnectionManager *cm,
+                               UA_PubSubConnection *c);
 
 static UA_StatusCode
-UA_ReaderGroup_connectMQTT(UA_Server *server, UA_ReaderGroup *rg);
+UA_ReaderGroup_connectMQTT(UA_Server *server,
+                           UA_ConnectionManager *cm,
+                           UA_ReaderGroup *rg);
 
 static UA_StatusCode
-UA_WriterGroup_connectMQTT(UA_Server *server, UA_WriterGroup *wg);
+UA_WriterGroup_connectMQTT(UA_Server *server,
+                           UA_ConnectionManager *cm,
+                           UA_WriterGroup *wg);
 
 static UA_StatusCode
-UA_WriterGroup_connectUDPUnicast(UA_Server *server, UA_WriterGroup *wg);
+UA_WriterGroup_connectUDPUnicast(UA_Server *server,
+                                 UA_ConnectionManager *cm,
+                                 UA_WriterGroup *wg);
 
 #define UA_PUBSUB_PROFILES_SIZE 4
 
@@ -35,9 +45,15 @@ typedef struct  {
     UA_String profileURI;
     UA_String protocol;
     UA_Boolean json;
-    UA_StatusCode (*connect)(UA_Server *server, UA_PubSubConnection *c);
-    UA_StatusCode (*connectWriterGroup)(UA_Server *server, UA_WriterGroup *wg);
-    UA_StatusCode (*connectReaderGroup)(UA_Server *server, UA_ReaderGroup *rg);
+    UA_StatusCode (*connect)(UA_Server *server,
+                             UA_ConnectionManager *cm,
+                             UA_PubSubConnection *c);
+    UA_StatusCode (*connectWriterGroup)(UA_Server *server,
+                                        UA_ConnectionManager *cm,
+                                        UA_WriterGroup *wg);
+    UA_StatusCode (*connectReaderGroup)(UA_Server *server,
+                                        UA_ConnectionManager *cm,
+                                        UA_ReaderGroup *rg);
 } ProfileMapping;
 
 static ProfileMapping transportProfiles[UA_PUBSUB_PROFILES_SIZE] = {
@@ -77,15 +93,15 @@ getCM(UA_EventLoop *el, UA_String protocol) {
 
 static void
 UA_PubSubConnection_removeConnection(UA_PubSubConnection *c,
-                                     uintptr_t connectionId) {
-    if(c->sendChannel == connectionId) {
-        c->sendChannel = 0;
+                                     UA_Connection *connection) {
+    if(c->sendChannel == connection) {
+        c->sendChannel = NULL;
         return;
     }
     for(size_t i = 0; i < UA_PUBSUB_MAXCHANNELS; i++) {
-        if(c->recvChannels[i] != connectionId)
+        if(c->recvChannels[i] != connection)
             continue;
-        c->recvChannels[i] = 0;
+        c->recvChannels[i] = NULL;
         c->recvChannelsSize--;
         return;
     }
@@ -93,26 +109,26 @@ UA_PubSubConnection_removeConnection(UA_PubSubConnection *c,
 
 static UA_StatusCode
 UA_PubSubConnection_addSendConnection(UA_PubSubConnection *c,
-                                      uintptr_t connectionId) {
-    if(c->sendChannel != 0 && c->sendChannel != connectionId)
+                                      UA_Connection *connection) {
+    if(c->sendChannel && c->sendChannel != connection)
         return UA_STATUSCODE_BADINTERNALERROR;
-    c->sendChannel = connectionId;
+    c->sendChannel = connection;
     return UA_STATUSCODE_GOOD;
 }
 
 static UA_StatusCode
 UA_PubSubConnection_addRecvConnection(UA_PubSubConnection *c,
-                                      uintptr_t connectionId) {
+                                      UA_Connection *connection) {
     for(size_t i = 0; i < UA_PUBSUB_MAXCHANNELS; i++) {
-        if(c->recvChannels[i] == connectionId)
+        if(c->recvChannels[i] == connection)
             return UA_STATUSCODE_GOOD;
     }
     if(c->recvChannelsSize >= UA_PUBSUB_MAXCHANNELS)
         return UA_STATUSCODE_BADINTERNALERROR;
     for(size_t i = 0; i < UA_PUBSUB_MAXCHANNELS; i++) {
-        if(c->recvChannels[i] != 0)
+        if(c->recvChannels[i])
             continue;
-        c->recvChannels[i] = connectionId;
+        c->recvChannels[i] = connection;
         c->recvChannelsSize++;
         break;
     }
@@ -121,27 +137,22 @@ UA_PubSubConnection_addRecvConnection(UA_PubSubConnection *c,
 
 void
 UA_PubSubConnection_disconnect(UA_PubSubConnection *c) {   
-    if(!c->cm)
-        return;
-    if(c->sendChannel != 0)
-        c->cm->closeConnection(c->cm, c->sendChannel);
+    if(c->sendChannel)
+        c->sendChannel->cm->closeConnection(c->sendChannel);
     for(size_t i = 0; i < UA_PUBSUB_MAXCHANNELS; i++) {
-        if(c->recvChannels[i] != 0)
-            c->cm->closeConnection(c->cm, c->recvChannels[i]);
+        if(c->recvChannels[i])
+            c->recvChannels[i]->cm->closeConnection(c->recvChannels[i]);
     }
 }
 
 static void
-PubSubChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                     void *application, void **connectionContext,
-                     UA_ConnectionState state, const UA_KeyValueMap *params,
-                     UA_ByteString msg, UA_Boolean recv) {
-    if(!connectionContext)
-        return;
-
+PubSubChannelCallback(UA_Connection *connection, UA_ConnectionState state,
+                      const UA_KeyValueMap params, UA_ByteString msg, UA_Boolean recv) {
     /* Get the context pointers */
-    UA_Server *server = (UA_Server*)application;
-    UA_PubSubConnection *psc = (UA_PubSubConnection*)*connectionContext;
+    if(!connection->context)
+        return;
+    UA_Server *server = (UA_Server*)connection->application;
+    UA_PubSubConnection *psc = (UA_PubSubConnection*)connection->context;
 
     UA_LOCK(&server->serviceMutex);
 
@@ -149,7 +160,7 @@ PubSubChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
      * from that connection. Clean up the SecureChannel in the client. */
     if(state == UA_CONNECTIONSTATE_CLOSING) {
         /* Reset the connection identifiers */
-        UA_PubSubConnection_removeConnection(psc, connectionId);
+        UA_PubSubConnection_removeConnection(psc, connection);
 
         /* PSC marked for deletion and the last EventLoop connection has closed */
         if(psc->deleteFlag && psc->recvChannelsSize == 0 && psc->sendChannel == 0) {
@@ -171,13 +182,12 @@ PubSubChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
 
     /* Store the connectionId (if a new connection) */
     UA_StatusCode res = (recv) ?
-        UA_PubSubConnection_addRecvConnection(psc, connectionId) :
-        UA_PubSubConnection_addSendConnection(psc, connectionId);
+        UA_PubSubConnection_addRecvConnection(psc, connection) :
+        UA_PubSubConnection_addSendConnection(psc, connection);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_WARNING_CONNECTION(&server->config.logger, psc,
                                   "No more space for an additional EventLoop connection");
-        if(psc->cm)
-            psc->cm->closeConnection(psc->cm, connectionId);
+        connection->cm->closeConnection(connection);
         UA_UNLOCK(&server->serviceMutex);
         return;
     }
@@ -256,25 +266,20 @@ PubSubChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
 }
 
 static void
-PubSubRecvChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                         void *application, void **connectionContext,
-                         UA_ConnectionState state, const UA_KeyValueMap *params,
-                         UA_ByteString msg) {
-    PubSubChannelCallback(cm, connectionId, application, connectionContext,
-                         state, params, msg, true);
+PubSubRecvChannelCallback(UA_Connection *connection, UA_ConnectionState state,
+                          const UA_KeyValueMap params, UA_ByteString msg) {
+    PubSubChannelCallback(connection, state, params, msg, true);
 }
 
 static void
-PubSubSendChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                         void *application, void **connectionContext,
-                         UA_ConnectionState state, const UA_KeyValueMap *params,
-                         UA_ByteString msg) {
-    PubSubChannelCallback(cm, connectionId, application, connectionContext,
-                         state, params, msg, false);
+PubSubSendChannelCallback(UA_Connection *connection, UA_ConnectionState state,
+                          const UA_KeyValueMap params, UA_ByteString msg) {
+    PubSubChannelCallback(connection, state, params, msg, false);
 }
 
 static UA_StatusCode
-UA_PubSubConnection_connectUDP(UA_Server *server, UA_PubSubConnection *c) {
+UA_PubSubConnection_connectUDP(UA_Server *server, UA_ConnectionManager *cm,
+                               UA_PubSubConnection *c) {
     UA_LOCK_ASSERT(&server->serviceMutex, 1);
 
     UA_NetworkAddressUrlDataType *addressUrl = (UA_NetworkAddressUrlDataType*)
@@ -328,7 +333,7 @@ UA_PubSubConnection_connectUDP(UA_Server *server, UA_PubSubConnection *c) {
         }
 
         UA_UNLOCK(&server->serviceMutex);
-        res = c->cm->openConnection(c->cm, &kvm, server, c, PubSubRecvChannelCallback);
+        res = cm->openConnection(cm, kvm, server, c, PubSubRecvChannelCallback);
         UA_LOCK(&server->serviceMutex);
         if(res != UA_STATUSCODE_GOOD) {
             UA_LOG_ERROR_CONNECTION(&server->config.logger, c,
@@ -368,7 +373,7 @@ UA_PubSubConnection_connectUDP(UA_Server *server, UA_PubSubConnection *c) {
         /* Open a send-channel */
         listen = false;
         UA_UNLOCK(&server->serviceMutex);
-        res = c->cm->openConnection(c->cm, &kvm, server, c, PubSubSendChannelCallback);
+        res = cm->openConnection(cm, kvm, server, c, PubSubSendChannelCallback);
         UA_LOCK(&server->serviceMutex);
         if(res != UA_STATUSCODE_GOOD) {
             UA_LOG_ERROR_CONNECTION(&server->config.logger, c,
@@ -380,7 +385,8 @@ UA_PubSubConnection_connectUDP(UA_Server *server, UA_PubSubConnection *c) {
 }
 
 static UA_StatusCode
-UA_PubSubConnection_connectETH(UA_Server *server, UA_PubSubConnection *c) {
+UA_PubSubConnection_connectETH(UA_Server *server, UA_ConnectionManager *cm,
+                               UA_PubSubConnection *c) {
     UA_LOCK_ASSERT(&server->serviceMutex, 1);
 
     UA_NetworkAddressUrlDataType *addressUrl = (UA_NetworkAddressUrlDataType*)
@@ -424,7 +430,7 @@ UA_PubSubConnection_connectETH(UA_Server *server, UA_PubSubConnection *c) {
         }
 
         UA_UNLOCK(&server->serviceMutex);
-        res = c->cm->openConnection(c->cm, &kvm, server, c, PubSubRecvChannelCallback);
+        res = cm->openConnection(cm, kvm, server, c, PubSubRecvChannelCallback);
         UA_LOCK(&server->serviceMutex);
         if(res != UA_STATUSCODE_GOOD) {
             UA_LOG_ERROR_CONNECTION(&server->config.logger, c,
@@ -446,7 +452,7 @@ UA_PubSubConnection_connectETH(UA_Server *server, UA_PubSubConnection *c) {
 
         listen = false;
         UA_UNLOCK(&server->serviceMutex);
-        res = c->cm->openConnection(c->cm, &kvm, server, c, PubSubSendChannelCallback);
+        res = cm->openConnection(cm, kvm, server, c, PubSubSendChannelCallback);
         UA_LOCK(&server->serviceMutex);
         if(res != UA_STATUSCODE_GOOD) {
             UA_LOG_ERROR_CONNECTION(&server->config.logger, c,
@@ -474,7 +480,7 @@ UA_PubSubConnection_connect(UA_Server *server, UA_PubSubConnection *c) {
     UA_ConnectionManager *cm = NULL;
     if(profile)
         cm = getCM(el, profile->protocol);
-    if(!cm || (c->cm && cm != c->cm)) {
+    if(!cm) {
         UA_LOG_ERROR_CONNECTION(&server->config.logger, c,
                                 "The requested protocol is not supported");
         UA_PubSubConnection_setPubSubState(server, c, UA_PUBSUBSTATE_ERROR,
@@ -482,7 +488,6 @@ UA_PubSubConnection_connect(UA_Server *server, UA_PubSubConnection *c) {
         return UA_STATUSCODE_BADINTERNALERROR;
     }
 
-    c->cm = cm;
     c->json = profile->json;
 
     /* Check the configuration address type */
@@ -496,7 +501,7 @@ UA_PubSubConnection_connect(UA_Server *server, UA_PubSubConnection *c) {
     /* Connect */
     UA_StatusCode res = UA_STATUSCODE_GOOD;
     if(profile->connect)
-        res = profile->connect(server, c);
+        res = profile->connect(server, cm, c);
     if(res != UA_STATUSCODE_GOOD)
         UA_PubSubConnection_setPubSubState(server, c, UA_PUBSUBSTATE_ERROR, res);
     return res;
@@ -507,25 +512,22 @@ UA_PubSubConnection_connect(UA_Server *server, UA_PubSubConnection *c) {
 /***************/
 
 static void
-WriterGroupChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                          void *application, void **connectionContext,
-                          UA_ConnectionState state, const UA_KeyValueMap *params,
-                          UA_ByteString msg) {
-    if(!connectionContext)
-        return;
-
+WriterGroupChannelCallback(UA_Connection *connection, UA_ConnectionState state,
+                           const UA_KeyValueMap params, UA_ByteString msg) {
     /* Get the context pointers */
-    UA_Server *server = (UA_Server*)application;
-    UA_WriterGroup *wg = (UA_WriterGroup*)*connectionContext;
+    if(!connection->context)
+        return;
+    UA_Server *server = (UA_Server*)connection->application;
+    UA_WriterGroup *wg = (UA_WriterGroup*)connection->context;
 
     UA_LOCK(&server->serviceMutex);
 
     /* The connection is closing in the EventLoop. This is the last callback
      * from that connection. Clean up the SecureChannel in the client. */
     if(state == UA_CONNECTIONSTATE_CLOSING) {
-        if(wg->sendChannel == connectionId) {
+        if(wg->sendChannel == connection) {
             /* Reset the connection channel */
-            wg->sendChannel = 0;
+            wg->sendChannel = NULL;
 
             /* PSC marked for deletion and the last EventLoop connection has closed */
             if(wg->deleteFlag) {
@@ -547,13 +549,13 @@ WriterGroupChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
     }
 
     /* Store the connectionId (if a new connection) */
-    if(wg->sendChannel && wg->sendChannel != connectionId) {
+    if(wg->sendChannel && wg->sendChannel != connection) {
         UA_LOG_WARNING_WRITERGROUP(&server->config.logger, wg,
                                   "WriterGroup is already bound to a different channel");
         UA_UNLOCK(&server->serviceMutex);
         return;
     }
-    wg->sendChannel = connectionId;
+    wg->sendChannel = connection;
 
     /* Connection open, set to operational if not already done */
     if(wg->state != UA_PUBSUBSTATE_OPERATIONAL)
@@ -565,7 +567,8 @@ WriterGroupChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
 }
 
 static UA_StatusCode
-UA_WriterGroup_connectUDPUnicast(UA_Server *server, UA_WriterGroup *wg) {
+UA_WriterGroup_connectUDPUnicast(UA_Server *server, UA_ConnectionManager *cm,
+                                 UA_WriterGroup *wg) {
     UA_LOCK_ASSERT(&server->serviceMutex, 1);
 
     /* Already connected? */
@@ -631,9 +634,8 @@ UA_WriterGroup_connectUDPUnicast(UA_Server *server, UA_WriterGroup *wg) {
     }
 
     /* Connect */
-    UA_ConnectionManager *cm = wg->linkedConnection->cm;
     UA_UNLOCK(&server->serviceMutex);
-    res = cm->openConnection(cm, &kvm, server, wg, WriterGroupChannelCallback);
+    res = cm->openConnection(cm, kvm, server, wg, WriterGroupChannelCallback);
     UA_LOCK(&server->serviceMutex);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR_WRITERGROUP(&server->config.logger, wg,
@@ -643,7 +645,8 @@ UA_WriterGroup_connectUDPUnicast(UA_Server *server, UA_WriterGroup *wg) {
 }
 
 static UA_StatusCode
-UA_WriterGroup_connectMQTT(UA_Server *server, UA_WriterGroup *wg) {
+UA_WriterGroup_connectMQTT(UA_Server *server, UA_ConnectionManager *cm,
+                           UA_WriterGroup *wg) {
     UA_LOCK_ASSERT(&server->serviceMutex, 1);
 
     UA_PubSubConnection *c = wg->linkedConnection;
@@ -690,7 +693,7 @@ UA_WriterGroup_connectMQTT(UA_Server *server, UA_WriterGroup *wg) {
 
     /* Connect */
     UA_UNLOCK(&server->serviceMutex);
-    res = c->cm->openConnection(c->cm, &kvm, server, wg, WriterGroupChannelCallback);
+    res = cm->openConnection(cm, kvm, server, wg, WriterGroupChannelCallback);
     UA_LOCK(&server->serviceMutex);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR_WRITERGROUP(&server->config.logger, wg,
@@ -703,9 +706,8 @@ void
 UA_WriterGroup_disconnect(UA_WriterGroup *wg) {
     if(wg->sendChannel == 0)
         return;
-    UA_PubSubConnection *c = wg->linkedConnection;
-    c->cm->closeConnection(c->cm, c->sendChannel);
-    wg->sendChannel = 0;
+    wg->sendChannel->cm->closeConnection(wg->sendChannel);
+    wg->sendChannel = NULL;
 }
 
 UA_StatusCode
@@ -743,7 +745,7 @@ UA_WriterGroup_connect(UA_Server *server, UA_WriterGroup *wg) {
     UA_ConnectionManager *cm = NULL;
     if(profile)
         cm = getCM(el, profile->protocol);
-    if(!cm || (c->cm && cm != c->cm)) {
+    if(!cm) {
         UA_LOG_ERROR_CONNECTION(&server->config.logger, c,
                                 "The requested protocol is not supported");
         UA_PubSubConnection_setPubSubState(server, c, UA_PUBSUBSTATE_ERROR,
@@ -751,13 +753,12 @@ UA_WriterGroup_connect(UA_Server *server, UA_WriterGroup *wg) {
         return UA_STATUSCODE_BADINTERNALERROR;
     }
 
-    c->cm = cm;
     c->json = profile->json;
 
     /* Connect */
     UA_StatusCode res = UA_STATUSCODE_GOOD;
     if(profile->connectWriterGroup)
-        res = profile->connectWriterGroup(server, wg);
+        res = profile->connectWriterGroup(server, cm, wg);
     if(res != UA_STATUSCODE_GOOD) {
         UA_WriterGroup_setPubSubState(server, wg, UA_PUBSUBSTATE_ERROR, res);
         return res;
@@ -779,11 +780,11 @@ UA_WriterGroup_connect(UA_Server *server, UA_WriterGroup *wg) {
 
 static void
 UA_ReaderGroup_removeConnection(UA_ReaderGroup *rg,
-                                uintptr_t connectionId) {
+                                UA_Connection *connection) {
     for(size_t i = 0; i < UA_PUBSUB_MAXCHANNELS; i++) {
-        if(rg->recvChannels[i] != connectionId)
+        if(rg->recvChannels[i] != connection)
             continue;
-        rg->recvChannels[i] = 0;
+        rg->recvChannels[i] = NULL;
         rg->recvChannelsSize--;
         return;
     }
@@ -791,17 +792,17 @@ UA_ReaderGroup_removeConnection(UA_ReaderGroup *rg,
 
 static UA_StatusCode
 UA_ReaderGroup_addRecvConnection(UA_ReaderGroup*c,
-                                 uintptr_t connectionId) {
+                                 UA_Connection *connection) {
     for(size_t i = 0; i < UA_PUBSUB_MAXCHANNELS; i++) {
-        if(c->recvChannels[i] == connectionId)
+        if(c->recvChannels[i] == connection)
             return UA_STATUSCODE_GOOD;
     }
     if(c->recvChannelsSize >= UA_PUBSUB_MAXCHANNELS)
         return UA_STATUSCODE_BADINTERNALERROR;
     for(size_t i = 0; i < UA_PUBSUB_MAXCHANNELS; i++) {
-        if(c->recvChannels[i] != 0)
+        if(c->recvChannels[i])
             continue;
-        c->recvChannels[i] = connectionId;
+        c->recvChannels[i] = connection;
         c->recvChannelsSize++;
         break;
     }
@@ -809,16 +810,14 @@ UA_ReaderGroup_addRecvConnection(UA_ReaderGroup*c,
 }
 
 static void
-ReaderGroupChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                          void *application, void **connectionContext,
-                          UA_ConnectionState state, const UA_KeyValueMap *params,
-                          UA_ByteString msg) {
-    if(!connectionContext)
+ReaderGroupChannelCallback(UA_Connection *connection, UA_ConnectionState state,
+                           const UA_KeyValueMap params, UA_ByteString msg) {
+    if(!connection->context)
         return;
 
     /* Get the context pointers */
-    UA_Server *server = (UA_Server*)application;
-    UA_ReaderGroup *rg = (UA_ReaderGroup*)*connectionContext;
+    UA_Server *server = (UA_Server*)connection->application;
+    UA_ReaderGroup *rg = (UA_ReaderGroup*)connection->application;
 
     UA_LOCK(&server->serviceMutex);
 
@@ -826,7 +825,7 @@ ReaderGroupChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
      * from that connection. Clean up the SecureChannel in the client. */
     if(state == UA_CONNECTIONSTATE_CLOSING) {
         /* Reset the connection identifiers */
-        UA_ReaderGroup_removeConnection(rg, connectionId);
+        UA_ReaderGroup_removeConnection(rg, connection);
 
         /* PSC marked for deletion and the last EventLoop connection has closed */
         if(rg->deleteFlag && rg->recvChannelsSize == 0) {
@@ -842,13 +841,11 @@ ReaderGroupChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
     }
 
     /* Store the connectionId (if a new connection) */
-    UA_StatusCode res = UA_ReaderGroup_addRecvConnection(rg, connectionId);
+    UA_StatusCode res = UA_ReaderGroup_addRecvConnection(rg, connection);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_WARNING_READERGROUP(&server->config.logger, rg,
                                   "No more space for an additional EventLoop connection");
-        UA_PubSubConnection *c = rg->linkedConnection;
-        if(c && c->cm)
-            c->cm->closeConnection(c->cm, connectionId);
+        connection->cm->closeConnection(connection);
         UA_UNLOCK(&server->serviceMutex);
         return;
     }
@@ -911,7 +908,8 @@ ReaderGroupChannelCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
 }
 
 static UA_StatusCode
-UA_ReaderGroup_connectMQTT(UA_Server *server, UA_ReaderGroup *rg) {
+UA_ReaderGroup_connectMQTT(UA_Server *server, UA_ConnectionManager *cm,
+                           UA_ReaderGroup *rg) {
     UA_LOCK_ASSERT(&server->serviceMutex, 1);
 
     UA_PubSubConnection *c = rg->linkedConnection;
@@ -958,7 +956,7 @@ UA_ReaderGroup_connectMQTT(UA_Server *server, UA_ReaderGroup *rg) {
 
     /* Connect */
     UA_UNLOCK(&server->serviceMutex);
-    res = c->cm->openConnection(c->cm, &kvm, server, rg, ReaderGroupChannelCallback);
+    res = cm->openConnection(cm, kvm, server, rg, ReaderGroupChannelCallback);
     UA_LOCK(&server->serviceMutex);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR_READERGROUP(&server->config.logger, rg,
@@ -974,7 +972,7 @@ UA_ReaderGroup_disconnect(UA_ReaderGroup *rg) {
         return;
     for(size_t i = 0; i < UA_PUBSUB_MAXCHANNELS; i++) {
         if(rg->recvChannels[i] != 0)
-            c->cm->closeConnection(c->cm, rg->recvChannels[i]);
+            rg->recvChannels[i]->cm->closeConnection(rg->recvChannels[i]);
     }
 }
 
@@ -1008,7 +1006,7 @@ UA_ReaderGroup_connect(UA_Server *server, UA_ReaderGroup *rg) {
     UA_ConnectionManager *cm = NULL;
     if(profile)
         cm = getCM(el, profile->protocol);
-    if(!cm || (c->cm && cm != c->cm)) {
+    if(!cm) {
         UA_LOG_ERROR_CONNECTION(&server->config.logger, c,
                                 "The requested protocol is not supported");
         UA_PubSubConnection_setPubSubState(server, c, UA_PUBSUBSTATE_ERROR,
@@ -1016,13 +1014,12 @@ UA_ReaderGroup_connect(UA_Server *server, UA_ReaderGroup *rg) {
         return UA_STATUSCODE_BADINTERNALERROR;
     }
 
-    c->cm = cm;
     c->json = profile->json;
 
     /* Connect */
     UA_StatusCode res = UA_STATUSCODE_GOOD;
     if(profile->connectReaderGroup)
-        res = profile->connectReaderGroup(server, rg);
+        res = profile->connectReaderGroup(server, cm, rg);
     if(res != UA_STATUSCODE_GOOD) {
         UA_ReaderGroup_setPubSubState(server, rg, UA_PUBSUBSTATE_ERROR, res);
         return res;

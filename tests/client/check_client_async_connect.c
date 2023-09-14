@@ -148,8 +148,8 @@ START_TEST(Client_no_connection) {
     }
 
     /* Manually close the TCP connection */
-    UA_ConnectionManager *cm = client->channel.connectionManager;
-    cm->closeConnection(cm, client->channel.connectionId);
+    UA_ConnectionManager *cm = client->channel.connection->cm;
+    cm->closeConnection(client->channel.connection);
 
     do {
         UA_Server_run_iterate(server, false);

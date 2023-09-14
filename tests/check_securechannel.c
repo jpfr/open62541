@@ -45,7 +45,6 @@ setup_secureChannel(void) {
     testChannel.config = UA_ConnectionConfig_default;
     UA_SecureChannel_setSecurityPolicy(&testChannel, &dummyPolicy, &dummyCertificate);
 
-    testChannel.connectionManager = &testConnectionManagerTCP;
     testChannel.state = UA_SECURECHANNELSTATE_OPEN;
     testConnectionLastSentBuf = &sentData;
 }

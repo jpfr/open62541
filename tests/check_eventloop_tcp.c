@@ -15,30 +15,27 @@
 static UA_EventLoop *el;
 static unsigned connCount;
 static char *testMsg = "open62541";
-static uintptr_t clientId;
+static UA_Connection *clientConnection;
 static UA_Boolean received;
 
 static void
-connectionCallback(UA_ConnectionManager *cm, uintptr_t connectionId,
-                   void *application, void **connectionContext,
-                   UA_ConnectionState status,
-                   const UA_KeyValueMap *params,
-                   UA_ByteString msg) {
+connectionCallback(UA_Connection *c, UA_ConnectionState status,
+                   const UA_KeyValueMap params, UA_ByteString msg) {
     if(status == UA_CONNECTIONSTATE_CLOSING) {
         UA_LOG_DEBUG(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                     "Closing connection %u", (unsigned)connectionId);
+                     "Closing connection %u", c->identifier);
     } else {
         if(msg.length == 0) {
             UA_LOG_DEBUG(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
-                         "Opening connection %u", (unsigned)connectionId);
+                         "Opening connection %u", c->identifier);
         } else {
             UA_LOG_DEBUG(UA_Log_Stdout, UA_LOGCATEGORY_USERLAND,
                          "Received a message of length %u", (unsigned)msg.length);
         }
     }
 
-    if(*connectionContext != NULL)
-        clientId = connectionId;
+    if(!c->context)
+        clientConnection = c;
     if(msg.length == 0 && status == UA_CONNECTIONSTATE_ESTABLISHED)
         connCount++;
 
@@ -73,7 +70,7 @@ START_TEST(listenTCP) {
 
     ck_assert_uint_eq(connCount, 0);
 
-    cm->openConnection(cm, &paramsMap, NULL, NULL, connectionCallback);
+    cm->openConnection(cm, paramsMap, NULL, NULL, connectionCallback);
 
     ck_assert(connCount > 0);
 
@@ -122,32 +119,32 @@ START_TEST(connectTCP) {
 
     connCount = 0;
 
-    cm->openConnection(cm, &paramsMap, NULL, NULL, connectionCallback);
+    cm->openConnection(cm, paramsMap, NULL, NULL, connectionCallback);
 
     size_t listenSockets = connCount;
 
     /* Open a client connection */
-    clientId = 0;
+    clientConnection = NULL;
     listen = false;
 
     UA_StatusCode retval =
-        cm->openConnection(cm, &paramsMap, NULL, (void*)0x01, connectionCallback);
+        cm->openConnection(cm, paramsMap, NULL, (void*)0x01, connectionCallback);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     for(size_t i = 0; i < 2; i++) {
         UA_DateTime next = el->run(el, 1);
         UA_fakeSleep((UA_UInt32)((next - UA_DateTime_now()) / UA_DATETIME_MSEC));
     }
-    ck_assert(clientId != 0);
+    ck_assert(clientConnection != NULL);
 
     ck_assert_uint_eq(connCount, listenSockets + 2);
 
     /* Send a message from the client */
     received = false;
     UA_ByteString snd;
-    retval = cm->allocNetworkBuffer(cm, clientId, &snd, strlen(testMsg));
+    retval = cm->allocNetworkBuffer(clientConnection, &snd, strlen(testMsg));
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     memcpy(snd.data, testMsg, strlen(testMsg));
-    retval = cm->sendWithConnection(cm, clientId, NULL, &snd);
+    retval = cm->sendWithConnection(clientConnection, UA_KEYVALUEMAP_NULL, &snd);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     for(size_t i = 0; i < 2; i++) {
         UA_DateTime next = el->run(el, 1);
@@ -156,7 +153,7 @@ START_TEST(connectTCP) {
     ck_assert(received);
 
     /* Close the connection */
-    retval = cm->closeConnection(cm, clientId);
+    retval = cm->closeConnection(clientConnection);
     ck_assert_uint_eq(retval, UA_STATUSCODE_GOOD);
     ck_assert_uint_eq(connCount, listenSockets + 2);
     for(size_t i = 0; i < 2; i++) {
