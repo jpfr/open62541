@@ -186,6 +186,8 @@ typedef struct {
                                            void *subContext);
 #endif
 
+    /* Session config */
+    UA_String sessionName;
     UA_LocaleId *sessionLocaleIds;
     size_t sessionLocaleIdsSize;
 } UA_ClientConfig;

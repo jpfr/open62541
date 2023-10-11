@@ -1006,6 +1006,7 @@ createSessionAsync(UA_Client *client) {
     request.requestedSessionTimeout = client->config.requestedSessionTimeout;
     request.maxResponseMessageSize = UA_INT32_MAX;
     UA_String_copy(&client->config.endpoint.endpointUrl, &request.endpointUrl);
+    UA_String_copy(&client->config.sessionName, &request.sessionName);
     UA_ApplicationDescription_copy(&client->config.clientDescription,
                                    &request.clientDescription);
 
