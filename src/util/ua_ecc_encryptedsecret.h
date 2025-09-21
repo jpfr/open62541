@@ -65,3 +65,8 @@ encryptUserIdentityTokenEcc(UA_Logger *logger, UA_ByteString *tokenData,
                             const UA_ByteString serverSessionNonce,
                             const UA_ByteString serverEphemeralPubKey,
                             UA_SecurityPolicy *sp, void *tempChannelContext);
+
+UA_StatusCode
+decryptUserTokenEcc(UA_Logger *logger, UA_ByteString sessionServerNonce,
+                    const UA_SecurityPolicy *sp, const UA_String encryptionAlgorithm,
+                    UA_EccEncryptedSecret *es);
