@@ -591,19 +591,14 @@ selectEndpointAndTokenPolicy(UA_Server *server, UA_SecureChannel *channel,
     }
 }
 
-static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
-    UA_SecureChannel *channel, const UA_SecurityPolicy *sp,
-    const UA_String encryptionAlgorithm, UA_EccEncryptedSecret *encrypted) {
+static UA_StatusCode
+decryptUserTokenEcc(UA_Logger *logger, UA_ByteString sessionServerNonce, const UA_SecurityPolicy *sp,
+                    const UA_String encryptionAlgorithm, UA_EccEncryptedSecret *es) {
 
     /* If SecurityPolicy is None there shall be no EncryptionAlgorithm  */
     if(UA_String_equal(&sp->policyUri, &UA_SECURITY_POLICY_NONE_URI)) {
         if(encryptionAlgorithm.length > 0)
             return UA_STATUSCODE_BADIDENTITYTOKENINVALID;
-        if(channel->securityMode == UA_MESSAGESECURITYMODE_NONE) {
-            UA_LOG_WARNING_SESSION(server->config.logging, session, "ActivateSession: "
-                                   "Received an unencrypted UserToken. "
-                                   "Is the server misconfigured to allow that?");
-        }
         return UA_STATUSCODE_GOOD;
     }
 
@@ -612,53 +607,38 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
                         &sp->asymmetricModule.cryptoModule.encryptionAlgorithm.uri))
         return UA_STATUSCODE_BADIDENTITYTOKENINVALID;
 
-    UA_LOG_INFO(server->config.logging, UA_LOGCATEGORY_SESSION, "[UserNameIdentityToken] EccEncryptedSecret:");
+    UA_LOG_INFO(logger, UA_LOGCATEGORY_SESSION, "[UserNameIdentityToken] EccEncryptedSecret:");
        
     UA_StatusCode res = UA_STATUSCODE_GOOD;
-    UA_EccEncryptedSecret* es = encrypted;
     UA_EccEncryptedSecretStruct esd;
+    UA_EccEncryptedSecretStruct_init(&esd);
     
     /* Define and initialize in case of clean-up */
-    UA_ByteString payload;
-    payload.data = NULL;
-
-    UA_ByteString symEncKeyMaterial;
-    symEncKeyMaterial.data = NULL;
-
-    UA_ByteString pass;
-    pass.data = NULL;
-    
+    UA_ByteString payload = UA_BYTESTRING_NULL;
+    UA_ByteString symEncKeyMaterial = UA_BYTESTRING_NULL;
+    UA_ByteString pass = UA_BYTESTRING_NULL;
     void *tempChannelContext = NULL;
-    
-    UA_EccEncryptedSecretStruct_init(&esd);
 
     size_t offset = 0;
     res = UA_EccEncryptedSecret_deserializeCommonHeader(es, &esd, &offset);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Failed to deserialize the common header");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Failed to deserialize the common header");
         goto cleanecc;
     }
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Deserialized common header");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Deserialized common header");
     if(!UA_EccEncryptedSecret_checkCommonHeader(&esd)) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Checking common header failed");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Checking common header failed");
         res = UA_STATUSCODE_BAD;
         goto cleanecc;
     }
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Common header OK");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Common header OK");
     
     /* New channel context with the client signing certificate from the encrypted secret.*/
     /* Required to verify the signature since the application instance certificate isn't available here. */
     /* Also required to hold the (one-time) symmetric key for encrypting and decrypting ECC encrypted secred */
-    UA_UNLOCK(&server->serviceMutex);
-    res =
-        sp->channelModule.newContext(sp, &esd.certificate, &tempChannelContext);
-    UA_LOCK(&server->serviceMutex);
-    if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR_SESSION(server->config.logging, session,
-                           "ActivateSession: Failed to create a context for "
-                           "the SecurityPolicy %S", sp->policyUri);
+    res = sp->channelModule.newContext(sp, &esd.certificate, &tempChannelContext);
+    if(res != UA_STATUSCODE_GOOD)
         goto cleanecc;
-    }
 
     /* Verify signature */
     size_t sigLen = sp->asymmetricModule.cryptoModule.signatureAlgorithm.getRemoteSignatureSize(tempChannelContext);
@@ -666,48 +646,48 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
     UA_ByteString signedData = {signedDataLen, es->data};
     UA_ByteString signature = {sigLen, &es->data[signedDataLen]};
 
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Remote certificate:");
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signed data length: %u", signedDataLen);
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Remote certificate:");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signed data length: %u", signedDataLen);
     
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signature (len: %u):", sigLen);
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signature (len: %u):", sigLen);
     
     res = sp->asymmetricModule.cryptoModule.signatureAlgorithm.verify(tempChannelContext, &signedData, &signature);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signature verification failed.");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signature verification failed.");
         goto cleanecc;
     }
-    UA_LOG_INFO(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signature successfuly verified", sigLen);
+    UA_LOG_INFO(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signature successfuly verified", sigLen);
     
     res = UA_EccEncryptedSecret_deserializePolicyHeader(es, &esd, &offset);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Failed to deserialize the common header");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Failed to deserialize the common header");
         goto cleanecc;
     }
 
     /* Sanity check of the key data length */
     if(esd.keyDataLen != esd.senderPublicKey.length + esd.receiverPublicKey.length) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Key data lenght in the header and actual key lenghts don't match");  
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Key data lenght in the header and actual key lenghts don't match");  
     }
 
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Deserialized policy header");
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Sender (client) ephemeral public key:");
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Receiver (server) ephemeral public key:");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Deserialized policy header");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Sender (client) ephemeral public key:");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Receiver (server) ephemeral public key:");
 
     /* Deriving (remote) symmetric encryption key to decrypt the payload */
     size_t symKeyLen = sp->symmetricModule.cryptoModule.encryptionAlgorithm.getRemoteKeyLength(tempChannelContext);
     size_t ivLen = sp->symmetricModule.cryptoModule.encryptionAlgorithm.getRemoteBlockSize(tempChannelContext);
     if(symKeyLen == 0 || ivLen == 0) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] IV length or symmetric encryption key length is 0");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] IV length or symmetric encryption key length is 0");
         res = UA_STATUSCODE_BAD;
         goto cleanecc;
     }
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Local symmetric encrypting key length: %d", symKeyLen);
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Initialization vector length: %d", ivLen);
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Local symmetric encrypting key length: %d", symKeyLen);
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Initialization vector length: %d", ivLen);
     
     UA_ByteString_init(&symEncKeyMaterial);
     res = UA_ByteString_allocBuffer(&symEncKeyMaterial, symKeyLen+ivLen);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to allocate buffer for key material");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to allocate buffer for key material");
         goto cleanecc;
     }
 
@@ -720,24 +700,24 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
     /* Call logic for server for session authentication : receiver public key is local (server), sender public key is remote (client) */
     res = sp->symmetricModule.generateKey(sp->policyContext, &esd.receiverPublicKey, &esd.senderPublicKey, &symEncKeyMaterial);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to derive key material");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to derive key material");
         goto cleanecc;
     }
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Derived key material: ");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Derived key material: ");
     
     /* Extracting the key and the initialization vector from the key material*/
     UA_ByteString encKey = {symKeyLen, symEncKeyMaterial.data};
     UA_ByteString iv = {ivLen, &symEncKeyMaterial.data[symKeyLen]};
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Symmetric encryption key:");
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Initialization vector:");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Symmetric encryption key:");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Initialization vector:");
     res = sp->channelModule.setRemoteSymEncryptingKey(tempChannelContext, &encKey);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to set symmetric encryption key");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to set symmetric encryption key");
         goto cleanecc;
     }
     res = sp->channelModule.setRemoteSymIv(tempChannelContext, &iv);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to set initialization vector");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to set initialization vector");
         goto cleanecc;
     }
 
@@ -745,46 +725,36 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
     UA_ByteString_init(&payload);
     res = UA_ByteString_decodeBinary(es, &offset, &payload);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to decode the payload");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to decode the payload");
         goto cleanecc;
     }
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Deserialized payload:");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Deserialized payload:");
     
     /* Decrypt payload (password) */
     res = sp->symmetricModule.cryptoModule.encryptionAlgorithm.decrypt(tempChannelContext, &payload);
     if(res != UA_STATUSCODE_GOOD) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to decrypt the payload");
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to decrypt the payload");
         goto cleanecc;
     }
 
     /* Check the payload and extract the password, refer to https://reference.opcfoundation.org/Core/Part4/v105/docs/7.41.2.3 */
-    if(!UA_EccEncryptedSecret_checkAndExtractPayload(&payload, &session->serverNonce, &pass)) {
-        UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Payload check failed (server nonce/padding)");
+    if(!UA_EccEncryptedSecret_checkAndExtractPayload(&payload, &sessionServerNonce, &pass)) {
+        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Payload check failed (server nonce/padding)");
         res = UA_STATUSCODE_BADINTERNALERROR;
         goto cleanecc;
     }
-    UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Payload OK:");
+    UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Payload OK:");
     
     /* Copy the password */
-    memcpy(encrypted->data,
-           pass.data, pass.length);
-    encrypted->length = pass.length;
+    memcpy(es->data, pass.data, pass.length);
+    es->length = pass.length;
 
 cleanecc:
     UA_EccEncryptedSecretStruct_clear(&esd);
-    if(symEncKeyMaterial.data != NULL) {
-        UA_ByteString_clear(&symEncKeyMaterial);
-    }
-    if(payload.data != NULL) {
-        UA_ByteString_clear(&payload);
-    }
-    if(pass.data != NULL) {
-        UA_ByteString_clear(&pass);   
-    }
-    if (tempChannelContext != NULL) {
-        sp->channelModule.deleteContext(tempChannelContext);
-    }
-
+    UA_ByteString_clear(&symEncKeyMaterial);
+    UA_ByteString_clear(&payload);
+    UA_ByteString_clear(&pass);   
+    sp->channelModule.deleteContext(tempChannelContext);
     return res;
 }
 
@@ -1006,8 +976,8 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
          * With ECC policies, the password is EccEncryptedSecret */
         if(UA_SecurityPolicy_isEccPolicy(tokenSp->policyUri)) {
             resp->responseHeader.serviceResult =
-            decryptUserTokenEcc(server, session, channel, tokenSp,
-                userToken->encryptionAlgorithm, &userToken->password);
+                decryptUserTokenEcc(server->config.logging, session->serverNonce, tokenSp,
+                                    userToken->encryptionAlgorithm, &userToken->password);
         } else {
             resp->responseHeader.serviceResult =
             decryptUserToken(server, session, channel, tokenSp,
