@@ -14,24 +14,6 @@ static const UA_String eccPolicies[] = {
     UA_STRING_STATIC("http://opcfoundation.org/UA/SecurityPolicy#ECC_nistP384"),
 };
 
-void debugPrint(const UA_ByteString* bs) {
-    /* Quick and dirty measure to enable printout only for log level DEBUG */
-    if (UA_LOGLEVEL > 200) {
-        return;
-    }
-    
-    size_t i = 0;
-    
-    printf("================= len: %zu ================================\n", bs->length);
-
-    for(i=0; i<bs->length; i++) {
-        printf("%02x ", bs->data[i]);
-    }
-    printf("\n==========================================================\n\n");
-}
-
-
-
 UA_Boolean UA_SecurityPolicy_isEccPolicy(UA_String policyURI) {
     for(size_t i=0; i<sizeof(eccPolicies); i++) {
         if(UA_String_equal(&eccPolicies[i], &policyURI)) {

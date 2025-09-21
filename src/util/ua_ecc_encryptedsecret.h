@@ -6,7 +6,6 @@
  */
 
 #include <open62541/types.h>
-#include <stdio.h>
 
 /* Ephemeral key node ID identifier, arbitrarily chosen */
 #define NODE_IDENTIFIER_NUMERIC_EPHKEY 334
@@ -36,8 +35,6 @@ typedef struct {
     /* Signature */
     UA_Byte* signature;
 } UA_EccEncryptedSecretStruct;
-
-void debugPrint(const UA_ByteString* bs);
 
 UA_Boolean UA_SecurityPolicy_isEccPolicy(UA_String policyURI);
 

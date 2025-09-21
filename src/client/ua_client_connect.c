@@ -268,7 +268,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     secret.length += secret.certificate.length;
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Local certificate copied:");
-    debugPrint(&secret.certificate);
     
     secret.signingTime = UA_DateTime_now();
     secret.length += sizeof(UA_DateTime);
@@ -291,7 +290,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     secret.length += serverEphemeralPubKeyEnc.length;
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Server ephemeral key copied: ");
-    debugPrint(&secret.receiverPublicKey);
 
     /* TODO: use proper policy functions */
     size_t ephKeyLen = sp->symmetricModule.secureChannelNonceLength; /* Also length of the ephemeral public key */
@@ -308,7 +306,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     }
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Client ephemeral key created and copied: ");
-    debugPrint(&secret.senderPublicKey);
 
     /* Sanity check of KeyData length */
     if(secret.keyDataLen != (secret.senderPublicKey.length + secret.receiverPublicKey.length) ) {
@@ -328,7 +325,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     }
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Server session nonce copied: ");
-    debugPrint(&secret.nonce);
 
     /* Creating symmetric encryption key to encrypt the payload */
     size_t symKeyLen = sp->symmetricModule.cryptoModule.encryptionAlgorithm.getLocalKeyLength(tempChannelContext);
@@ -364,17 +360,14 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     }
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Derived key material: ");
-    debugPrint(&symEncKeyMaterial);
     
     /* Extracting the key and the initialization vector from the key material */
     UA_ByteString encKey = {symKeyLen, symEncKeyMaterial.data};
     UA_ByteString iv = {ivLen, &symEncKeyMaterial.data[symKeyLen]};
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Symmetric encryption key:");
-    debugPrint(&encKey);
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Initialization vector:");
-    debugPrint(&iv);
 
     retval = sp->channelModule.setLocalSymEncryptingKey(tempChannelContext, &encKey);
     if(retval != UA_STATUSCODE_GOOD) {
@@ -440,10 +433,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     bufPos += secret.payloadPaddingSize;
     memcpy(bufPos, &paddingLen, sizeof(paddingLen)); 
     
-    /* Don't print payload to encrypt, used only for debugging purposes */
-    /* UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Payload to encrypt (len: %u):", payload.length);
-     * debugPrint(&payload); */
-
     retval = sp->symmetricModule.cryptoModule.encryptionAlgorithm.encrypt(tempChannelContext, &payload);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to encrypt the payload");
@@ -451,7 +440,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     }
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Encrypted payload (len: %u):", payload.length);
-    debugPrint(&payload);
 
     secret.length += payload.length;
 
@@ -492,7 +480,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     }
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] After Common Header serialization:");
-    debugPrint(&eccEncSecSer);
 
     /* Serialize the policy header (key data) */
     bufEnd = bufPos + policyHeaderSerLen;
@@ -503,7 +490,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     }
     
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] After serializing the policy header (key data):");
-    debugPrint(&eccEncSecSer);
 
     /* Serialize the payload */
     bufEnd = bufPos + payloadSerLen;
@@ -514,7 +500,6 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     }
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] After serializing the payload:");
-    debugPrint(&eccEncSecSer);
 
     /* Sign */
     UA_ByteString sig;
@@ -538,10 +523,8 @@ static UA_StatusCode encryptUserIdentityTokenEcc(UA_Client *client, UA_ByteStrin
     memcpy(bufPos, sig.data, sig.length);
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Signature:");
-    debugPrint(&sig);
 
     UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] End:");
-    debugPrint(&eccEncSecSer);
 
     /* Set output */
     UA_ByteString_clear(tokenData);

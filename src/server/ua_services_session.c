@@ -630,8 +630,6 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
     
     void *tempChannelContext = NULL;
     
-    debugPrint(es);
-
     UA_EccEncryptedSecretStruct_init(&esd);
 
     size_t offset = 0;
@@ -670,10 +668,8 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
 
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Remote certificate:");
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signed data length: %u", signedDataLen);
-    debugPrint(&signedData);
     
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Signature (len: %u):", sigLen);
-    debugPrint(&signature);
     
     res = sp->asymmetricModule.cryptoModule.signatureAlgorithm.verify(tempChannelContext, &signedData, &signature);
     if(res != UA_STATUSCODE_GOOD) {
@@ -695,9 +691,7 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
 
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Deserialized policy header");
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Sender (client) ephemeral public key:");
-    debugPrint(&esd.senderPublicKey);
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Receiver (server) ephemeral public key:");
-    debugPrint(&esd.receiverPublicKey);
 
     /* Deriving (remote) symmetric encryption key to decrypt the payload */
     size_t symKeyLen = sp->symmetricModule.cryptoModule.encryptionAlgorithm.getRemoteKeyLength(tempChannelContext);
@@ -730,15 +724,12 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
         goto cleanecc;
     }
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Derived key material: ");
-    debugPrint(&symEncKeyMaterial);
     
     /* Extracting the key and the initialization vector from the key material*/
     UA_ByteString encKey = {symKeyLen, symEncKeyMaterial.data};
     UA_ByteString iv = {ivLen, &symEncKeyMaterial.data[symKeyLen]};
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Symmetric encryption key:");
-    debugPrint(&encKey);
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Initialization vector:");
-    debugPrint(&iv);
     res = sp->channelModule.setRemoteSymEncryptingKey(tempChannelContext, &encKey);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to set symmetric encryption key");
@@ -758,7 +749,6 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
         goto cleanecc;
     }
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Deserialized payload:");
-    debugPrint(&payload);
     
     /* Decrypt payload (password) */
     res = sp->symmetricModule.cryptoModule.encryptionAlgorithm.decrypt(tempChannelContext, &payload);
@@ -766,10 +756,6 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
         UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to decrypt the payload");
         goto cleanecc;
     }
-    
-    /* Don't print decrypted payload, just for debugging */
-    /* UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Decrypted payload:");
-     * debugPrint(&payload); */
 
     /* Check the payload and extract the password, refer to https://reference.opcfoundation.org/Core/Part4/v105/docs/7.41.2.3 */
     if(!UA_EccEncryptedSecret_checkAndExtractPayload(&payload, &session->serverNonce, &pass)) {
@@ -778,7 +764,6 @@ static UA_StatusCode decryptUserTokenEcc(UA_Server *server, UA_Session *session,
         goto cleanecc;
     }
     UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[EccEncryptedSecret] Payload OK:");
-    debugPrint(&pass);
     
     /* Copy the password */
     memcpy(encrypted->data,
