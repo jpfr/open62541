@@ -6,6 +6,8 @@
  */
 
 #include <open62541/types.h>
+#include <open62541/plugin/log.h>
+#include <open62541/plugin/securitypolicy.h>
 
 /* Ephemeral key node ID identifier, arbitrarily chosen */
 #define NODE_IDENTIFIER_NUMERIC_EPHKEY 334
@@ -57,3 +59,9 @@ UA_StatusCode UA_EccEncryptedSecret_deserializePolicyHeader(UA_EccEncryptedSecre
 UA_Boolean UA_EccEncryptedSecret_checkCommonHeader(UA_EccEncryptedSecretStruct* es);
 
 UA_Boolean UA_EccEncryptedSecret_checkAndExtractPayload(const UA_ByteString* payload, const UA_ByteString* serverNonce, UA_ByteString* outPass);
+
+UA_StatusCode
+encryptUserIdentityTokenEcc(UA_Logger *logger, UA_ByteString *tokenData,
+                            const UA_ByteString serverSessionNonce,
+                            const UA_ByteString serverEphemeralPubKey,
+                            UA_SecurityPolicy *sp, void *tempChannelContext);
