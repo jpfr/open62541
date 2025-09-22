@@ -32,16 +32,16 @@ typedef struct {
 } UA_EccEncryptedSecretStruct;
 
 /* ECC Policy URIs */
-static const UA_String eccPolicies[] = {
+#define UA_ECCPOLICIESSIZE 2
+static const UA_String eccPolicies[UA_ECCPOLICIESSIZE] = {
     UA_STRING_STATIC("http://opcfoundation.org/UA/SecurityPolicy#ECC_nistP256"),
     UA_STRING_STATIC("http://opcfoundation.org/UA/SecurityPolicy#ECC_nistP384"),
 };
 
 UA_Boolean UA_SecurityPolicy_isEccPolicy(UA_String policyURI) {
-    for(size_t i=0; i<sizeof(eccPolicies); i++) {
-        if(UA_String_equal(&eccPolicies[i], &policyURI)) {
+    for(size_t i = 0; i < UA_ECCPOLICIESSIZE; i++) {
+        if(UA_String_equal(&eccPolicies[i], &policyURI))
             return true;
-        }
     }
     return false;
 }
