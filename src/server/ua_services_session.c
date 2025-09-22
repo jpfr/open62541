@@ -381,7 +381,7 @@ Service_CreateSession(UA_Server *server, UA_SecureChannel *channel,
             UA_ByteString_copy(&sp->localCertificate, &response->serverCertificate);
 
     /* If ECC policy, create an ephemeral key to be returned in the response */
-    if(UA_SecurityPolicy_isEccPolicy(sp->policyUri)) {
+    if(sp && UA_SecurityPolicy_isEccPolicy(sp->policyUri)) {
         UA_LOG_INFO(server->config.logging, UA_LOGCATEGORY_SESSION, "[CreateSession] ECC security policy");
         
         UA_ByteString* outServerEphemeralKey = &response->responseHeader.additionalHeader.content.encoded.body;
