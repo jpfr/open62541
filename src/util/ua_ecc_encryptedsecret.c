@@ -5,7 +5,6 @@
  *    Copyright 2025 (c) Siemens AG (Author: Tin Raic)
  */
 
-#include "ua_ecc_encryptedsecret.h"
 #include "ua_util_internal.h"
 
 typedef struct {
