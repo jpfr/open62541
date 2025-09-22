@@ -33,11 +33,6 @@
 #define UA_SESSION_LOCALNONCELENGTH 32
 #define MAX_DATA_SIZE 4096
 
-/* This is needed to save the server's ephemeral public key between the session creation (when the key is received) 
- * and session activation, when the key is used 
- * TODO: store the server's ephemeral key somewhere else, ideally in the channel context or the security policy context */
-static UA_ByteString serverEphemeralPubKeyEnc;
-
 static void initConnect(UA_Client *client);
 static UA_StatusCode createSessionAsync(UA_Client *client);
 static UA_UserTokenPolicy *
@@ -260,9 +255,11 @@ encryptUserIdentityToken(UA_Client *client, UA_SecurityPolicy *utsp,
                            "Could not instantiate the SecurityPolicy for the UserToken");
             return UA_STATUSCODE_BADINTERNALERROR;
         }
-        retval = encryptUserIdentityTokenEcc(client->config.logging, tokenData, client->serverSessionNonce, serverEphemeralPubKeyEnc, utsp, tempChannelContext);
+        retval = encryptUserIdentityTokenEcc(client->config.logging, tokenData,
+                                             client->serverSessionNonce,
+                                             client->serverEphemeralPubKey, utsp, tempChannelContext);
         utsp->channelModule.deleteContext(tempChannelContext);
-        UA_ByteString_clear(&serverEphemeralPubKeyEnc);
+        UA_ByteString_clear(&client->serverEphemeralPubKey);
         if(retval != UA_STATUSCODE_GOOD)
             return retval;
     } else {
@@ -857,15 +854,18 @@ responseActivateSession(UA_Client *client, void *userdata,
     UA_ByteString_init(&ar->serverNonce);
 
     /* Extract the server's ephemeral public key from the response */
-    if(ar->responseHeader.additionalHeader.encoding != UA_EXTENSIONOBJECT_ENCODED_NOBODY
-        && ar->responseHeader.additionalHeader.content.encoded.typeId.identifier.numeric == NODE_IDENTIFIER_NUMERIC_EPHKEY) {
+    if(ar->responseHeader.additionalHeader.encoding != UA_EXTENSIONOBJECT_ENCODED_NOBODY &&
+       ar->responseHeader.additionalHeader.content.encoded.typeId.identifier.numeric == NODE_IDENTIFIER_NUMERIC_EPHKEY) {
         
         UA_LOG_INFO(client->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Server Ephemeral Key in the response");
         
-        UA_ByteString_init(&serverEphemeralPubKeyEnc);
-        client->connectStatus |= UA_ByteString_copy(&ar->responseHeader.additionalHeader.content.encoded.body, &serverEphemeralPubKeyEnc);
+        UA_ByteString_clear(&client->serverEphemeralPubKey);
+        client->connectStatus |=
+            UA_ByteString_copy(&ar->responseHeader.additionalHeader.content.encoded.body,
+                               &client->serverEphemeralPubKey);
         if(client->connectStatus != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR(client->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Failed to obtain server's ephemeral key from the response");
+            UA_LOG_ERROR(client->config.logging, UA_LOGCATEGORY_SESSION,
+                         "[ActivateSession] Failed to obtain server's ephemeral key from the response");
             return;
         }
     }
@@ -1434,10 +1434,12 @@ createSessionCallback(UA_Client *client, void *userdata,
         
         UA_LOG_INFO(client->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Server Ephemeral Key in the response");
         
-        UA_ByteString_init(&serverEphemeralPubKeyEnc);
-        res |= UA_ByteString_copy(&sessionResponse->responseHeader.additionalHeader.content.encoded.body, &serverEphemeralPubKeyEnc);
+        UA_ByteString_clear(&client->serverEphemeralPubKey);
+        res |= UA_ByteString_copy(&sessionResponse->responseHeader.additionalHeader.content.encoded.body,
+                                  &client->serverEphemeralPubKey);
         if(res != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR(client->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Failed to obtain server's ephemeral key from the response");
+            UA_LOG_ERROR(client->config.logging, UA_LOGCATEGORY_SESSION,
+                         "[ActivateSession] Failed to obtain server's ephemeral key from the response");
             goto cleanup;
         }
     }
@@ -2460,7 +2462,7 @@ cleanupSession(UA_Client *client) {
     client->sessionState = UA_SESSIONSTATE_CLOSED;
 
     /* Clean the latest server's ephemeral public key received in the Activate Session response. */
-    UA_ByteString_clear(&serverEphemeralPubKeyEnc);
+    UA_ByteString_clear(&client->serverEphemeralPubKey);
 }
 
 static void
