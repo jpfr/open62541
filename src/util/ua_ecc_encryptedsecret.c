@@ -429,8 +429,6 @@ encryptUserIdentityTokenEcc(UA_Logger *logger, UA_ByteString *tokenData,
 
     /* Sign */
     UA_ByteString sig;
-    UA_ByteString_init(&sig);
-
     retval = UA_ByteString_allocBuffer(&sig, signatureLen);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to allocate signature buffer");
@@ -553,7 +551,6 @@ decryptUserTokenEcc(UA_Logger *logger, UA_ByteString sessionServerNonce, const U
     UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Local symmetric encrypting key length: %d", symKeyLen);
     UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Initialization vector length: %d", ivLen);
     
-    UA_ByteString_init(&symEncKeyMaterial);
     res = UA_ByteString_allocBuffer(&symEncKeyMaterial, symKeyLen+ivLen);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to allocate buffer for key material");
@@ -591,7 +588,6 @@ decryptUserTokenEcc(UA_Logger *logger, UA_ByteString sessionServerNonce, const U
     }
 
     /* Decode payload */
-    UA_ByteString_init(&payload);
     res = UA_ByteString_decodeBinary(es, &offset, &payload);
     if(res != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to decode the payload");
