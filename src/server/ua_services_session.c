@@ -14,6 +14,7 @@
  *    Copyright 2025 (c) Siemens AG (Author: Tin Raic)
  */
 
+#include <open62541/types.h>
 #include "ua_server_internal.h"
 #include "ua_services.h"
 
@@ -224,6 +225,70 @@ signCreateSessionResponse(UA_Server *server, UA_SecureChannel *channel,
     return retval;
 }
 
+static UA_StatusCode
+addEphemeralKeyAdditionalHeader(UA_Server *server, const UA_SecurityPolicy *sp,
+                                UA_ExtensionObject *ah) {
+    /* Allocate additional parameters */
+    UA_AdditionalParametersType *ap = UA_AdditionalParametersType_new();
+    if(!ap)
+        return UA_STATUSCODE_BADOUTOFMEMORY;
+
+    /* UA_KeyValueMap has the identical layout. And better helper methods. */
+    UA_KeyValueMap *map = (UA_KeyValueMap*)ap;
+
+    /* Add the PolicyUri to the map */
+    UA_StatusCode res =
+        UA_KeyValueMap_setScalar(map, UA_QUALIFIEDNAME(0, "ECDHPolicyUri"),
+                                 &sp->policyUri, &UA_TYPES[UA_TYPES_STRING]);
+    if(res != UA_STATUSCODE_GOOD) {
+        UA_AdditionalParametersType_delete(ap);
+        return res;
+    }
+
+    /* Allocate the EphemeralKey structure */
+    UA_EphemeralKeyType *ephKey = UA_EphemeralKeyType_new();
+    if(!ephKey) {
+        UA_AdditionalParametersType_delete(ap);
+        return UA_STATUSCODE_BADOUTOFMEMORY;
+    }
+
+    /* Add the EphemeralKeyto the map */
+    res = UA_KeyValueMap_setScalarShallow(map, UA_QUALIFIEDNAME(0, "ECDHKey"),
+                                          ephKey, &UA_TYPES[UA_TYPES_EPHEMERALKEYTYPE]);
+    if(res != UA_STATUSCODE_GOOD) {
+        UA_AdditionalParametersType_delete(ap);
+        return res;
+    }
+
+    /* Allocate the ephemeral key buffer to the exact size of the ephemeral key
+     * for the used ECC policy so that the nonce generation function knows that
+     * it needs to generate an ephemeral key and not some other random byte
+     * string.
+     *
+     * TODO: There should be a more stable way to signal the generation of an
+     * ephemeral key */
+    res = UA_ByteString_allocBuffer(&ephKey->publicKey,
+                                    sp->symmetricModule.secureChannelNonceLength);
+    if(res != UA_STATUSCODE_GOOD) {
+        UA_AdditionalParametersType_delete(ap);
+        return res;
+    }
+
+    /* Generate the key
+     * TODO: Don't we have to persist the key locally? */
+    res = sp->symmetricModule.generateNonce(sp->policyContext, &ephKey->publicKey);
+    if(res != UA_STATUSCODE_GOOD) {
+        UA_AdditionalParametersType_delete(ap);
+        return res;
+    }
+
+    /* TODO: Signature in the EphemeralKeyType is missing */
+
+    /* Set the ephemeral key in the additional header */
+    UA_ExtensionObject_setValue(ah, ap, &UA_TYPES[UA_TYPES_ADDITIONALPARAMETERSTYPE]);
+    return UA_STATUSCODE_GOOD;
+}
+
 /* Creates and adds a session. But it is not yet attached to a secure channel. */
 UA_StatusCode
 UA_Server_createSession(UA_Server *server, UA_SecureChannel *channel,
@@ -381,33 +446,12 @@ Service_CreateSession(UA_Server *server, UA_SecureChannel *channel,
 
     /* If ECC policy, create an ephemeral key to be returned in the response */
     if(sp && UA_SecurityPolicy_isEccPolicy(sp->policyUri)) {
-        UA_LOG_INFO(server->config.logging, UA_LOGCATEGORY_SESSION, "[CreateSession] ECC security policy");
-        
-        UA_ByteString* outServerEphemeralKey = &response->responseHeader.additionalHeader.content.encoded.body;
-
-        /* Allocate the ephemeral key buffer to the exact size of the ephemeral key for the used ECC policy
-        so that the nonce generation function knows that it needs to generate an ephemeral key and not some other
-        random byte string */
-        response->responseHeader.serviceResult = UA_ByteString_allocBuffer(outServerEphemeralKey, sp->symmetricModule.secureChannelNonceLength);
-        if(response->responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[CreateSession] Failed to alocate buffer for ephemeral key");
+        response->responseHeader.serviceResult =
+            addEphemeralKeyAdditionalHeader(server, sp, &response->responseHeader.additionalHeader);
+        if(response->responseHeader.serviceResult != UA_STATUSCODE_GOOD)
             return;
-        }
-
-        response->responseHeader.serviceResult |= sp->symmetricModule.generateNonce(sp->policyContext, outServerEphemeralKey);
-        if(response->responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[CreateSession] Failed to generate an ephemeral key");
-            return;
-        }
-
-        UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[CreateSession] Ephemeral server key created");
-        
-        UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION, "[CreateSession] Additional Header Set");
-
-        response->responseHeader.additionalHeader.encoding = UA_EXTENSIONOBJECT_ENCODED_BYTESTRING;
-        /* If the node identitifer is a string, there is a segmentation fault when clearing the response struct. 
-         * Therefore, NODE_IDENTIFIER_NUMERIC_EPHKEY is chosen as an arbitrary numeric node identifier. */
-        response->responseHeader.additionalHeader.content.encoded.typeId = UA_NODEID_NUMERIC(1, NODE_IDENTIFIER_NUMERIC_EPHKEY);
+        UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION,
+                    "[CreateSession] Ephemeral Key created");
     }
 
     /* Sign the signature */
@@ -899,29 +943,13 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
 
     /* If ECC policy, create the new ephemeral key to be returned in the ActivateSession response */
     const UA_SecurityPolicy *sp = channel->securityPolicy;
-    if(UA_SecurityPolicy_isEccPolicy(sp->policyUri)) {
-        UA_LOG_INFO(server->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] ECC security policy");
-
-        UA_ByteString* outServerEphemeralKey = &resp->responseHeader.additionalHeader.content.encoded.body;
-        resp->responseHeader.serviceResult = UA_ByteString_allocBuffer(outServerEphemeralKey, sp->symmetricModule.secureChannelNonceLength);
-        if(resp->responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Failed to alocate buffer for ephemeral key");
+    if(sp && UA_SecurityPolicy_isEccPolicy(sp->policyUri)) {
+        resp->responseHeader.serviceResult =
+            addEphemeralKeyAdditionalHeader(server, sp, &resp->responseHeader.additionalHeader);
+        if(resp->responseHeader.serviceResult != UA_STATUSCODE_GOOD)
             goto securityRejected;
-        }
-
-        resp->responseHeader.serviceResult |= sp->symmetricModule.generateNonce(sp->policyContext, outServerEphemeralKey);
-        if(resp->responseHeader.serviceResult != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR(server->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Failed to generate an ephemeral key");
-            goto securityRejected; 
-        }
-        
-        resp->responseHeader.additionalHeader.encoding = UA_EXTENSIONOBJECT_ENCODED_BYTESTRING;
-
-        /* If the node identitifer is a string, there is a segmentation fault when clearing the response struct
-         * 334 is an arbitrary numeric node identifier */
-        resp->responseHeader.additionalHeader.content.encoded.typeId = UA_NODEID_NUMERIC(1, NODE_IDENTIFIER_NUMERIC_EPHKEY);
-        
-        UA_LOG_INFO(server->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Additional Header Set");
+        UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION,
+                    "[ActivateSession] Ephemeral Key created");
     }
 
     /* Activate the session */
