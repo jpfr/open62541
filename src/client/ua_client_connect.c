@@ -795,6 +795,31 @@ readNamespacesArrayAsync(UA_Client *client) {
 }
 
 static void
+extractEphemeralKeyFromAddHeader(UA_Client *client, UA_ExtensionObject *ah) {
+    UA_LOG_DEBUG(client->config.logging, UA_LOGCATEGORY_SESSION,
+                 "Server Ephemeral Key in the response");
+
+    /* KeyValueMap has the identical structure the UA_AdditionalParametersType */
+    UA_KeyValueMap *map = (UA_KeyValueMap*)ah->content.decoded.data;
+
+    /* TODO: Handle the ECDHPolicyUri */
+
+    /* Get the Ephemeral Key */
+    UA_EphemeralKeyType *ephKey = (UA_EphemeralKeyType*)(uintptr_t)
+        UA_KeyValueMap_getScalar(map, UA_QUALIFIEDNAME(0, "ECDHKey"),
+                                 &UA_TYPES[UA_TYPES_EPHEMERALKEYTYPE]);
+    if(!ephKey)
+        return; /* TODO: Security error? */
+
+    /* Move the Ephemeral Key into the client */
+    UA_ByteString_clear(&client->serverEphemeralPubKey);
+    client->serverEphemeralPubKey = ephKey->publicKey;
+    UA_ByteString_init(&ephKey->publicKey);
+
+    /* TODO: Validate the signature of the ephemeral key */
+}
+
+static void
 responseActivateSession(UA_Client *client, void *userdata,
                         UA_UInt32 requestId, void *response) {
     UA_LOCK_ASSERT(&client->clientMutex);
@@ -839,22 +864,10 @@ responseActivateSession(UA_Client *client, void *userdata,
     client->serverSessionNonce = ar->serverNonce;
     UA_ByteString_init(&ar->serverNonce);
 
-    /* Extract the server's ephemeral public key from the response */
-    if(ar->responseHeader.additionalHeader.encoding != UA_EXTENSIONOBJECT_ENCODED_NOBODY &&
-       ar->responseHeader.additionalHeader.content.encoded.typeId.identifier.numeric == NODE_IDENTIFIER_NUMERIC_EPHKEY) {
-        
-        UA_LOG_INFO(client->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Server Ephemeral Key in the response");
-        
-        UA_ByteString_clear(&client->serverEphemeralPubKey);
-        client->connectStatus |=
-            UA_ByteString_copy(&ar->responseHeader.additionalHeader.content.encoded.body,
-                               &client->serverEphemeralPubKey);
-        if(client->connectStatus != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR(client->config.logging, UA_LOGCATEGORY_SESSION,
-                         "[ActivateSession] Failed to obtain server's ephemeral key from the response");
-            return;
-        }
-    }
+    /* Extract the server's ephemeral public key from the additional header */
+    UA_ExtensionObject *ah = &ar->responseHeader.additionalHeader;
+    if(UA_ExtensionObject_hasDecodedType(ah, &UA_TYPES[UA_TYPES_ADDITIONALPARAMETERSTYPE]))
+        extractEphemeralKeyFromAddHeader(client, ah);
 
     client->sessionState = UA_SESSIONSTATE_ACTIVATED;
     notifyClientState(client);
@@ -1415,20 +1428,9 @@ createSessionCallback(UA_Client *client, void *userdata,
 
 
     /* Extract the server's ephemeral public key from the response */
-    if(sessionResponse->responseHeader.additionalHeader.encoding != UA_EXTENSIONOBJECT_ENCODED_NOBODY
-        && sessionResponse->responseHeader.additionalHeader.content.encoded.typeId.identifier.numeric == NODE_IDENTIFIER_NUMERIC_EPHKEY) {
-        
-        UA_LOG_INFO(client->config.logging, UA_LOGCATEGORY_SESSION, "[ActivateSession] Server Ephemeral Key in the response");
-        
-        UA_ByteString_clear(&client->serverEphemeralPubKey);
-        res |= UA_ByteString_copy(&sessionResponse->responseHeader.additionalHeader.content.encoded.body,
-                                  &client->serverEphemeralPubKey);
-        if(res != UA_STATUSCODE_GOOD) {
-            UA_LOG_ERROR(client->config.logging, UA_LOGCATEGORY_SESSION,
-                         "[ActivateSession] Failed to obtain server's ephemeral key from the response");
-            goto cleanup;
-        }
-    }
+    UA_ExtensionObject *ah = &sessionResponse->responseHeader.additionalHeader;
+    if(UA_ExtensionObject_hasDecodedType(ah, &UA_TYPES[UA_TYPES_ADDITIONALPARAMETERSTYPE]))
+        extractEphemeralKeyFromAddHeader(client, ah);
 
     /* Activate the new Session */
     client->sessionState = UA_SESSIONSTATE_CREATED;
