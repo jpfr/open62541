@@ -242,37 +242,23 @@ encryptUserIdentityToken(UA_Client *client, UA_SecurityPolicy *utsp,
         return UA_STATUSCODE_GOOD;
     }
 
-    UA_StatusCode retval = UA_STATUSCODE_GOOD;
+    /* Create a temp channel context */
+    void *channelContext;
+    UA_StatusCode retval = utsp->channelModule.
+        newContext(utsp, &client->endpoint.serverCertificate, &channelContext);
+    if(retval != UA_STATUSCODE_GOOD) {
+        UA_LOG_WARNING(client->config.logging, UA_LOGCATEGORY_NETWORK,
+                       "Could not instantiate the SecurityPolicy for the UserToken");
+        return UA_STATUSCODE_BADINTERNALERROR;
+    }
+
     if(UA_SecurityPolicy_isEccPolicy(utsp->policyUri)) {
-        /* New channel context with the client signing certificate from the encrypted
-         * secret. Required to verify the signature since the application instance
-         * certificate isn't available here. Also required to hold the (one-time)
-         * symmetric key for encrypting and decrypting ECC encrypted secred. */
-        void *tempChannelContext = NULL;
-        retval = utsp->channelModule.newContext(utsp, &client->endpoint.serverCertificate, &tempChannelContext);
-        if(retval != UA_STATUSCODE_GOOD) {
-            UA_LOG_WARNING(client->config.logging, UA_LOGCATEGORY_NETWORK,
-                           "Could not instantiate the SecurityPolicy for the UserToken");
-            return UA_STATUSCODE_BADINTERNALERROR;
-        }
         retval = encryptUserIdentityTokenEcc(client->config.logging, tokenData,
                                              client->serverSessionNonce,
-                                             client->serverEphemeralPubKey, utsp, tempChannelContext);
-        utsp->channelModule.deleteContext(tempChannelContext);
+                                             client->serverEphemeralPubKey, utsp,
+                                             channelContext);
         UA_ByteString_clear(&client->serverEphemeralPubKey);
-        if(retval != UA_STATUSCODE_GOOD)
-            return retval;
     } else {
-        /* Create a temp channel context */
-        void *channelContext;
-        retval = utsp->channelModule.
-            newContext(utsp, &client->endpoint.serverCertificate, &channelContext);
-        if(retval != UA_STATUSCODE_GOOD) {
-            UA_LOG_WARNING(client->config.logging, UA_LOGCATEGORY_NETWORK,
-                           "Could not instantiate the SecurityPolicy for the UserToken");
-            return UA_STATUSCODE_BADINTERNALERROR;
-        }
-    
         /* Compute the encrypted length (at least one byte padding) */
         size_t plainTextBlockSize = utsp->asymmetricModule.cryptoModule.
             encryptionAlgorithm.getRemotePlainTextBlockSize(channelContext);
@@ -317,10 +303,10 @@ encryptUserIdentityToken(UA_Client *client, UA_SecurityPolicy *utsp,
         encrypted.length = encryptedLength;
         UA_ByteString_clear(tokenData);
         *tokenData = encrypted;
-    
-        /* Delete the temporary channel context */
-        utsp->channelModule.deleteContext(channelContext);
     }
+
+    /* Delete the temporary channel context */
+    utsp->channelModule.deleteContext(channelContext);
 
     if(iit) {
         retval |= UA_String_copy(&utsp->asymmetricModule.cryptoModule.encryptionAlgorithm.uri,
