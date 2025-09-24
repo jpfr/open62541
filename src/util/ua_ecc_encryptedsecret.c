@@ -141,26 +141,18 @@ UA_EccEncryptedSecret_deserializePolicyHeader(UA_EccEncryptedSecret *src,
     return ret;
 }
 
-static inline UA_Boolean EccEncryptedSecret_checkNodeId(UA_NodeId* nid) {
-    if(nid->identifierType != UA_NODEIDTYPE_NUMERIC || nid->identifier.numeric != 335) {
-        return false;
-    }
-    return true;
-}
-
-static inline UA_Boolean EccEncryptedSecret_checkEncodingMask(UA_Byte em) {
-    if(em != 0x01) {
-        return false;
-    }
-    return true;
-}
-
 static UA_Boolean
 UA_EccEncryptedSecret_checkCommonHeader(UA_EccEncryptedSecretStruct* es) {
-    if(!EccEncryptedSecret_checkNodeId(&es->typeId))
+    /* Check TypeId */
+    if(es->typeId.identifierType != UA_NODEIDTYPE_NUMERIC ||
+       es->typeId.identifier.numeric != 335)
         return false;
-    if(!EccEncryptedSecret_checkEncodingMask(es->encodingMask))
+
+    /* Check EncodingMask */
+    if(es->encodingMask != 0x01)
         return false;
+
+    /* Check SecurityPolicyUri */
     if(!UA_SecurityPolicy_isEccPolicy(es->securityPolicyUri))
         return false;
     return true;
