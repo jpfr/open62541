@@ -24,8 +24,7 @@ typedef struct {
     /* Payload */
     UA_ByteString nonce;
     UA_ByteString secret;
-    UA_Byte* payloadPadding;
-    UA_UInt16 payloadPaddingSize;
+    /* UA_ByteString padding; // Computed when needed */
 
     /* Signature */
     UA_Byte* signature;
@@ -59,9 +58,6 @@ UA_EccEncryptedSecretStruct_clear(UA_EccEncryptedSecretStruct* es) {
     UA_ByteString_clear(&es->receiverPublicKey);
     UA_ByteString_clear(&es->nonce);
     UA_ByteString_clear(&es->secret);
-    if(es->payloadPadding != NULL) {
-        UA_Array_delete(es->payloadPadding, es->payloadPaddingSize, &UA_TYPES[UA_DATATYPEKIND_BYTE]);
-    }
     UA_EccEncryptedSecretStruct_init(es);
 }
 
@@ -333,33 +329,16 @@ encryptUserIdentityTokenEcc(UA_Logger *logger, UA_ByteString *tokenData,
     }
 
     /* Compute the padding size and pad the payload */
-    UA_UInt16 paddingLen = ivLen - ((secret.nonce.length + tokenData->length + sizeof(secret.payloadPaddingSize)) % ivLen);
-    if(tokenData->length + paddingLen < ivLen) {
+    UA_UInt16 paddingLen = ivLen - ((secret.nonce.length + tokenData->length + 2) % ivLen);
+    if(tokenData->length + paddingLen < ivLen)
         paddingLen += ivLen;
-    }
-
-    secret.payloadPaddingSize = paddingLen;
-
-    secret.payloadPadding = (UA_Byte*) UA_malloc(paddingLen * sizeof(UA_Byte));
-    if(secret.payloadPadding == NULL) {
-        UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to allocate the memory for the padding");
-        retval = UA_STATUSCODE_BADOUTOFMEMORY;
-        goto cleanup;
-    }
-
-    /* Least significant byte of padding size */
     UA_Byte pad = paddingLen & 0xFF;
-
     UA_LOG_DEBUG(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Padding size: %u; Pad byte: 0x%02x", paddingLen, pad);
-
-    for(UA_Int16 i = 0; i<paddingLen; i++) {
-        secret.payloadPadding[i] = pad;
-    }
 
     /* Constructing payload, refer to https://reference.opcfoundation.org/Core/Part4/v105/docs/7.41.2.3 */
     UA_ByteString payload;
     UA_ByteString_init(&payload);
-    size_t payloadLen = secret.nonce.length + secret.secret.length + secret.payloadPaddingSize + sizeof(secret.payloadPaddingSize);
+    size_t payloadLen = secret.nonce.length + secret.secret.length + paddingLen + 2;
     retval = UA_ByteString_allocBuffer(&payload, payloadLen);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to alocate the buffer for payload");
@@ -367,13 +346,18 @@ encryptUserIdentityTokenEcc(UA_Logger *logger, UA_ByteString *tokenData,
     }
 
     UA_Byte* bufPos = payload.data;
+    UA_Byte* bufEnd = payload.data + payload.length;
     memcpy(bufPos, secret.nonce.data, secret.nonce.length);
     bufPos += secret.nonce.length;
     memcpy(bufPos, secret.secret.data, secret.secret.length);
+
+    /* Encode Padding */
     bufPos += secret.secret.length;
-    memcpy(bufPos, secret.payloadPadding, secret.payloadPaddingSize);
-    bufPos += secret.payloadPaddingSize;
-    memcpy(bufPos, &paddingLen, sizeof(paddingLen)); 
+    for(size_t i = 0; i < paddingLen; i++) {
+        *bufPos = pad;
+        bufPos++;
+    }
+    retval |= UA_UInt16_encodeBinary(&paddingLen, &bufPos, bufEnd);
     
     retval = sp->symmetricModule.cryptoModule.encryptionAlgorithm.encrypt(tempChannelContext, &payload);
     if(retval != UA_STATUSCODE_GOOD) {
@@ -414,7 +398,7 @@ encryptUserIdentityTokenEcc(UA_Logger *logger, UA_ByteString *tokenData,
 
     /* Serialize the Common Header and put it in EccEncryptedSecret */
     bufPos = eccEncSecSer.data;
-    UA_Byte* bufEnd = &eccEncSecSer.data[commonHeaderSerLen];
+    bufEnd = &eccEncSecSer.data[commonHeaderSerLen];
     retval = UA_EccEncryptedSecret_serializeCommonHeader(&secret, &bufPos, bufEnd);
     if(retval != UA_STATUSCODE_GOOD) {
         UA_LOG_ERROR(logger, UA_LOGCATEGORY_SESSION, "[EncryptedSecret] Failed to serialize the common header");
