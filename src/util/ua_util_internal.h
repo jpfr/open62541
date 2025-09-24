@@ -426,8 +426,6 @@ UA_ENCODING_HELPERS(DiagnosticInfo, DIAGNOSTICINFO)
 /* ECC Encryption */
 /******************/
 
-/* Ephemeral key node ID identifier, arbitrarily chosen */
-#define NODE_IDENTIFIER_NUMERIC_EPHKEY 334
 /* ECC Encrypted Secret node ID identifier, arbitrarily chosen*/
 #define NODE_IDENTIFIER_NUMERIC_ECCENCRYPTEDSEC 335
 
