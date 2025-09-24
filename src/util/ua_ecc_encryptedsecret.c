@@ -114,7 +114,6 @@ UA_EccEncryptedSecret_deserializeCommonHeader(UA_EccEncryptedSecret *src,
                                               UA_EccEncryptedSecretStruct *dest,
                                               size_t* offset) {
     UA_StatusCode ret = UA_STATUSCODE_GOOD;
-    *offset = 0;
     ret |= UA_NodeId_decodeBinary(src, offset, &dest->typeId);
     ret |= UA_Byte_decodeBinary(src, offset, &dest->encodingMask);
     ret |= UA_UInt32_decodeBinary(src, offset, &dest->length);
@@ -130,14 +129,8 @@ UA_EccEncryptedSecret_deserializePolicyHeader(UA_EccEncryptedSecret *src,
                                               UA_EccEncryptedSecretStruct *dest,
                                               size_t* offset) {
     UA_StatusCode ret = UA_STATUSCODE_GOOD;
-
-    if(*offset == 0) {
-        return UA_STATUSCODE_BAD;
-    }
-
     ret |= UA_ByteString_decodeBinary(src, offset, &dest->senderPublicKey);
     ret |= UA_ByteString_decodeBinary(src, offset, &dest->receiverPublicKey);
-
     return ret;
 }
 
