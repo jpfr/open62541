@@ -227,7 +227,7 @@ signCreateSessionResponse(UA_Server *server, UA_SecureChannel *channel,
 
 static UA_StatusCode
 addEphemeralKeyAdditionalHeader(UA_Server *server, const UA_SecurityPolicy *sp,
-                                UA_ExtensionObject *ah) {
+                                void *channelContext, UA_ExtensionObject *ah) {
     /* Allocate additional parameters */
     UA_AdditionalParametersType *ap = UA_AdditionalParametersType_new();
     if(!ap)
@@ -274,7 +274,7 @@ addEphemeralKeyAdditionalHeader(UA_Server *server, const UA_SecurityPolicy *sp,
         return res;
     }
 
-    /* Generate the key
+    /* Generate the ephemeral key
      * TODO: Don't we have to persist the key locally? */
     res = sp->symmetricModule.generateNonce(sp->policyContext, &ephKey->publicKey);
     if(res != UA_STATUSCODE_GOOD) {
@@ -282,7 +282,11 @@ addEphemeralKeyAdditionalHeader(UA_Server *server, const UA_SecurityPolicy *sp,
         return res;
     }
 
-    /* TODO: Signature in the EphemeralKeyType is missing */
+    /* Create the signature
+     * TODO: Check whether the symmetric or asymmetric signing algorithm is
+     * needed here */
+    res = sp->symmetricModule.cryptoModule.signatureAlgorithm.
+        sign(channelContext, &ephKey->publicKey, &ephKey->signature);
 
     /* Set the ephemeral key in the additional header */
     UA_ExtensionObject_setValue(ah, ap, &UA_TYPES[UA_TYPES_ADDITIONALPARAMETERSTYPE]);
@@ -447,7 +451,8 @@ Service_CreateSession(UA_Server *server, UA_SecureChannel *channel,
     /* If ECC policy, create an ephemeral key to be returned in the response */
     if(sp && UA_SecurityPolicy_isEccPolicy(sp->policyUri)) {
         response->responseHeader.serviceResult =
-            addEphemeralKeyAdditionalHeader(server, sp, &response->responseHeader.additionalHeader);
+            addEphemeralKeyAdditionalHeader(server, sp, channel->channelContext,
+                                            &response->responseHeader.additionalHeader);
         if(response->responseHeader.serviceResult != UA_STATUSCODE_GOOD)
             return;
         UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION,
@@ -945,7 +950,8 @@ Service_ActivateSession(UA_Server *server, UA_SecureChannel *channel,
     const UA_SecurityPolicy *sp = channel->securityPolicy;
     if(sp && UA_SecurityPolicy_isEccPolicy(sp->policyUri)) {
         resp->responseHeader.serviceResult =
-            addEphemeralKeyAdditionalHeader(server, sp, &resp->responseHeader.additionalHeader);
+            addEphemeralKeyAdditionalHeader(server, sp, channel->channelContext,
+                                            &resp->responseHeader.additionalHeader);
         if(resp->responseHeader.serviceResult != UA_STATUSCODE_GOOD)
             goto securityRejected;
         UA_LOG_DEBUG(server->config.logging, UA_LOGCATEGORY_SESSION,
