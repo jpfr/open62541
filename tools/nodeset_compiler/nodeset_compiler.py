@@ -51,11 +51,6 @@ parser.add_argument('outputFile',
                     metavar='<outputFile>',
                     help='The path/basename for the <output file>.c and <output file>.h files to be generated. This will also be the function name used in the header and c-file.')
 
-parser.add_argument('--internal-headers',
-                    action='store_true',
-                    dest="internal_headers",
-                    help='Include internal headers instead of amalgamated header')
-
 parser.add_argument('-b', '--blacklist',
                     metavar="<blacklistFile>",
                     type=argparse.FileType('r'),
@@ -224,7 +219,7 @@ logger.info(f"Generating Code for Backend: {args.backend}")
 if args.backend == "open62541":
     # Create the C code with the open62541 backend of the compiler
     from .backend_open62541 import generateOpen62541Code
-    generateOpen62541Code(ns, args.outputFile, args.internal_headers, args.typesArray)
+    generateOpen62541Code(ns, args.outputFile, args.typesArray)
 elif args.backend == "graphviz":
     from .backend_graphviz import generateGraphvizCode
     generateGraphvizCode(ns, filename=args.outputFile)

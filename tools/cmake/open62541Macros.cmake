@@ -295,8 +295,6 @@ endfunction()
 # The following arguments are accepted:
 #   Options:
 #
-#   [INTERNAL]      Optional argument. If given, then the generated node set code
-#                   will use internal headers.
 #   [AUTOLOAD]      Optional argument. If given, the nodeset is automatically attached to the server.
 #
 #   Arguments taking one value:
@@ -367,11 +365,6 @@ function(ua_generate_nodeset)
     endif()
 
     # Set up the command
-    set(GEN_INTERNAL_HEADERS "")
-    if(UA_GEN_NS_INTERNAL)
-        set(GEN_INTERNAL_HEADERS "--internal-headers")
-    endif()
-
     set(GEN_NS0 "")
     set(TARGET_SUFFIX "ns-${UA_GEN_NS_NAME}")
     set(FILE_SUFFIX "_${UA_GEN_NS_NAME}_generated")
@@ -412,7 +405,6 @@ function(ua_generate_nodeset)
 
     add_custom_command(COMMAND ${Python3_EXECUTABLE}
                                ${open62541_TOOLS_DIR}/nodeset_compiler/nodeset_compiler.py
-                               ${GEN_INTERNAL_HEADERS}
                                ${GEN_NS0}
                                ${GEN_BIN_SIZE}
                                ${GEN_IGNORE}
