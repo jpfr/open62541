@@ -432,8 +432,7 @@ class NodeSet:
             type_bsd.append(bsd)
 
         self.parser = CSVBSDTypeParser(opaque_map, selected_types, outname, import_bsd,
-                                    type_bsd, type_csv, type_xml, self.namespaces)
-        self.parser.create_types()
+                                       type_bsd, type_csv, type_xml, self.namespaces)
 
         nodeset_base.close()
 

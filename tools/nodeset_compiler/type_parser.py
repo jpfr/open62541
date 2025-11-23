@@ -1,4 +1,3 @@
-import abc
 import codecs
 import csv
 import json
@@ -212,14 +211,24 @@ class StructType(Type):
 
 
 class TypeParser():
-    __metaclass__ = abc.ABCMeta
-
     def __init__(self, opaque_map, selected_types, outname, namespaceIndexMap):
         self.opaque_map = opaque_map
         self.selected_types = selected_types
         self.outname = outname
         self.types = OrderedDict()
         self.namespaceIndexMap = namespaceIndexMap
+
+        for builtin in builtin_types:
+            self.insert_type(BuiltinType(builtin))
+
+        for f in self.opaque_map:
+            user_opaque_type_mapping.update(json.load(f))
+
+        # Read the selected data types
+        arg_selected_types = self.selected_types
+        self.selected_types = []
+        for f in arg_selected_types:
+            self.selected_types += list(filter(len, [line.strip() for line in f]))
 
     @staticmethod
     def merge_dicts(*dict_args):
@@ -341,48 +350,30 @@ class TypeParser():
                 self.insert_type(new_type)
                 del snippets[name]
 
-    @abc.abstractmethod
-    def parse_types(self):
-        pass
+    def insert_type(self, t):
+        if t.namespaceUri not in self.types:
+            self.types[t.namespaceUri] = OrderedDict()
 
-    def insert_type(self, typeObject):
-        if typeObject.namespaceUri not in self.types:
-            self.types[typeObject.namespaceUri] = OrderedDict()
+        if t.name in rename_types:
+            t.name = rename_types[t.name]
 
-        if typeObject.name in rename_types:
-            typeObject.name = rename_types[typeObject.name]
-
-        if typeObject.name not in self.types[typeObject.namespaceUri]:
-            self.types[typeObject.namespaceUri][typeObject.name] = typeObject
-
-    def create_types(self):
-        for builtin in builtin_types:
-            self.insert_type(BuiltinType(builtin))
-
-        for f in self.opaque_map:
-            user_opaque_type_mapping.update(json.load(f))
-
-        self.parse_types()
-
-        # Read the selected data types
-        arg_selected_types = self.selected_types
-        self.selected_types = []
-        for f in arg_selected_types:
-            self.selected_types += list(filter(len, [line.strip() for line in f]))
+        if t.name not in self.types[t.namespaceUri]:
+            self.types[t.namespaceUri][t.name] = t
 
 
 class CSVBSDTypeParser(TypeParser):
     def __init__(self, opaque_map, selected_types, outname,
                  existing_bsd, type_bsd, type_csv, type_xml, namespaceIndexMap):
         TypeParser.__init__(self, opaque_map, selected_types, outname, namespaceIndexMap)
-        self.existing_bsd = existing_bsd # bsd files with existing types that shall not be printed again
+        self.existing_bsd = existing_bsd # bsd files with existing types not printed again
         self.existing_types_array = set() # existing TYPE_ARRAY from existing_bsd
         self.type_bsd = type_bsd # bsd files with new types
         self.type_csv = type_csv # csv files with nodeids, etc.
         self.type_xml = type_xml # xml files with symbolicNames etc.
         self.existing_types = [] # existing types that shall not be printed
+        self._parse_types()
 
-    def parse_types(self):
+    def _parse_types(self):
         # parse existing types
         for i in self.existing_bsd:
             (outname_import, file_import) = i.split("#")
