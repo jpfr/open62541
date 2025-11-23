@@ -214,15 +214,9 @@ class StructType(Type):
 class TypeParser():
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, opaque_map, selected_types, no_builtin, outname, namespaceIndexMap):
-        self.selected_types = []
-        self.fh = None
-        self.ff = None
-        self.fc = None
-        self.fe = None
+    def __init__(self, opaque_map, selected_types, outname, namespaceIndexMap):
         self.opaque_map = opaque_map
         self.selected_types = selected_types
-        self.no_builtin = no_builtin
         self.outname = outname
         self.types = OrderedDict()
         self.namespaceIndexMap = namespaceIndexMap
@@ -298,12 +292,8 @@ class TypeParser():
             return False
 
         snippets = OrderedDict()
-        xmlDoc = etree.iterparse(
-            xmlDescription, events=['start-ns']
-        )
-        xmlNamespaces = dict([
-            node for _, node in xmlDoc
-        ])
+        xmlDoc = etree.iterparse(xmlDescription, events=['start-ns'])
+        xmlNamespaces = dict([node for _, node in xmlDoc])
         targetNamespace = xmlDoc.root.get("TargetNamespace")
         for typeXml in xmlDoc.root:
             if not typeXml.get("Name"):
@@ -382,9 +372,9 @@ class TypeParser():
 
 
 class CSVBSDTypeParser(TypeParser):
-    def __init__(self, opaque_map, selected_types, no_builtin, outname,
+    def __init__(self, opaque_map, selected_types, outname,
                  existing_bsd, type_bsd, type_csv, type_xml, namespaceIndexMap):
-        TypeParser.__init__(self, opaque_map, selected_types, no_builtin, outname, namespaceIndexMap)
+        TypeParser.__init__(self, opaque_map, selected_types, outname, namespaceIndexMap)
         self.existing_bsd = existing_bsd # bsd files with existing types that shall not be printed again
         self.existing_types_array = set() # existing TYPE_ARRAY from existing_bsd
         self.type_bsd = type_bsd # bsd files with new types

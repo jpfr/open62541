@@ -443,7 +443,7 @@ class CGenerator:
                             del l[ns][t]
 
         # Remove builtins?
-        if self.parser.no_builtin:
+        if args.no_builtin:
             for ns in v:
                 for t in v[ns]:
                     if isinstance(v[ns][t], BuiltinType):
@@ -578,7 +578,7 @@ for m in args.namespace_map:
     namespaceMap[ns] = int(idx)
 
 parser = CSVBSDTypeParser(args.opaque_map, args.selected_types,
-                          args.no_builtin, outname, args.import_bsd,
+                          outname, args.import_bsd,
                           args.type_bsd, args.type_csv, args.type_xml,
                           namespaceMap)
 parser.create_types()
