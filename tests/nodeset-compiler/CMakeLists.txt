@@ -4,10 +4,19 @@ include_directories("${PROJECT_BINARY_DIR}/src_generated/tests")
 # Test Companion Specs that need the full NS0 #
 ###############################################
 
+set(GENERATE_OUTPUT_DIR "${CMAKE_BINARY_DIR}/src_generated/tests")
+
+# Generate types and namespace for ADI
+ua_generate_nodeset_and_datatypes(
+    NAME "typedescriptions"
+    OUTPUT_DIR "${GENERATE_OUTPUT_DIR}"
+    FILE_NS "${PROJECT_SOURCE_DIR}/tests/nodeset-compiler/typedescriptions.xml"
+)
+
+ua_add_test(check_nodeset_typedescriptions.c EXTRASOURCES ${UA_NODESET_TYPEDESCRIPTIONS_SOURCES})
+add_dependencies(check_nodeset_typedescriptions open62541-generator-ns-typedescriptions)
+
 if(UA_NAMESPACE_ZERO STREQUAL "FULL")
-
-    set(GENERATE_OUTPUT_DIR "${CMAKE_BINARY_DIR}/src_generated/tests")
-
     # Generate types and namespace for DI
     ua_generate_nodeset_and_datatypes(
         NAME "tests-di"

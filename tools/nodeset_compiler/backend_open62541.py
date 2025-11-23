@@ -10,7 +10,7 @@
 ###    Copyright 2018 (c) Jannis Volker
 ###    Copyright 2018 (c) Ralph Lange
 ###    Copyright 2019 (c) Andrea Minosu
-###    Copyright 2021 (c) Wind River Systems, Inc.
+###    Copyright 2025 (c) o6 Automation GmbH (Author: Julius Pfrommer)
 
 from .datatypes import NodeId
 from .nodes import *
@@ -367,10 +367,90 @@ def generateObjectTypeNodeCode(node):
 
 def generateDataTypeNodeCode(node):
     code = []
+    code_after = []
     code.append("UA_DataTypeAttributes attr = UA_DataTypeAttributes_default;")
     if node.isAbstract:
         code.append("attr.isAbstract = true;")
-    return code
+
+    # Don't generate type descriptions for ns0
+    if node.id.ns == 0:
+        return code, code_after
+
+    # Have valid typedescriptions?
+    if not node.typeDefinition:
+        return code, code_after
+    fields = node.typeDefinition.getElementsByTagName("Field")
+    if(len(fields)) == 0:
+        return code, code_after
+
+    # Detect Enum or StructureDefinition
+    is_enum = ("Value" in fields[0].attributes)
+
+    # Generate TypeDefinition
+    code_after.append("UA_ExtensionObject td;")
+    if is_enum:
+        code_after.append("UA_EnumDescription ed;")
+        code_after.append("UA_EnumDescription_init(&ed);")
+        code_after.append(f"ed.dataTypeId = {generateNodeIdCode(node.id)};");
+        code_after.append(f"ed.name = {generateQualifiedNameCode(node.browseName)};");
+        code_after.append("ed.builtInType = UA_DATATYPEKIND_INT32 + 1;")
+        code_after.append(f"UA_EnumField fields[{len(fields)}];")
+        for i,f in enumerate(fields):
+            code_after.append(f"UA_EnumField_init(&fields[{i}]);")
+            code_after.append(f"fields[{i}].value = {f.attributes["Value"].value};")
+            code_after.append(f"fields[{i}].name = UA_STRING(\"{f.attributes["Name"].value}\");")
+        code_after.append(f"ed.enumDefinition.fields = fields;")
+        code_after.append(f"ed.enumDefinition.fieldsSize = {len(fields)};")
+        code_after.append("UA_ExtensionObject_setValue(&td, &ed, &UA_TYPES[UA_TYPES_ENUMDESCRIPTION]);")
+    else:
+        code_after.append("UA_StructureDescription sd;")
+        code_after.append("UA_StructureDescription_init(&sd);")
+        code_after.append(f"sd.dataTypeId = {generateNodeIdCode(node.id)};");
+        code_after.append(f"sd.name = {generateQualifiedNameCode(node.browseName)};");
+        structureType = "UA_STRUCTURETYPE_STRUCTURE" # optstructs are detected below
+        if "IsUnion" in node.typeDefinition.attributes and node.typeDefinition.attributes["IsUnion"].value == "true":
+            structureType = "UA_STRUCTURETYPE_UNION"
+        code_after.append(f"UA_StructureField fields[{len(fields)}];")
+        for i,f in enumerate(fields):
+            name = f.attributes["Name"].value
+            typeId = NodeId("i=22") # ExtensionObject
+            if "DataType" in f.attributes:
+                typeId = NodeId(str(f.attributes["DataType"].value))
+            valueRank = -1 # Scalar
+            if "ValueRank" in f.attributes:
+                valueRank = int(f.attributes["ValueRank"].value)
+            isOptional = False
+            if "IsOptional" in f.attributes:
+                if f.attributes["IsOptional"].value == "true":
+                    isOptional = True
+                    if structureType == "UA_STRUCTURETYPE_UNION":
+                        raise RuntimeError(f"Node {str(node.id)}: Union cannot have optional fields")
+                    structureType = "UA_STRUCTURETYPE_STRUCTUREWITHOPTIONALFIELDS"
+            description = None
+            if "Description" in f.attributes:
+                description = f.attributes["Description"].value
+            code_after.append(f"UA_StructureField_init(&fields[{i}]);")
+            code_after.append(f"fields[{i}].name = UA_STRING(\"{name}\");")
+            code_after.append(f"fields[{i}].dataType = {generateNodeIdCode(typeId)};")
+            code_after.append(f"fields[{i}].valueRank = {valueRank};")
+            if description:
+                code_after.append(f"fields[{i}].description = {generateLocalizedTextCode(description)};")
+            if isOptional:
+                code_after.append("fields[{i}].isOptional = true;")
+            # TODO:
+            # UA_LocalizedText description;
+            # size_t arrayDimensionsSize;
+            # UA_UInt32 *arrayDimensions;
+            # UA_UInt32 maxStringLength;
+        code_after.append(f"sd.structureDefinition.fields = fields;")
+        code_after.append(f"sd.structureDefinition.fieldsSize = {len(fields)};")
+        code_after.append(f"sd.structureDefinition.structureType = {structureType};");
+        code_after.append("UA_ExtensionObject_setValue(&td, &sd, &UA_TYPES[UA_TYPES_STRUCTUREDESCRIPTION]);")
+
+    # Call UA_Server_addDataTypeFromDescription
+    code_after.append("UA_Server_addDataTypeFromDescription(server, &td);")
+
+    return code, code_after
 
 def generateViewNodeCode(node):
     code = []
@@ -405,7 +485,9 @@ def generateNodeCode_begin(node, nodeset, code_global):
     elif isinstance(node, ObjectTypeNode):
         code.extend(generateObjectTypeNodeCode(node))
     elif isinstance(node, DataTypeNode):
-        code.extend(generateDataTypeNodeCode(node))
+        code1, code_after = generateDataTypeNodeCode(node)
+        code.extend(code1)
+        codeCleanup.extend(code_after)
     elif isinstance(node, ViewNode):
         code.extend(generateViewNodeCode(node))
     if node.displayName is not None:

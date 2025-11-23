@@ -7,7 +7,7 @@
 ###    Copyright 2014-2015 (c) TU-Dresden (Author: Chris Iatrou)
 ###    Copyright 2014-2017 (c) Fraunhofer IOSB (Author: Julius Pfrommer)
 ###    Copyright 2016-2017 (c) Stefan Profanter, fortiss GmbH
-
+###    Copyright 2025 (c) o6 Automation GmbH (Author: Julius Pfrommer)
 
 import logging
 from .datatypes import QualifiedName, LocalizedText, NodeId
@@ -152,6 +152,13 @@ class Node:
         if isinstance(self, VariableNode) or isinstance(self, VariableTypeNode):
             if str(self.dataType) in aliases:
                 self.dataType = NodeId(aliases[self.dataType])
+        if isinstance(self, DataTypeNode) and self.typeDefinition:
+            fields = self.typeDefinition.getElementsByTagName("Field")
+            for f in fields:
+                if "DataType" in f.attributes:
+                    v = f.attributes["DataType"].value
+                    if str(v) in aliases:
+                        f.attributes["DataType"].value = NodeId(aliases[v])
         new_refs = dict()
         for ref in self.references:
             if str(ref.source) in aliases:
@@ -323,6 +330,7 @@ class DataTypeNode(Node):
     def __init__(self, xmlelement=None):
         Node.__init__(self)
         self.isAbstract = False
+        self.typeDefinition = None
         if xmlelement:
             DataTypeNode.parseXML(self, xmlelement)
 
@@ -331,6 +339,14 @@ class DataTypeNode(Node):
         for (at, av) in xmlelement.attributes.items():
             if at == "IsAbstract":
                 self.isAbstract = "false" not in av.lower()
+        for x in xmlelement.childNodes:
+            if x.nodeType != x.ELEMENT_NODE:
+                continue
+            if x.localName == "Definition":
+                self.typeDefinition = x
+                for e in x.getElementsByTagName("Field"):
+                    if "DataType" in e.attributes:
+                        e.attributes["DataType"].value = RefOrAlias(e.attributes["DataType"].value)
 
 class ViewNode(Node):
     def __init__(self, xmlelement=None):
