@@ -59,19 +59,18 @@ class LocalizedText():
             return self.text
 
 class NodeId():
-    def __init__(self, idstring=None):
-        self.i = None
+    def __init__(self, idstring=None, ns=0, i=0):
+        self.ns = ns
+        self.i = i
         self.b = None
         self.g = None
         self.s = None
-        self.ns = 0
         self.setFromIdString(idstring)
 
     def setFromIdString(self, idstring):
         global namespaceMapping
 
         if not idstring:
-            self.i = 0
             return
 
         # The ID will encoding itself appropriatly as string. If multiple ID's

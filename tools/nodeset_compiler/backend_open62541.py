@@ -15,6 +15,8 @@
 from .datatypes import NodeId
 from .nodes import *
 from .nodeset import *
+from .type_parser import TypeParser
+from .backend_open62541_datatypes import *
 
 import re
 from os.path import basename
@@ -539,6 +541,19 @@ def generateNodeCode_finish(node):
 
 def generateOpen62541Code(nodeset, outfilename, typesArray=[]):
     outfilebase = basename(outfilename)
+
+    # Parse the TypeDefinitions
+    logger.info("Creating DataType definitions")
+    type_parser = TypeParser({}, [], outfilebase, nodeset.namespaceMapping)
+    for node in nodeset.nodes.values():
+        if isinstance(node, DataTypeNode):
+            if node.id.ns == 0:
+                continue
+            if node.typeDefinition is not None:
+                type_parser.addTypeFromDefinition(node.typeDefinition,
+                                                  nodeset.namespaceMapping[node.id.ns],
+                                                  node.id)
+    
     # Printing functions
     outfileh = codecs.open(outfilename + ".h", r"w+", encoding='utf-8')
     outfilec = StringIO()
@@ -559,7 +574,7 @@ def generateOpen62541Code(nodeset, outfilename, typesArray=[]):
             typeFile = typeFile[typeFile.startswith("ua_") and len("ua_"):]
             additionalHeaders += """#include "%s_generated.h"\n""" % typeFile
 
-    # Print the preamble of the generated code
+    # Print the preamble of the generated header
     writeh("""/* WARNING: This is a generated file.
  * Any manual changes will be overwritten. */
 
@@ -569,9 +584,22 @@ def generateOpen62541Code(nodeset, outfilename, typesArray=[]):
     writeh("""
 #include <open62541/server.h>
 %s
-""" % (additionalHeaders))
-    writeh("""
+
 _UA_BEGIN_DECLS
+""" % (additionalHeaders))
+
+    # Print type definitions
+    for node in nodeset.nodes.values():
+        if isinstance(node, DataTypeNode):
+            if node.id.ns == 0:
+                continue
+            if node.typeDefinition is not None:
+                ns_types = type_parser.types[nodeset.namespaceMapping[node.id.ns]]
+                t = ns_types[node.browseName.name]
+                writeh("")
+                writeh(CGenerator.print_datatype_typedef(t))
+
+    writeh("""
 
 extern UA_StatusCode %s(UA_Server *server);
 
@@ -580,6 +608,7 @@ _UA_END_DECLS
 #endif /* %s_H_ */""" % \
            (outfilebase, outfilebase.upper()))
 
+    # Print the preamble of the generated source file
     writec("""/* WARNING: This is a generated file.
  * Any manual changes will be overwritten. */
 
